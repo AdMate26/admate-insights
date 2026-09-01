@@ -26,7 +26,6 @@ export const Route = createFileRoute("/")({
   component: CampaignList,
 });
 
-const currency = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 function CampaignList() {
   const { data } = useSuspenseQuery(analysisQueryOptions);
