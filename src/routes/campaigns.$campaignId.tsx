@@ -214,10 +214,23 @@ function CampaignAnalysis() {
               >
                 {sending ? "Sending…" : "Send briefing to Telegram"}
               </button>
+              <button
+                onClick={loadPreview}
+                disabled={loadingPreview}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+              >
+                {loadingPreview ? "Building…" : preview ? "Refresh preview" : "Preview briefing"}
+              </button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Sends the top priority findings and their recommended actions as a formatted digest.
+              Telegram is not connected yet — use the preview to review the exact message.
             </p>
+            {preview ? (
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 text-xs leading-relaxed text-foreground">
+                {preview}
+              </pre>
+            ) : null}
           </Section>
         </div>
       </main>
