@@ -63,8 +63,30 @@ async function computeAnalysis(): Promise<AdMateAnalysis> {
       aiStatus,
       aiError,
     };
-  },
+  }
+}
+
+async function loadAnalysis(): Promise<AdMateAnalysis> {
+  if (analysisCache && Date.now() - analysisCache.at < ANALYSIS_TTL_MS) {
+    return analysisCache.value;
+  }
+  if (!analysisInFlight) {
+    analysisInFlight = computeAnalysis()
+      .then((value) => {
+        analysisCache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        analysisInFlight = null;
+      });
+  }
+  return analysisInFlight;
+}
+
+export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AdMateAnalysis> => loadAnalysis(),
 );
+
 
 const SEVERITY_ICON: Record<string, string> = {
   critical: "🔴",
