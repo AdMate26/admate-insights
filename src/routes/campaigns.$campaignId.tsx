@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import { ConfidenceBadge, SeverityBadge, StatusBadge } from "@/components/admate/badges";
-import { sendTelegramBriefing } from "@/lib/admate.functions";
+import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import type { MetricComparison } from "@/lib/analysis/engine";
 
