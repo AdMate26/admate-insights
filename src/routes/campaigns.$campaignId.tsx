@@ -78,11 +78,14 @@ function CampaignAnalysis() {
 
   async function loadPreview() {
     setLoadingPreview(true);
+    setPreview(null);
     try {
       const result = await previewBriefing();
       setPreview(result.text);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not build preview");
+      const message = error instanceof Error ? error.message : "Could not build preview";
+      toast.error(message);
+      setPreview(`Could not build the briefing preview.\n\n${message}`);
     } finally {
       setLoadingPreview(false);
     }
