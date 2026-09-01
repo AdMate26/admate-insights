@@ -346,7 +346,6 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%).`;
       whyItMatters =
         "Falling response with rising frequency is the coded signature of audience saturation — the same users are seeing the creative more often and engaging less.";
-    } else if (dCtr !== null && dCtr <= -12) {
     } else if (dCpa !== null && dCpa >= 20) {
       signal = "cpa_deterioration";
       primaryMetric = "CPA";
@@ -364,6 +363,7 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `CPM rose from ${money(cpm(prev))} to ${money(cpm(cur))} (+${dCpm.toFixed(1)}%) while CTR moved ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}.`;
       whyItMatters =
         "Media is simply more expensive to buy: at flat CTR the same budget delivers fewer clicks and fewer results.";
+    } else if (dCtr !== null && dCtr <= -12) {
       signal = "ctr_drop";
       primaryMetric = "CTR";
       primaryChange = dCtr;
