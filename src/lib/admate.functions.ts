@@ -91,8 +91,20 @@ function buildBriefing(analysis: AdMateAnalysis): string {
   return lines.join("\n");
 }
 
+/** Plain-text render of the same digest, for reviewing it before Telegram is connected. */
+export const previewBriefing = createServerFn({ method: "GET" }).handler(async () => {
+  const analysis = await getAdMateAnalysis();
+  return {
+    text: buildBriefing(analysis)
+      .replace(/<\/?(b|i)>/g, "")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">"),
+  };
+});
+
 export const sendTelegramBriefing = createServerFn({ method: "POST" })
-  .inputValidator((input: { chatId?: string }) => ({ chatId: input?.chatId?.trim() || undefined }))
+  .validator((input: { chatId?: string }) => ({ chatId: input?.chatId?.trim() || undefined }))
   .handler(async ({ data }) => {
     const token = process.env["TELEGRAM_BOT_TOKEN"];
     if (!token) {

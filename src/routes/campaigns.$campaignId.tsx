@@ -5,7 +5,7 @@ import { toast } from "sonner";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import { ConfidenceBadge, SeverityBadge, StatusBadge } from "@/components/admate/badges";
-import { sendTelegramBriefing } from "@/lib/admate.functions";
+import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import type { MetricComparison } from "@/lib/analysis/engine";
 
@@ -73,6 +73,20 @@ function CampaignAnalysis() {
 
   const [chatId, setChatId] = useState("");
   const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  async function loadPreview() {
+    setLoadingPreview(true);
+    try {
+      const result = await previewBriefing();
+      setPreview(result.text);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not build preview");
+    } finally {
+      setLoadingPreview(false);
+    }
+  }
 
   async function send() {
     setSending(true);
@@ -214,10 +228,23 @@ function CampaignAnalysis() {
               >
                 {sending ? "Sending…" : "Send briefing to Telegram"}
               </button>
+              <button
+                onClick={loadPreview}
+                disabled={loadingPreview}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-input px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+              >
+                {loadingPreview ? "Building…" : preview ? "Refresh preview" : "Preview briefing"}
+              </button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Sends the top priority findings and their recommended actions as a formatted digest.
+              Telegram is not connected yet — use the preview to review the exact message.
             </p>
+            {preview ? (
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 text-xs leading-relaxed text-foreground">
+                {preview}
+              </pre>
+            ) : null}
           </Section>
         </div>
       </main>
