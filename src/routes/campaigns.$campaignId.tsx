@@ -73,6 +73,20 @@ function CampaignAnalysis() {
 
   const [chatId, setChatId] = useState("");
   const [sending, setSending] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  async function loadPreview() {
+    setLoadingPreview(true);
+    try {
+      const result = await previewBriefing();
+      setPreview(result.text);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not build preview");
+    } finally {
+      setLoadingPreview(false);
+    }
+  }
 
   async function send() {
     setSending(true);
