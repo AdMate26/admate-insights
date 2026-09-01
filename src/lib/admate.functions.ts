@@ -125,7 +125,7 @@ function buildBriefing(analysis: AdMateAnalysis): string {
 
 /** Plain-text render of the same digest, for reviewing it before Telegram is connected. */
 export const previewBriefing = createServerFn({ method: "GET" }).handler(async () => {
-  const analysis = await getAdMateAnalysis();
+  const analysis = await loadAnalysis();
   return {
     text: buildBriefing(analysis)
       .replace(/<\/?(b|i)>/g, "")
@@ -147,7 +147,7 @@ export const sendTelegramBriefing = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Enter the Telegram chat ID to send the briefing." };
     }
 
-    const analysis = await getAdMateAnalysis();
+    const analysis = await loadAnalysis();
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
