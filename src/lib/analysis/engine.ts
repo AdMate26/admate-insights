@@ -32,6 +32,13 @@ export type Signal =
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type Confidence = "High" | "Medium" | "Low";
 
+/**
+ * STATUS is a separate, coarser layer than SIGNAL. Signal = what the numbers did.
+ * Status = how the marketer should treat it. Both are code-owned; AI never assigns either.
+ */
+export type Status = "needs_attention" | "watch" | "stable" | "data_confidence";
+
+
 export type MetricComparison = {
   label: string;
   current: string;
