@@ -337,6 +337,16 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `Clicks moved ${dClicks?.toFixed(1)}% (${num(prev.clicks)} → ${num(cur.clicks)}) but conversions fell ${dConv?.toFixed(1)}% (${prev.conversions} → ${cur.conversions}), taking CVR from ${pctStr(cvr(prev))} to ${pctStr(cvr(cur))}.`;
       whyItMatters =
         "Traffic volume is unchanged while recorded conversions are not, which matches a measurement/pixel break more closely than a demand change. Spend continues either way.";
+    } else if (dCtr !== null && dCtr <= -12 && dFreq !== null && dFreq >= 15) {
+      signal = "creative_fatigue";
+      primaryMetric = "CTR";
+      primaryChange = dCtr;
+      consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
+      headline = "CTR falling while frequency climbs";
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%).`;
+      whyItMatters =
+        "Falling response with rising frequency is the coded signature of audience saturation — the same users are seeing the creative more often and engaging less.";
+    } else if (dCtr !== null && dCtr <= -12) {
     } else if (dCpa !== null && dCpa >= 20) {
       signal = "cpa_deterioration";
       primaryMetric = "CPA";
@@ -354,16 +364,6 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `CPM rose from ${money(cpm(prev))} to ${money(cpm(cur))} (+${dCpm.toFixed(1)}%) while CTR moved ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}.`;
       whyItMatters =
         "Media is simply more expensive to buy: at flat CTR the same budget delivers fewer clicks and fewer results.";
-    } else if (dCtr !== null && dCtr <= -12 && dFreq !== null && dFreq >= 15) {
-      signal = "creative_fatigue";
-      primaryMetric = "CTR";
-      primaryChange = dCtr;
-      consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
-      headline = "CTR falling while frequency climbs";
-      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%).`;
-      whyItMatters =
-        "Falling response with rising frequency is the coded signature of audience saturation — the same users are seeing the creative more often and engaging less.";
-    } else if (dCtr !== null && dCtr <= -12) {
       signal = "ctr_drop";
       primaryMetric = "CTR";
       primaryChange = dCtr;
