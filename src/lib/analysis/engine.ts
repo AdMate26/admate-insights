@@ -53,10 +53,18 @@ export type CampaignFinding = {
   campaignId: string;
   campaignName: string;
   signal: Signal;
+  /** Human label for the SIGNAL (e.g. "CPA deterioration"). */
+  signalLabel: string;
+  /** Coded STATUS bucket derived from signal + severity. */
+  status: Status;
+  /** Human label for the STATUS (e.g. "Needs Attention"). */
   statusLabel: string;
+  /** Deterministic one-line justification for the status assignment. */
+  statusReason: string;
   severity: Severity;
   severityScore: number;
   needsAttention: boolean;
+
   headline: string;
   whatChanged: string;
   whyItMatters: string;
