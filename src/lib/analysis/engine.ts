@@ -1,52 +1,90 @@
 import type { NormalizedDailyRow } from "../tiktok/contract";
 
 /**
- * DETERMINISTIC ANALYSIS ENGINE.
+ * DETERMINISTIC ANALYSIS ENGINE — the single source of truth.
  *
- * Every number and every classification in the app is produced here, in code:
- * metric aggregation, week-over-week comparisons, z-score anomaly detection,
- * threshold crossings and severity ranking.
+ * Code (never AI) owns:
+ *   - all metrics and comparisons
+ *   - the signal / status classification
+ *   - priority / severity
+ *   - evidence
+ *   - confidence (High / Medium / Low) and its basis
  *
- * The AI layer NEVER computes or classifies anything — it only renders the
- * findings produced here into natural language.
+ * The AI layer receives this immutable result and may only add two narrative
+ * fields (Possible Explanation, Recommended Action). It must never alter or
+ * infer status, signal, evidence, metrics, severity or confidence.
+ *
+ * Comparison window: the latest 7 COMPLETE calendar days vs the 7 COMPLETE
+ * calendar days immediately before them. Today is never included.
  */
 
-export type Severity = "critical" | "high" | "medium" | "low";
+export type Signal =
+  | "cpa_deterioration"
+  | "ctr_drop"
+  | "creative_fatigue"
+  | "scaling_efficiency"
+  | "strong_improvement"
+  | "stable"
+  | "low_volume"
+  | "tracking_issue"
+  | "cpm_spike";
 
-export type FindingEvidence = {
-  metric: string;
-  current: number;
-  previous: number;
-  changePct: number;
-  unit: "currency" | "percent" | "ratio" | "count";
-  currentWindow: string;
-  previousWindow: string;
-  spendInWindow: number;
-  supporting: { label: string; value: string }[];
-  method: string;
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+export type Confidence = "High" | "Medium" | "Low";
+
+export type MetricComparison = {
+  label: string;
+  current: string;
+  previous: string;
+  changePct: number | null;
+  direction: "up" | "down" | "flat";
+  /** true when the movement is the one that triggered the signal */
+  primary?: boolean;
 };
 
-export type Finding = {
-  code: string;
-  entityLevel: "campaign" | "adset" | "ad";
-  entityId: string;
-  entityName: string;
-  metric: string;
+export type CampaignFinding = {
+  campaignId: string;
+  campaignName: string;
+  signal: Signal;
+  statusLabel: string;
   severity: Severity;
   severityScore: number;
-  title: string;
+  needsAttention: boolean;
+  headline: string;
   whatChanged: string;
   whyItMatters: string;
-  evidence: FindingEvidence;
+  confidence: Confidence;
+  confidenceScore: number;
+  confidenceBasis: string[];
+  evidence: {
+    currentWindow: string;
+    previousWindow: string;
+    method: string;
+    metrics: MetricComparison[];
+  };
+  /** Snapshot for the campaign list view (current 7 complete days). */
+  snapshot: {
+    spend: number;
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    cpa: number;
+    cpm: number;
+    roas: number;
+    frequency: number;
+  };
+  /** Written by the AI layer only. */
+  aiExplanation?: string;
+  aiRecommendedAction?: string;
 };
 
 export type AnalysisResult = {
-  windowStart: string;
-  windowEnd: string;
+  currentWindow: { start: string; end: string };
+  previousWindow: { start: string; end: string };
   totalSpend: number;
-  currentWindow: string;
-  previousWindow: string;
-  findings: Finding[];
+  generatedAt: string;
+  findings: CampaignFinding[];
 };
 
 type Totals = {
@@ -87,342 +125,418 @@ function add(a: Totals, r: NormalizedDailyRow): Totals {
 const cpa = (t: Totals) => (t.conversions > 0 ? t.spend / t.conversions : Number.NaN);
 const ctr = (t: Totals) => (t.impressions > 0 ? t.clicks / t.impressions : Number.NaN);
 const cvr = (t: Totals) => (t.clicks > 0 ? t.conversions / t.clicks : Number.NaN);
+const cpm = (t: Totals) => (t.impressions > 0 ? (t.spend / t.impressions) * 1000 : Number.NaN);
+const cpc = (t: Totals) => (t.clicks > 0 ? t.spend / t.clicks : Number.NaN);
 const roas = (t: Totals) => (t.spend > 0 ? t.revenue / t.spend : Number.NaN);
 const frequency = (t: Totals) => (t.reach > 0 ? t.impressions / t.reach : Number.NaN);
 
-function pctChange(current: number, previous: number): number {
-  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return Number.NaN;
-  return ((current - previous) / previous) * 100;
+function change(current: number, previous: number): number | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) return null;
+  return Number((((current - previous) / previous) * 100).toFixed(2));
 }
 
-const money = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
-const num = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+const money = (n: number) =>
+  Number.isFinite(n) ? `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "n/a";
+const pctStr = (n: number) => (Number.isFinite(n) ? `${(n * 100).toFixed(2)}%` : "n/a");
+const num = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "n/a");
+const ratio = (n: number) => (Number.isFinite(n) ? `${n.toFixed(2)}x` : "n/a");
 
-/** Severity is classified in code from change magnitude and spend exposure. */
-function classifySeverity(absChangePct: number, spendInWindow: number): {
+function dir(changePct: number | null): "up" | "down" | "flat" {
+  if (changePct === null) return "flat";
+  if (changePct > 1) return "up";
+  if (changePct < -1) return "down";
+  return "flat";
+}
+
+/** Latest 7 complete days and the 7 complete days before them. Today excluded. */
+function selectWindows(rows: NormalizedDailyRow[], windowDays: number) {
+  const today = new Date().toISOString().slice(0, 10);
+  const dates = [...new Set(rows.map((r) => r.date))].filter((d) => d < today).sort();
+  const current = dates.slice(-windowDays);
+  const previous = dates.slice(-windowDays * 2, -windowDays);
+  return { current, previous };
+}
+
+const SIGNAL_META: Record<Signal, { label: string; baseSeverity: Severity; attention: boolean }> = {
+  tracking_issue: { label: "Possible tracking issue", baseSeverity: "critical", attention: true },
+  cpa_deterioration: { label: "CPA deterioration", baseSeverity: "high", attention: true },
+  cpm_spike: { label: "CPM spike", baseSeverity: "high", attention: true },
+  creative_fatigue: { label: "Possible creative fatigue", baseSeverity: "high", attention: true },
+  ctr_drop: { label: "CTR drop", baseSeverity: "medium", attention: true },
+  scaling_efficiency: { label: "Scaling efficiency", baseSeverity: "medium", attention: false },
+  strong_improvement: { label: "Strong improvement", baseSeverity: "info", attention: false },
+  low_volume: { label: "Low volume", baseSeverity: "low", attention: false },
+  stable: { label: "Stable", baseSeverity: "info", attention: false },
+};
+
+const SEVERITY_RANK: Record<Severity, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  info: 1,
+};
+
+/** Severity: signal class, escalated by magnitude and spend exposure. Code-only. */
+function classifySeverity(signal: Signal, absChangePct: number, spend: number): {
   severity: Severity;
   score: number;
 } {
-  const magnitude = Math.min(absChangePct / 50, 2); // 50% change = 1.0
-  const exposure = Math.min(spendInWindow / 3000, 2); // $3k in window = 1.0
-  const score = Number((magnitude * 0.65 + exposure * 0.35).toFixed(3));
-  const severity: Severity =
-    score >= 1.2 ? "critical" : score >= 0.85 ? "high" : score >= 0.5 ? "medium" : "low";
+  const base = SIGNAL_META[signal].baseSeverity;
+  const magnitude = Math.min(absChangePct / 50, 2);
+  const exposure = Math.min(spend / 3000, 2);
+  const score = Number((SEVERITY_RANK[base] + magnitude * 0.6 + exposure * 0.4).toFixed(3));
+  let severity = base;
+  if (SIGNAL_META[signal].attention) {
+    if (score >= SEVERITY_RANK[base] + 1.4 && base === "high") severity = "critical";
+    else if (score >= SEVERITY_RANK[base] + 1.4 && base === "medium") severity = "high";
+  }
   return { severity, score };
 }
 
-type Group = { id: string; name: string; rows: NormalizedDailyRow[] };
+/**
+ * Deterministic confidence: volume/sample sufficiency, consistency of the
+ * change across days, magnitude, and data completeness. Never AI-assigned.
+ */
+function classifyConfidence(input: {
+  cur: Totals;
+  prev: Totals;
+  windowDays: number;
+  absChangePct: number;
+  dayLevelConsistency: number; // 0..1 share of days moving in the signal's direction
+  signal: Signal;
+}): { confidence: Confidence; score: number; basis: string[] } {
+  const { cur, prev, windowDays, absChangePct, dayLevelConsistency, signal } = input;
+  const basis: string[] = [];
+  let score = 0;
 
-function groupBy(
-  rows: NormalizedDailyRow[],
-  idOf: (r: NormalizedDailyRow) => string,
-  nameOf: (r: NormalizedDailyRow) => string,
-): Group[] {
-  const map = new Map<string, Group>();
-  for (const r of rows) {
-    const id = idOf(r);
-    const existing = map.get(id);
-    if (existing) existing.rows.push(r);
-    else map.set(id, { id, name: nameOf(r), rows: [r] });
+  // 1. Volume / sample sufficiency
+  const volume =
+    cur.conversions >= 50 && cur.clicks >= 1000
+      ? 1
+      : cur.conversions >= 20 && cur.clicks >= 400
+        ? 0.65
+        : cur.conversions >= 5
+          ? 0.35
+          : 0.1;
+  score += volume;
+  basis.push(
+    `Volume: ${cur.conversions} conversions and ${cur.clicks.toLocaleString("en-US")} clicks in the current window (${
+      volume >= 1 ? "sufficient sample" : volume >= 0.65 ? "adequate sample" : "thin sample"
+    }).`,
+  );
+
+  // 2. Consistency of the change across individual days
+  score += dayLevelConsistency >= 0.85 ? 1 : dayLevelConsistency >= 0.6 ? 0.6 : 0.2;
+  basis.push(
+    `Consistency: ${Math.round(dayLevelConsistency * 100)}% of days in the current window moved in the same direction as the signal.`,
+  );
+
+  // 3. Magnitude relative to noise thresholds
+  score += absChangePct >= 30 ? 1 : absChangePct >= 15 ? 0.6 : absChangePct >= 5 ? 0.3 : 0.1;
+  basis.push(`Magnitude: primary metric moved ${absChangePct.toFixed(1)}% versus the prior window.`);
+
+  // 4. Data completeness
+  const completeness = (cur.days === windowDays ? 0.5 : 0) + (prev.days === windowDays ? 0.5 : 0);
+  score += completeness;
+  basis.push(
+    `Data completeness: ${cur.days}/${windowDays} complete days current, ${prev.days}/${windowDays} complete days prior.`,
+  );
+
+  if (signal === "low_volume") {
+    basis.push("Low-volume campaigns are capped at Low confidence by rule.");
+    return { confidence: "Low", score: Number(score.toFixed(2)), basis };
   }
-  return [...map.values()];
+
+  const confidence: Confidence = score >= 3.2 ? "High" : score >= 2.1 ? "Medium" : "Low";
+  return { confidence, score: Number(score.toFixed(2)), basis };
 }
 
-const sum = (rows: NormalizedDailyRow[]) => rows.reduce(add, EMPTY);
-
-function dailySeries(rows: NormalizedDailyRow[]): { date: string; totals: Totals }[] {
+/** Share of current-window days where the primary metric sits on the signal's side of the prior mean. */
+function consistency(
+  rows: NormalizedDailyRow[],
+  currentDates: string[],
+  previousMean: number,
+  metricOf: (t: Totals) => number,
+  expect: "higher" | "lower",
+): number {
   const byDate = new Map<string, Totals>();
   for (const r of rows) byDate.set(r.date, add(byDate.get(r.date) ?? EMPTY, r));
-  return [...byDate.entries()]
-    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([date, totals]) => ({ date, totals }));
+  const values = currentDates
+    .map((d) => byDate.get(d))
+    .filter((t): t is Totals => Boolean(t))
+    .map((t) => metricOf(t))
+    .filter((v) => Number.isFinite(v));
+  if (values.length === 0 || !Number.isFinite(previousMean)) return 0;
+  const matching = values.filter((v) => (expect === "higher" ? v > previousMean : v < previousMean));
+  return matching.length / values.length;
 }
 
 export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): AnalysisResult {
-  const dates = [...new Set(rows.map((r) => r.date))].sort();
-  const currentDates = dates.slice(-windowDays);
-  const previousDates = dates.slice(-windowDays * 2, -windowDays);
-  const currentSet = new Set(currentDates);
-  const previousSet = new Set(previousDates);
+  const { current, previous } = selectWindows(rows, windowDays);
+  const curSet = new Set(current);
+  const prevSet = new Set(previous);
+  const currentWindow = { start: current[0] ?? "", end: current[current.length - 1] ?? "" };
+  const previousWindow = { start: previous[0] ?? "", end: previous[previous.length - 1] ?? "" };
+  const windowLabel = `${currentWindow.start} → ${currentWindow.end}`;
+  const prevLabel = `${previousWindow.start} → ${previousWindow.end}`;
 
-  const currentWindow = `${currentDates[0]} → ${currentDates[currentDates.length - 1]}`;
-  const previousWindow = `${previousDates[0]} → ${previousDates[previousDates.length - 1]}`;
+  const campaigns = new Map<string, { name: string; rows: NormalizedDailyRow[] }>();
+  for (const r of rows) {
+    const entry = campaigns.get(r.campaignId);
+    if (entry) entry.rows.push(r);
+    else campaigns.set(r.campaignId, { name: r.campaignName, rows: [r] });
+  }
 
-  const findings: Finding[] = [];
+  const findings: CampaignFinding[] = [];
+  let totalSpend = 0;
 
-  const push = (
-    base: Omit<Finding, "severity" | "severityScore" | "evidence"> & {
-      evidence: Omit<FindingEvidence, "currentWindow" | "previousWindow">;
-    },
-  ) => {
-    const { severity, score } = classifySeverity(
-      Math.abs(base.evidence.changePct),
-      base.evidence.spendInWindow,
-    );
+  for (const [campaignId, campaign] of campaigns) {
+    const cur = campaign.rows.filter((r) => curSet.has(r.date)).reduce(add, EMPTY);
+    const prev = campaign.rows.filter((r) => prevSet.has(r.date)).reduce(add, EMPTY);
+    totalSpend += cur.spend;
+
+    const dCpa = change(cpa(cur), cpa(prev));
+    const dCtr = change(ctr(cur), ctr(prev));
+    const dCvr = change(cvr(cur), cvr(prev));
+    const dCpm = change(cpm(cur), cpm(prev));
+    const dSpend = change(cur.spend, prev.spend);
+    const dConv = change(cur.conversions, prev.conversions);
+    const dClicks = change(cur.clicks, prev.clicks);
+    const dRoas = change(roas(cur), roas(prev));
+    const dFreq = change(frequency(cur), frequency(prev));
+
+    // ---- Signal classification cascade (deterministic, order = priority) ----
+    let signal: Signal;
+    let primaryMetric = "CPA";
+    let primaryChange = 0;
+    let consistencyValue = 0;
+    let headline: string;
+    let whatChanged: string;
+    let whyItMatters: string;
+
+    const lowVolume = cur.conversions < 10 || cur.spend < 250;
+    const clicksHeld = dClicks !== null && dClicks > -20;
+    const conversionsCollapsed = dConv !== null && dConv <= -50;
+
+    if (lowVolume) {
+      signal = "low_volume";
+      primaryMetric = "Conversions";
+      primaryChange = dConv ?? 0;
+      consistencyValue = 0.5;
+      headline = "Not enough volume to judge performance";
+      whatChanged = `Only ${cur.conversions} conversions on ${money(cur.spend)} of spend in the current window (prior window: ${prev.conversions} conversions, ${money(prev.spend)}).`;
+      whyItMatters =
+        "Sample size is below the engine's reliability threshold, so metric movements here are statistically indistinguishable from noise.";
+    } else if (clicksHeld && conversionsCollapsed) {
+      signal = "tracking_issue";
+      primaryMetric = "CVR";
+      primaryChange = dCvr ?? 0;
+      consistencyValue = consistency(campaign.rows, current, cvr(prev), cvr, "lower");
+      headline = "Conversions collapsed while clicks held steady";
+      whatChanged = `Clicks moved ${dClicks?.toFixed(1)}% (${num(prev.clicks)} → ${num(cur.clicks)}) but conversions fell ${dConv?.toFixed(1)}% (${prev.conversions} → ${cur.conversions}), taking CVR from ${pctStr(cvr(prev))} to ${pctStr(cvr(cur))}.`;
+      whyItMatters =
+        "Traffic volume is unchanged while recorded conversions are not, which matches a measurement/pixel break more closely than a demand change. Spend continues either way.";
+    } else if (dCpa !== null && dCpa >= 20) {
+      signal = "cpa_deterioration";
+      primaryMetric = "CPA";
+      primaryChange = dCpa;
+      consistencyValue = consistency(campaign.rows, current, cpa(prev), cpa, "higher");
+      headline = `Cost per result rose ${dCpa.toFixed(1)}%`;
+      whatChanged = `CPA moved from ${money(cpa(prev))} to ${money(cpa(cur))} (+${dCpa.toFixed(1)}%), with CPC ${money(cpc(prev))} → ${money(cpc(cur))} and CVR ${pctStr(cvr(prev))} → ${pctStr(cvr(cur))}.`;
+      whyItMatters = `${money(cur.spend)} of spend in the current window is buying results at a materially higher cost, compressing contribution margin.`;
+    } else if (dCpm !== null && dCpm >= 25) {
+      signal = "cpm_spike";
+      primaryMetric = "CPM";
+      primaryChange = dCpm;
+      consistencyValue = consistency(campaign.rows, current, cpm(prev), cpm, "higher");
+      headline = `CPM spiked ${dCpm.toFixed(1)}%`;
+      whatChanged = `CPM rose from ${money(cpm(prev))} to ${money(cpm(cur))} (+${dCpm.toFixed(1)}%) while CTR moved ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}.`;
+      whyItMatters =
+        "Media is simply more expensive to buy: at flat CTR the same budget delivers fewer clicks and fewer results.";
+    } else if (dCtr !== null && dCtr <= -12 && dFreq !== null && dFreq >= 15) {
+      signal = "creative_fatigue";
+      primaryMetric = "CTR";
+      primaryChange = dCtr;
+      consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
+      headline = "CTR falling while frequency climbs";
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%).`;
+      whyItMatters =
+        "Falling response with rising frequency is the coded signature of audience saturation — the same users are seeing the creative more often and engaging less.";
+    } else if (dCtr !== null && dCtr <= -12) {
+      signal = "ctr_drop";
+      primaryMetric = "CTR";
+      primaryChange = dCtr;
+      consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
+      headline = `CTR dropped ${Math.abs(dCtr).toFixed(1)}%`;
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%); frequency moved ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, so saturation is not confirmed.`;
+      whyItMatters =
+        "Weaker click-through raises effective CPC and reduces the volume this campaign can deliver at the same budget.";
+    } else if (dSpend !== null && dSpend >= 25 && dCpa !== null && dCpa <= 10) {
+      signal = "scaling_efficiency";
+      primaryMetric = "Spend";
+      primaryChange = dSpend;
+      consistencyValue = consistency(campaign.rows, current, prev.spend / Math.max(1, prev.days), (t) => t.spend, "higher");
+      headline = `Spend scaled ${dSpend.toFixed(1)}% with efficiency held`;
+      whatChanged = `Spend rose from ${money(prev.spend)} to ${money(cur.spend)} (+${dSpend.toFixed(1)}%) while CPA moved only ${dCpa.toFixed(1)}% (${money(cpa(prev))} → ${money(cpa(cur))}).`;
+      whyItMatters =
+        "Additional budget is being absorbed without an efficiency penalty, which is the coded profile of remaining headroom.";
+    } else if ((dCpa !== null && dCpa <= -15) || (dRoas !== null && dRoas >= 20)) {
+      signal = "strong_improvement";
+      primaryMetric = dCpa !== null && dCpa <= -15 ? "CPA" : "ROAS";
+      primaryChange = dCpa !== null && dCpa <= -15 ? dCpa : (dRoas ?? 0);
+      consistencyValue = consistency(campaign.rows, current, cpa(prev), cpa, "lower");
+      headline = "Efficiency improved materially";
+      whatChanged = `CPA moved ${money(cpa(prev))} → ${money(cpa(cur))} (${dCpa === null ? "n/a" : `${dCpa.toFixed(1)}%`}) and ROAS ${ratio(roas(prev))} → ${ratio(roas(cur))} (${dRoas === null ? "n/a" : `${dRoas.toFixed(1)}%`}).`;
+      whyItMatters =
+        "Results are getting cheaper at current budget, so this campaign is the strongest candidate for additional spend.";
+    } else {
+      signal = "stable";
+      primaryMetric = "CPA";
+      primaryChange = dCpa ?? 0;
+      consistencyValue = 0.5;
+      headline = "No material change detected";
+      whatChanged = `All monitored metrics stayed inside threshold: CPA ${dCpa === null ? "n/a" : `${dCpa.toFixed(1)}%`}, CTR ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}, CPM ${dCpm === null ? "n/a" : `${dCpm.toFixed(1)}%`}, spend ${dSpend === null ? "n/a" : `${dSpend.toFixed(1)}%`}.`;
+      whyItMatters = "Nothing crossed a detection threshold, so no action is required for this campaign.";
+    }
+
+    const { severity, score } = classifySeverity(signal, Math.abs(primaryChange), cur.spend);
+    const { confidence, score: confidenceScore, basis } = classifyConfidence({
+      cur,
+      prev,
+      windowDays,
+      absChangePct: Math.abs(primaryChange),
+      dayLevelConsistency: consistencyValue,
+      signal,
+    });
+
+    const metrics: MetricComparison[] = [
+      {
+        label: "Spend",
+        current: money(cur.spend),
+        previous: money(prev.spend),
+        changePct: dSpend,
+        direction: dir(dSpend),
+        primary: primaryMetric === "Spend",
+      },
+      {
+        label: "Cost per result (CPA)",
+        current: money(cpa(cur)),
+        previous: money(cpa(prev)),
+        changePct: dCpa,
+        direction: dir(dCpa),
+        primary: primaryMetric === "CPA",
+      },
+      {
+        label: "CTR",
+        current: pctStr(ctr(cur)),
+        previous: pctStr(ctr(prev)),
+        changePct: dCtr,
+        direction: dir(dCtr),
+        primary: primaryMetric === "CTR",
+      },
+      {
+        label: "CVR",
+        current: pctStr(cvr(cur)),
+        previous: pctStr(cvr(prev)),
+        changePct: dCvr,
+        direction: dir(dCvr),
+        primary: primaryMetric === "CVR",
+      },
+      {
+        label: "CPM",
+        current: money(cpm(cur)),
+        previous: money(cpm(prev)),
+        changePct: dCpm,
+        direction: dir(dCpm),
+        primary: primaryMetric === "CPM",
+      },
+      {
+        label: "CPC",
+        current: money(cpc(cur)),
+        previous: money(cpc(prev)),
+        changePct: change(cpc(cur), cpc(prev)),
+        direction: dir(change(cpc(cur), cpc(prev))),
+      },
+      {
+        label: "Conversions",
+        current: num(cur.conversions),
+        previous: num(prev.conversions),
+        changePct: dConv,
+        direction: dir(dConv),
+        primary: primaryMetric === "Conversions",
+      },
+      {
+        label: "Clicks",
+        current: num(cur.clicks),
+        previous: num(prev.clicks),
+        changePct: dClicks,
+        direction: dir(dClicks),
+      },
+      {
+        label: "Impressions",
+        current: num(cur.impressions),
+        previous: num(prev.impressions),
+        changePct: change(cur.impressions, prev.impressions),
+        direction: dir(change(cur.impressions, prev.impressions)),
+      },
+      {
+        label: "Frequency",
+        current: num(frequency(cur)),
+        previous: num(frequency(prev)),
+        changePct: dFreq,
+        direction: dir(dFreq),
+      },
+      {
+        label: "ROAS",
+        current: ratio(roas(cur)),
+        previous: ratio(roas(prev)),
+        changePct: dRoas,
+        direction: dir(dRoas),
+      },
+    ];
+
     findings.push({
-      ...base,
+      campaignId,
+      campaignName: campaign.name,
+      signal,
+      statusLabel: SIGNAL_META[signal].label,
       severity,
       severityScore: score,
-      evidence: { ...base.evidence, currentWindow, previousWindow },
+      needsAttention: SIGNAL_META[signal].attention,
+      headline,
+      whatChanged,
+      whyItMatters,
+      confidence,
+      confidenceScore,
+      confidenceBasis: basis,
+      evidence: {
+        currentWindow: windowLabel,
+        previousWindow: prevLabel,
+        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20%, CPM >= +25%, CTR <= -12% (creative fatigue when frequency also >= +15%), tracking issue when clicks > -20% while conversions <= -50%, scaling efficiency when spend >= +25% with CPA <= +10%, strong improvement when CPA <= -15% or ROAS >= +20%, low volume below 10 conversions or $250 spend.`,
+        metrics,
+      },
+      snapshot: {
+        spend: Number(cur.spend.toFixed(2)),
+        impressions: cur.impressions,
+        clicks: cur.clicks,
+        conversions: cur.conversions,
+        ctr: Number.isFinite(ctr(cur)) ? Number((ctr(cur) * 100).toFixed(2)) : 0,
+        cpa: Number.isFinite(cpa(cur)) ? Number(cpa(cur).toFixed(2)) : 0,
+        cpm: Number.isFinite(cpm(cur)) ? Number(cpm(cur).toFixed(2)) : 0,
+        roas: Number.isFinite(roas(cur)) ? Number(roas(cur).toFixed(2)) : 0,
+        frequency: Number.isFinite(frequency(cur)) ? Number(frequency(cur).toFixed(2)) : 0,
+      },
     });
-  };
-
-  const levels: {
-    level: Finding["entityLevel"];
-    groups: Group[];
-    minSpend: number;
-  }[] = [
-    {
-      level: "campaign",
-      groups: groupBy(
-        rows,
-        (r) => r.campaignId,
-        (r) => r.campaignName,
-      ),
-      minSpend: 500,
-    },
-    {
-      level: "adset",
-      groups: groupBy(
-        rows,
-        (r) => r.adsetId,
-        (r) => r.adsetName,
-      ),
-      minSpend: 300,
-    },
-    {
-      level: "ad",
-      groups: groupBy(
-        rows,
-        (r) => r.adId,
-        (r) => r.adName,
-      ),
-      minSpend: 300,
-    },
-  ];
-
-  for (const { level, groups, minSpend } of levels) {
-    for (const group of groups) {
-      const cur = sum(group.rows.filter((r) => currentSet.has(r.date)));
-      const prev = sum(group.rows.filter((r) => previousSet.has(r.date)));
-      if (cur.spend < minSpend) continue;
-
-      const supportingBase = [
-        { label: "Spend (current window)", value: money(cur.spend) },
-        { label: "Conversions", value: `${num(cur.conversions)} vs ${num(prev.conversions)}` },
-        { label: "Clicks", value: `${num(cur.clicks)} vs ${num(prev.clicks)}` },
-      ];
-
-      // --- Rule 1: CPA change (threshold crossing, WoW) --------------------
-      const cpaChange = pctChange(cpa(cur), cpa(prev));
-      if (Number.isFinite(cpaChange) && cpaChange >= 20 && cur.conversions >= 10) {
-        push({
-          code: "cpa_increase",
-          entityLevel: level,
-          entityId: group.id,
-          entityName: group.name,
-          metric: "CPA",
-          title: `CPA up ${cpaChange.toFixed(1)}% on ${group.name}`,
-          whatChanged: `CPA moved from ${money(cpa(prev))} to ${money(cpa(cur))} week over week (+${cpaChange.toFixed(1)}%).`,
-          whyItMatters: `${money(cur.spend)} of spend in the last ${windowDays} days is buying conversions at a materially higher cost, which compresses contribution margin.`,
-          evidence: {
-            metric: "CPA",
-            current: Number(cpa(cur).toFixed(2)),
-            previous: Number(cpa(prev).toFixed(2)),
-            changePct: Number(cpaChange.toFixed(2)),
-            unit: "currency",
-            spendInWindow: Number(cur.spend.toFixed(2)),
-            method: `Aggregated last ${windowDays} days vs prior ${windowDays} days; threshold +20% CPA with >= 10 conversions.`,
-            supporting: [
-              ...supportingBase,
-              { label: "CPC", value: `${money(cur.spend / cur.clicks)} vs ${money(prev.spend / prev.clicks)}` },
-              { label: "CVR", value: `${pct(cvr(cur))} vs ${pct(cvr(prev))}` },
-            ],
-          },
-        });
-      }
-
-      // --- Rule 2: CTR drop, with creative-fatigue confirmation -----------
-      const ctrChange = pctChange(ctr(cur), ctr(prev));
-      const freqChange = pctChange(frequency(cur), frequency(prev));
-      if (Number.isFinite(ctrChange) && ctrChange <= -12) {
-        const fatigue = Number.isFinite(freqChange) && freqChange >= 15;
-        push({
-          code: fatigue ? "creative_fatigue" : "ctr_drop",
-          entityLevel: level,
-          entityId: group.id,
-          entityName: group.name,
-          metric: "CTR",
-          title: fatigue
-            ? `Creative fatigue pattern on ${group.name}`
-            : `CTR down ${Math.abs(ctrChange).toFixed(1)}% on ${group.name}`,
-          whatChanged: `CTR fell from ${pct(ctr(prev))} to ${pct(ctr(cur))} (${ctrChange.toFixed(1)}%)${
-            fatigue
-              ? `, while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${freqChange.toFixed(1)}%)`
-              : ""
-          }.`,
-          whyItMatters: fatigue
-            ? `Falling CTR alongside rising frequency is the deterministic signature of audience saturation: the same users are seeing the creative more often and responding less.`
-            : `Lower CTR raises CPC and reduces the volume this entity can deliver at the same budget.`,
-          evidence: {
-            metric: "CTR",
-            current: Number((ctr(cur) * 100).toFixed(3)),
-            previous: Number((ctr(prev) * 100).toFixed(3)),
-            changePct: Number(ctrChange.toFixed(2)),
-            unit: "percent",
-            spendInWindow: Number(cur.spend.toFixed(2)),
-            method: `CTR WoW threshold -12%; fatigue confirmed when frequency (impressions/reach) rises >= 15% in the same window.`,
-            supporting: [
-              ...supportingBase,
-              { label: "Frequency", value: `${num(frequency(cur))} vs ${num(frequency(prev))}` },
-              { label: "Impressions", value: `${num(cur.impressions)} vs ${num(prev.impressions)}` },
-            ],
-          },
-        });
-      }
-
-      // --- Rule 3: CVR break ---------------------------------------------
-      const cvrChange = pctChange(cvr(cur), cvr(prev));
-      if (Number.isFinite(cvrChange) && cvrChange <= -25 && cur.clicks >= 200) {
-        push({
-          code: "cvr_break",
-          entityLevel: level,
-          entityId: group.id,
-          entityName: group.name,
-          metric: "CVR",
-          title: `Conversion rate broke ${cvrChange.toFixed(1)}% on ${group.name}`,
-          whatChanged: `Click-to-conversion rate fell from ${pct(cvr(prev))} to ${pct(cvr(cur))} while clicks stayed at ${num(cur.clicks)} (vs ${num(prev.clicks)}).`,
-          whyItMatters: `Traffic volume is intact but it stopped converting — spend continues while conversions do not, so this is the fastest way to waste budget.`,
-          evidence: {
-            metric: "CVR",
-            current: Number((cvr(cur) * 100).toFixed(3)),
-            previous: Number((cvr(prev) * 100).toFixed(3)),
-            changePct: Number(cvrChange.toFixed(2)),
-            unit: "percent",
-            spendInWindow: Number(cur.spend.toFixed(2)),
-            method: `CVR WoW threshold -25% with >= 200 clicks in the current window.`,
-            supporting: [
-              ...supportingBase,
-              { label: "ROAS", value: `${num(roas(cur))}x vs ${num(roas(prev))}x` },
-            ],
-          },
-        });
-      }
-
-      // --- Rule 4: ROAS decline ------------------------------------------
-      const roasChange = pctChange(roas(cur), roas(prev));
-      if (Number.isFinite(roasChange) && roasChange <= -20 && level === "campaign") {
-        push({
-          code: "roas_decline",
-          entityLevel: level,
-          entityId: group.id,
-          entityName: group.name,
-          metric: "ROAS",
-          title: `ROAS down ${Math.abs(roasChange).toFixed(1)}% on ${group.name}`,
-          whatChanged: `ROAS moved from ${num(roas(prev))}x to ${num(roas(cur))}x (${roasChange.toFixed(1)}%) on ${money(cur.spend)} of spend.`,
-          whyItMatters: `Revenue efficiency at the campaign level dropped, so the same budget is returning less revenue.`,
-          evidence: {
-            metric: "ROAS",
-            current: Number(roas(cur).toFixed(3)),
-            previous: Number(roas(prev).toFixed(3)),
-            changePct: Number(roasChange.toFixed(2)),
-            unit: "ratio",
-            spendInWindow: Number(cur.spend.toFixed(2)),
-            method: `Campaign-level ROAS (revenue/spend) WoW threshold -20%.`,
-            supporting: [
-              ...supportingBase,
-              { label: "Revenue", value: `${money(cur.revenue)} vs ${money(prev.revenue)}` },
-            ],
-          },
-        });
-      }
-
-      // --- Rule 5: budget pacing ------------------------------------------
-      if (level === "adset" && cur.budget > 0) {
-        const pacing = cur.spend / cur.budget;
-        if (pacing < 0.75) {
-          const changePct = (pacing - 1) * 100;
-          push({
-            code: "budget_underpacing",
-            entityLevel: level,
-            entityId: group.id,
-            entityName: group.name,
-            metric: "Budget pacing",
-            title: `${group.name} is pacing at ${(pacing * 100).toFixed(0)}% of budget`,
-            whatChanged: `Delivered ${money(cur.spend)} against ${money(cur.budget)} of available budget over ${cur.days} days (${(pacing * 100).toFixed(0)}% pacing).`,
-            whyItMatters: `Unspent budget on a converting ad group is lost volume: planned reach is not being bought at all.`,
-            evidence: {
-              metric: "Pacing",
-              current: Number((pacing * 100).toFixed(2)),
-              previous: 100,
-              changePct: Number(changePct.toFixed(2)),
-              unit: "percent",
-              spendInWindow: Number(cur.spend.toFixed(2)),
-              method: `Pacing = window spend / (daily budget summed over window); threshold < 75%.`,
-              supporting: [
-                { label: "Available budget", value: money(cur.budget) },
-                { label: "Unspent", value: money(cur.budget - cur.spend) },
-                { label: "CPA", value: money(cpa(cur)) },
-              ],
-            },
-          });
-        }
-      }
-
-      // --- Rule 6: daily CPA anomaly (z-score trend break) ----------------
-      if (level === "ad") {
-        const series = dailySeries(group.rows).filter((d) => d.totals.conversions > 0);
-        if (series.length >= 14) {
-          const cpas = series.map((d) => d.totals.spend / d.totals.conversions);
-          const baseline = cpas.slice(0, -3);
-          const recent = cpas.slice(-3);
-          const mean = baseline.reduce((a, b) => a + b, 0) / baseline.length;
-          const sd = Math.sqrt(
-            baseline.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, baseline.length - 1),
-          );
-          const recentMean = recent.reduce((a, b) => a + b, 0) / recent.length;
-          const z = sd > 0 ? (recentMean - mean) / sd : 0;
-          if (z >= 2) {
-            const changePct = pctChange(recentMean, mean);
-            push({
-              code: "cpa_anomaly",
-              entityLevel: level,
-              entityId: group.id,
-              entityName: group.name,
-              metric: "Daily CPA (z-score)",
-              title: `Statistical CPA anomaly on ${group.name} (z = ${z.toFixed(2)})`,
-              whatChanged: `The last 3 days average ${money(recentMean)} CPA against a ${baseline.length}-day baseline of ${money(mean)} (σ = ${money(sd)}), i.e. ${z.toFixed(2)} standard deviations above normal.`,
-              whyItMatters: `This is outside normal daily variance, so it is a real break rather than noise and warrants intervention now.`,
-              evidence: {
-                metric: "Daily CPA",
-                current: Number(recentMean.toFixed(2)),
-                previous: Number(mean.toFixed(2)),
-                changePct: Number((Number.isFinite(changePct) ? changePct : 0).toFixed(2)),
-                unit: "currency",
-                spendInWindow: Number(cur.spend.toFixed(2)),
-                method: `Z-score of trailing 3-day mean daily CPA vs prior-day baseline mean/σ; threshold z >= 2.`,
-                supporting: [
-                  { label: "Baseline σ", value: money(sd) },
-                  { label: "Baseline days", value: String(baseline.length) },
-                  { label: "Z-score", value: z.toFixed(2) },
-                ],
-              },
-            });
-          }
-        }
-      }
-    }
   }
 
   findings.sort((a, b) => b.severityScore - a.severityScore);
 
   return {
-    windowStart: dates[0] ?? "",
-    windowEnd: dates[dates.length - 1] ?? "",
-    totalSpend: Number(sum(rows).spend.toFixed(2)),
     currentWindow,
     previousWindow,
+    totalSpend: Number(totalSpend.toFixed(2)),
+    generatedAt: new Date().toISOString(),
     findings,
   };
 }
