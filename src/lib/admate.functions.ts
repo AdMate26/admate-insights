@@ -18,8 +18,18 @@ export type AdMateAnalysis = AnalysisResult & {
   aiError: string | null;
 };
 
-export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdMateAnalysis> => {
+/**
+ * The demo pipeline is deterministic but the AI narrative layer costs several
+ * seconds per run, so the finished analysis is cached in memory for a short
+ * TTL. Without this, every consumer (page load, briefing preview, Telegram
+ * send) re-ran the whole AI layer and appeared to hang.
+ */
+const ANALYSIS_TTL_MS = 10 * 60 * 1000;
+let analysisCache: { at: number; value: AdMateAnalysis } | null = null;
+let analysisInFlight: Promise<AdMateAnalysis> | null = null;
+
+async function computeAnalysis(): Promise<AdMateAnalysis> {
+  {
     const provider = new DemoTikTokDataProvider();
 
     // 1 + 2. Provider -> normalization layer -> single internal schema.
