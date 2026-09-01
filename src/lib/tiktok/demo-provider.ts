@@ -8,15 +8,14 @@ import type {
 /**
  * DemoTikTokDataProvider
  *
- * Generates realistic synthetic TikTok Ads data (campaign / ad group / ad,
- * daily metrics) over a multi-week period, using TikTok-API-like raw field
- * names so the normalization layer has real mapping work to do.
+ * Generates realistic synthetic TikTok Ads data (campaign / ad group / ad, daily
+ * metrics) using TikTok-API-like raw field names, so the normalization layer has
+ * real mapping work and can later be swapped for a LiveTikTokDataProvider.
  *
- * Intentional patterns baked in for the analysis engine to detect:
- *  - CPA spike on the retargeting campaign in the most recent week
- *  - CTR drop + frequency climb (creative fatigue) on one ad
- *  - Budget pacing issue (chronic underspend) on the prospecting campaign
- *  - Conversion-rate/ROAS break on one ad group
+ * One campaign per case, so the deterministic engine has a representative
+ * example of every signal it can classify:
+ *   cpa_deterioration, ctr_drop, creative_fatigue, scaling_efficiency,
+ *   strong_improvement, stable, low_volume, tracking_issue, cpm_spike
  */
 
 type TikTokRawRow = {
@@ -32,18 +31,27 @@ type TikTokRawRow = {
     impressions: string;
     clicks: string;
     conversions: string;
-    total_complete_payment_rate: string; // revenue, as TikTok returns strings
+    total_complete_payment_rate: string; // revenue (TikTok returns strings)
     reach: string;
     budget: string;
   };
 };
 
-type AdSpec = {
+export type DemoCase =
+  | "cpa_deterioration"
+  | "ctr_drop"
+  | "creative_fatigue"
+  | "scaling_efficiency"
+  | "strong_improvement"
+  | "stable"
+  | "low_volume"
+  | "tracking_issue"
+  | "cpm_spike";
+
+type CampaignSpec = {
   campaignId: string;
   campaignName: string;
-  adsetId: string;
   adsetName: string;
-  adId: string;
   adName: string;
   baseImpressions: number;
   baseCtr: number;
@@ -51,88 +59,130 @@ type AdSpec = {
   baseCvr: number;
   aov: number;
   dailyBudget: number;
-  pattern: "stable" | "cpa_spike" | "creative_fatigue" | "underspend" | "cvr_break";
+  demoCase: DemoCase;
 };
 
-const ADS: AdSpec[] = [
+const CAMPAIGNS: CampaignSpec[] = [
   {
     campaignId: "c_1001",
-    campaignName: "Prospecting | Broad | US",
-    adsetId: "ag_2001",
-    adsetName: "Broad 18-34",
-    adId: "ad_3001",
-    adName: "UGC Hook — Unboxing",
-    baseImpressions: 210_000,
-    baseCtr: 0.0125,
-    baseCpc: 0.42,
-    baseCvr: 0.031,
-    aov: 62,
-    dailyBudget: 900,
-    pattern: "underspend",
-  },
-  {
-    campaignId: "c_1001",
-    campaignName: "Prospecting | Broad | US",
-    adsetId: "ag_2002",
-    adsetName: "Interest — Fitness",
-    adId: "ad_3002",
-    adName: "Studio Demo — 15s",
-    baseImpressions: 160_000,
-    baseCtr: 0.0142,
-    baseCpc: 0.39,
-    baseCvr: 0.028,
-    aov: 58,
-    dailyBudget: 700,
-    pattern: "creative_fatigue",
-  },
-  {
-    campaignId: "c_1002",
     campaignName: "Retargeting | Site Visitors 14d",
-    adsetId: "ag_2003",
     adsetName: "ATC 14d",
-    adId: "ad_3003",
     adName: "Offer — Free Shipping",
-    baseImpressions: 74_000,
+    baseImpressions: 96_000,
     baseCtr: 0.0231,
     baseCpc: 0.55,
     baseCvr: 0.061,
     aov: 71,
-    dailyBudget: 500,
-    pattern: "cpa_spike",
+    dailyBudget: 620,
+    demoCase: "cpa_deterioration",
   },
   {
     campaignId: "c_1002",
-    campaignName: "Retargeting | Site Visitors 14d",
-    adsetId: "ag_2004",
-    adsetName: "Viewers 7d",
-    adId: "ad_3004",
-    adName: "Testimonial — Carousel",
-    baseImpressions: 61_000,
-    baseCtr: 0.0198,
-    baseCpc: 0.51,
-    baseCvr: 0.049,
-    aov: 68,
-    dailyBudget: 400,
-    pattern: "cvr_break",
+    campaignName: "Prospecting | Interest — Fitness",
+    adsetName: "Interest 18-34",
+    adName: "Studio Demo — 15s",
+    baseImpressions: 180_000,
+    baseCtr: 0.0142,
+    baseCpc: 0.39,
+    baseCvr: 0.028,
+    aov: 58,
+    dailyBudget: 760,
+    demoCase: "ctr_drop",
   },
   {
     campaignId: "c_1003",
+    campaignName: "Prospecting | Broad UGC",
+    adsetName: "Broad 18-44",
+    adName: "UGC Hook — Unboxing",
+    baseImpressions: 210_000,
+    baseCtr: 0.0155,
+    baseCpc: 0.42,
+    baseCvr: 0.031,
+    aov: 62,
+    dailyBudget: 900,
+    demoCase: "creative_fatigue",
+  },
+  {
+    campaignId: "c_1004",
+    campaignName: "Scaling | Lookalike 3%",
+    adsetName: "LAL 3% purchasers",
+    adName: "Hero Ad — Social Proof",
+    baseImpressions: 150_000,
+    baseCtr: 0.0168,
+    baseCpc: 0.44,
+    baseCvr: 0.036,
+    aov: 66,
+    dailyBudget: 1400,
+    demoCase: "scaling_efficiency",
+  },
+  {
+    campaignId: "c_1005",
     campaignName: "Always-On | Catalog Sales",
-    adsetId: "ag_2005",
     adsetName: "Catalog — Bestsellers",
-    adId: "ad_3005",
     adName: "Dynamic Product Ad",
     baseImpressions: 128_000,
     baseCtr: 0.0161,
     baseCpc: 0.46,
-    baseCvr: 0.038,
+    baseCvr: 0.034,
     aov: 64,
-    dailyBudget: 650,
-    pattern: "stable",
+    dailyBudget: 700,
+    demoCase: "strong_improvement",
+  },
+  {
+    campaignId: "c_1006",
+    campaignName: "Evergreen | Brand Search Defence",
+    adsetName: "Brand keywords",
+    adName: "Brand Explainer",
+    baseImpressions: 88_000,
+    baseCtr: 0.0189,
+    baseCpc: 0.37,
+    baseCvr: 0.045,
+    aov: 60,
+    dailyBudget: 480,
+    demoCase: "stable",
+  },
+  {
+    campaignId: "c_1007",
+    campaignName: "Test | Spark Ads — Creator B",
+    adsetName: "Creator test",
+    adName: "Spark Ad — Creator B",
+    baseImpressions: 9_000,
+    baseCtr: 0.0176,
+    baseCpc: 0.48,
+    baseCvr: 0.029,
+    aov: 59,
+    dailyBudget: 90,
+    demoCase: "low_volume",
+  },
+  {
+    campaignId: "c_1008",
+    campaignName: "Conversions | Checkout Push",
+    adsetName: "Cart abandoners",
+    adName: "Testimonial — Carousel",
+    baseImpressions: 74_000,
+    baseCtr: 0.0198,
+    baseCpc: 0.51,
+    baseCvr: 0.052,
+    aov: 68,
+    dailyBudget: 540,
+    demoCase: "tracking_issue",
+  },
+  {
+    campaignId: "c_1009",
+    campaignName: "Reach | Seasonal Launch",
+    adsetName: "Broad seasonal",
+    adName: "Launch Teaser — 9s",
+    baseImpressions: 240_000,
+    baseCtr: 0.0134,
+    baseCpc: 0.4,
+    baseCvr: 0.026,
+    aov: 61,
+    dailyBudget: 820,
+    demoCase: "cpm_spike",
   },
 ];
 
-/** Deterministic pseudo-random so runs are reproducible per day+ad. */
+/** Deterministic pseudo-random so the same day+campaign always yields the same row. */
 function seeded(seed: string): number {
   let h = 2166136261;
   for (let i = 0; i < seed.length; i++) {
@@ -154,6 +204,7 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
   readonly id = "demo";
   readonly label = "Demo TikTok Ads (synthetic)";
 
+  /** Returns `days` complete days, ending with yesterday (never today). */
   async fetchDailyPerformance({ days }: ProviderFetchParams): Promise<TikTokRawRow[]> {
     const rows: TikTokRawRow[] = [];
     const end = new Date();
@@ -164,70 +215,99 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
       const day = new Date(end);
       day.setUTCDate(end.getUTCDate() - offset);
       const date = isoDate(day);
-      // daysAgo: 0 = most recent day
-      const daysAgo = offset;
       const dow = day.getUTCDay();
-      const weekend = dow === 0 || dow === 6 ? 0.88 : 1;
-
-      for (const ad of ADS) {
-        rows.push(this.buildRow(ad, date, daysAgo, weekend));
+      const weekend = dow === 0 || dow === 6 ? 0.9 : 1;
+      for (const campaign of CAMPAIGNS) {
+        rows.push(this.buildRow(campaign, date, offset, weekend));
       }
     }
     return rows;
   }
 
-  private buildRow(ad: AdSpec, date: string, daysAgo: number, weekend: number): TikTokRawRow {
-    const key = `${ad.adId}:${date}`;
-    let impressions = ad.baseImpressions * weekend * jitter(`i${key}`, 0.12);
-    let ctr = ad.baseCtr * jitter(`t${key}`, 0.08);
-    let cpc = ad.baseCpc * jitter(`c${key}`, 0.07);
-    let cvr = ad.baseCvr * jitter(`v${key}`, 0.1);
-    let reachRatio = 0.72;
-    let spendCapRatio = 1;
+  /** `daysAgo` = 0 is the most recent complete day. 0-6 = current week, 7-13 = prior week. */
+  private buildRow(
+    spec: CampaignSpec,
+    date: string,
+    daysAgo: number,
+    weekend: number,
+  ): TikTokRawRow {
+    const key = `${spec.campaignId}:${date}`;
+    const recent = daysAgo <= 6;
+    let impressions = spec.baseImpressions * weekend * jitter(`i${key}`, 0.09);
+    let ctr = spec.baseCtr * jitter(`t${key}`, 0.06);
+    let cpc = spec.baseCpc * jitter(`c${key}`, 0.05);
+    let cvr = spec.baseCvr * jitter(`v${key}`, 0.07);
+    let reachRatio = 1 / 1.35;
+    let cpmMultiplier = 1;
 
-    // --- baked-in patterns -------------------------------------------------
-    if (ad.pattern === "cpa_spike" && daysAgo <= 4) {
-      // auction pressure: CPC up hard, CVR slightly down => CPA spike
-      cpc *= 1.62;
-      cvr *= 0.82;
-      impressions *= 1.05;
-    }
-    if (ad.pattern === "creative_fatigue") {
-      // gradual CTR decay + rising frequency over the last 10 days
-      const decay = daysAgo <= 10 ? 1 - (10 - daysAgo) * 0.045 : 1;
-      ctr *= decay;
-      reachRatio = daysAgo <= 10 ? 0.72 - (10 - daysAgo) * 0.035 : 0.72;
-      cpc *= daysAgo <= 10 ? 1 + (10 - daysAgo) * 0.02 : 1;
-    }
-    if (ad.pattern === "underspend") {
-      // chronic pacing issue: delivery only uses part of the daily budget
-      spendCapRatio = daysAgo <= 12 ? 0.54 : 0.93;
-    }
-    if (ad.pattern === "cvr_break" && daysAgo <= 6) {
-      // landing/checkout issue: clicks fine, conversions collapse
-      cvr *= 0.46;
+    switch (spec.demoCase) {
+      case "cpa_deterioration":
+        if (recent) {
+          cpc *= 1.45;
+          cvr *= 0.82;
+        }
+        break;
+      case "ctr_drop":
+        if (recent) {
+          ctr *= 0.76;
+          cpc *= 1.08;
+        }
+        break;
+      case "creative_fatigue":
+        if (recent) {
+          ctr *= 0.79;
+          reachRatio = 1 / 1.85; // frequency climbs
+          cpc *= 1.12;
+        }
+        break;
+      case "scaling_efficiency":
+        if (recent) {
+          impressions *= 1.55; // budget scaled up, efficiency held
+          cvr *= 1.03;
+        }
+        break;
+      case "strong_improvement":
+        if (recent) {
+          ctr *= 1.18;
+          cvr *= 1.34;
+          cpc *= 0.94;
+        }
+        break;
+      case "stable":
+        break;
+      case "low_volume":
+        break;
+      case "tracking_issue":
+        if (daysAgo <= 4) cvr *= 0.08; // clicks intact, conversions collapse
+        break;
+      case "cpm_spike":
+        if (recent) {
+          cpmMultiplier = 1.42; // auction cost up, CTR flat
+          cpc *= 1.42;
+        }
+        break;
     }
 
     const clicks = Math.max(1, Math.round(impressions * ctr));
-    let spend = clicks * cpc;
-    const budgetCap = ad.dailyBudget * spendCapRatio;
-    if (spend > budgetCap) {
-      const scale = budgetCap / spend;
-      spend = budgetCap;
+    const budgetCeiling = spec.dailyBudget * (spec.demoCase === "scaling_efficiency" && recent ? 1.6 : 1);
+    let spend = clicks * cpc * cpmMultiplier * jitter(`s${key}`, 0.03);
+    if (spend > budgetCeiling) {
+      const scale = budgetCeiling / spend;
+      spend = budgetCeiling;
       impressions *= scale;
     }
     const conversions = Math.max(0, Math.round(clicks * cvr));
-    const revenue = conversions * ad.aov * jitter(`r${key}`, 0.08);
-    const reach = Math.max(1, Math.round(impressions * Math.max(0.3, reachRatio)));
+    const revenue = conversions * spec.aov * jitter(`r${key}`, 0.06);
+    const reach = Math.max(1, Math.round(impressions * reachRatio));
 
     return {
       stat_time_day: `${date} 00:00:00`,
-      campaign_id: ad.campaignId,
-      campaign_name: ad.campaignName,
-      adgroup_id: ad.adsetId,
-      adgroup_name: ad.adsetName,
-      ad_id: ad.adId,
-      ad_name: ad.adName,
+      campaign_id: spec.campaignId,
+      campaign_name: spec.campaignName,
+      adgroup_id: `${spec.campaignId}_ag`,
+      adgroup_name: spec.adsetName,
+      ad_id: `${spec.campaignId}_ad`,
+      ad_name: spec.adName,
       metrics: {
         spend: spend.toFixed(2),
         impressions: String(Math.round(impressions)),
@@ -235,7 +315,7 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
         conversions: String(conversions),
         total_complete_payment_rate: revenue.toFixed(2),
         reach: String(reach),
-        budget: ad.dailyBudget.toFixed(2),
+        budget: spec.dailyBudget.toFixed(2),
       },
     };
   }
