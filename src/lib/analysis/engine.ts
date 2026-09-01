@@ -588,14 +588,20 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       },
     ];
 
+    const { status, reason: statusReason } = classifyStatus(signal, Math.abs(primaryChange));
+
     findings.push({
       campaignId,
       campaignName: campaign.name,
       signal,
-      statusLabel: SIGNAL_META[signal].label,
+      signalLabel: SIGNAL_META[signal].label,
+      status,
+      statusLabel: STATUS_LABEL[status],
+      statusReason,
       severity,
       severityScore: score,
-      needsAttention: SIGNAL_META[signal].attention,
+      needsAttention: status === "needs_attention",
+
       headline,
       whatChanged,
       whyItMatters,
