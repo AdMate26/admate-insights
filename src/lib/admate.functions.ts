@@ -18,8 +18,18 @@ export type AdMateAnalysis = AnalysisResult & {
   aiError: string | null;
 };
 
-export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdMateAnalysis> => {
+/**
+ * The demo pipeline is deterministic but the AI narrative layer costs several
+ * seconds per run, so the finished analysis is cached in memory for a short
+ * TTL. Without this, every consumer (page load, briefing preview, Telegram
+ * send) re-ran the whole AI layer and appeared to hang.
+ */
+const ANALYSIS_TTL_MS = 10 * 60 * 1000;
+let analysisCache: { at: number; value: AdMateAnalysis } | null = null;
+let analysisInFlight: Promise<AdMateAnalysis> | null = null;
+
+async function computeAnalysis(): Promise<AdMateAnalysis> {
+  {
     const provider = new DemoTikTokDataProvider();
 
     // 1 + 2. Provider -> normalization layer -> single internal schema.
@@ -53,8 +63,30 @@ export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
       aiStatus,
       aiError,
     };
-  },
+  }
+}
+
+async function loadAnalysis(): Promise<AdMateAnalysis> {
+  if (analysisCache && Date.now() - analysisCache.at < ANALYSIS_TTL_MS) {
+    return analysisCache.value;
+  }
+  if (!analysisInFlight) {
+    analysisInFlight = computeAnalysis()
+      .then((value) => {
+        analysisCache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        analysisInFlight = null;
+      });
+  }
+  return analysisInFlight;
+}
+
+export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AdMateAnalysis> => loadAnalysis(),
 );
+
 
 const SEVERITY_ICON: Record<string, string> = {
   critical: "🔴",
@@ -93,7 +125,7 @@ function buildBriefing(analysis: AdMateAnalysis): string {
 
 /** Plain-text render of the same digest, for reviewing it before Telegram is connected. */
 export const previewBriefing = createServerFn({ method: "GET" }).handler(async () => {
-  const analysis = await getAdMateAnalysis();
+  const analysis = await loadAnalysis();
   return {
     text: buildBriefing(analysis)
       .replace(/<\/?(b|i)>/g, "")
@@ -115,7 +147,7 @@ export const sendTelegramBriefing = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Enter the Telegram chat ID to send the briefing." };
     }
 
-    const analysis = await getAdMateAnalysis();
+    const analysis = await loadAnalysis();
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
