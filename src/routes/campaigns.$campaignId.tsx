@@ -78,14 +78,11 @@ function CampaignAnalysis() {
 
   async function loadPreview() {
     setLoadingPreview(true);
-    setPreview(null);
     try {
       const result = await previewBriefing();
       setPreview(result.text);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not build preview";
-      toast.error(message);
-      setPreview(`Could not build the briefing preview.\n\n${message}`);
+      toast.error(error instanceof Error ? error.message : "Could not build preview");
     } finally {
       setLoadingPreview(false);
     }
@@ -244,9 +241,9 @@ function CampaignAnalysis() {
               Sends the top priority findings and their recommended actions as a formatted digest.
               Telegram is not connected yet — use the preview to review the exact message.
             </p>
-            {loadingPreview || preview ? (
+            {preview ? (
               <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 text-xs leading-relaxed text-foreground">
-                {loadingPreview ? "Building briefing…" : preview}
+                {preview}
               </pre>
             ) : null}
           </Section>
