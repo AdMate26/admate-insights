@@ -14,7 +14,170 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      ad_performance_daily: {
+        Row: {
+          ad_id: string
+          ad_name: string
+          adset_id: string
+          adset_name: string
+          campaign_id: string
+          campaign_name: string
+          clicks: number
+          conversions: number
+          created_at: string
+          daily_budget: number
+          date: string
+          id: string
+          impressions: number
+          reach: number
+          revenue: number
+          spend: number
+        }
+        Insert: {
+          ad_id: string
+          ad_name: string
+          adset_id: string
+          adset_name: string
+          campaign_id: string
+          campaign_name: string
+          clicks?: number
+          conversions?: number
+          created_at?: string
+          daily_budget?: number
+          date: string
+          id?: string
+          impressions?: number
+          reach?: number
+          revenue?: number
+          spend?: number
+        }
+        Update: {
+          ad_id?: string
+          ad_name?: string
+          adset_id?: string
+          adset_name?: string
+          campaign_id?: string
+          campaign_name?: string
+          clicks?: number
+          conversions?: number
+          created_at?: string
+          daily_budget?: number
+          date?: string
+          id?: string
+          impressions?: number
+          reach?: number
+          revenue?: number
+          spend?: number
+        }
+        Relationships: []
+      }
+      analysis_runs: {
+        Row: {
+          ai_status: string
+          created_at: string
+          findings_count: number
+          id: string
+          provider: string
+          summary: string | null
+          total_spend: number
+          window_end: string
+          window_start: string
+        }
+        Insert: {
+          ai_status?: string
+          created_at?: string
+          findings_count?: number
+          id?: string
+          provider?: string
+          summary?: string | null
+          total_spend?: number
+          window_end: string
+          window_start: string
+        }
+        Update: {
+          ai_status?: string
+          created_at?: string
+          findings_count?: number
+          id?: string
+          provider?: string
+          summary?: string | null
+          total_spend?: number
+          window_end?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
+      findings: {
+        Row: {
+          ai_confidence: string | null
+          ai_confidence_reason: string | null
+          ai_explanation: string | null
+          ai_recommended_action: string | null
+          code: string
+          created_at: string
+          entity_id: string
+          entity_level: string
+          entity_name: string
+          evidence: Json
+          id: string
+          metric: string
+          run_id: string
+          severity: string
+          severity_score: number
+          title: string
+          what_changed: string
+          why_it_matters: string
+        }
+        Insert: {
+          ai_confidence?: string | null
+          ai_confidence_reason?: string | null
+          ai_explanation?: string | null
+          ai_recommended_action?: string | null
+          code: string
+          created_at?: string
+          entity_id: string
+          entity_level: string
+          entity_name: string
+          evidence?: Json
+          id?: string
+          metric: string
+          run_id: string
+          severity: string
+          severity_score?: number
+          title: string
+          what_changed: string
+          why_it_matters: string
+        }
+        Update: {
+          ai_confidence?: string | null
+          ai_confidence_reason?: string | null
+          ai_explanation?: string | null
+          ai_recommended_action?: string | null
+          code?: string
+          created_at?: string
+          entity_id?: string
+          entity_level?: string
+          entity_name?: string
+          evidence?: Json
+          id?: string
+          metric?: string
+          run_id?: string
+          severity?: string
+          severity_score?: number
+          title?: string
+          what_changed?: string
+          why_it_matters?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "findings_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "analysis_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
