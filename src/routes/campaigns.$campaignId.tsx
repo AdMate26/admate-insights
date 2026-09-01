@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import { ConfidenceBadge, SeverityBadge, StatusBadge } from "@/components/admate/badges";
+import { ConfidenceBadge, SeverityBadge, SignalBadge, StatusBadge } from "@/components/admate/badges";
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import type { MetricComparison } from "@/lib/analysis/engine";
@@ -116,10 +116,11 @@ function CampaignAnalysis() {
         <div className="space-y-6">
           <Section label="Status">
             <div className="flex flex-wrap items-center gap-3">
-              <StatusBadge signal={finding.signal} label={finding.statusLabel} />
+              <StatusBadge status={finding.status} label={finding.statusLabel} />
+              <SignalBadge signal={finding.signal} label={finding.signalLabel} />
               <SeverityBadge severity={finding.severity} />
               <span className="text-xs text-muted-foreground">
-                {finding.needsAttention ? "Needs attention" : "No action required"}
+                {finding.statusReason}
               </span>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">{finding.whyItMatters}</p>

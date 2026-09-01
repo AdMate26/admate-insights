@@ -49,6 +49,7 @@ export async function explainFindings(findings: CampaignFinding[]): Promise<Find
     campaignName: f.campaignName,
     signal: f.signal,
     status: f.statusLabel,
+    signalLabel: f.signalLabel,
     severity: f.severity,
     confidence: f.confidence,
     whatChanged: f.whatChanged,

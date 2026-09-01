@@ -78,7 +78,7 @@ function buildBriefing(analysis: AdMateAnalysis): string {
   ];
   priority.forEach((f: CampaignFinding, i) => {
     lines.push(
-      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(f.statusLabel)}`,
+      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(f.statusLabel)} · ${escapeHtml(f.signalLabel)}`,
       `<i>What changed:</i> ${escapeHtml(f.whatChanged)}`,
     );
     if (f.aiExplanation) lines.push(`<i>Possible explanation:</i> ${escapeHtml(f.aiExplanation)}`);

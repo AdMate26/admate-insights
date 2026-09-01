@@ -32,6 +32,13 @@ export type Signal =
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type Confidence = "High" | "Medium" | "Low";
 
+/**
+ * STATUS is a separate, coarser layer than SIGNAL. Signal = what the numbers did.
+ * Status = how the marketer should treat it. Both are code-owned; AI never assigns either.
+ */
+export type Status = "needs_attention" | "watch" | "stable" | "data_confidence";
+
+
 export type MetricComparison = {
   label: string;
   current: string;
@@ -46,10 +53,18 @@ export type CampaignFinding = {
   campaignId: string;
   campaignName: string;
   signal: Signal;
+  /** Human label for the SIGNAL (e.g. "CPA deterioration"). */
+  signalLabel: string;
+  /** Coded STATUS bucket derived from signal + severity. */
+  status: Status;
+  /** Human label for the STATUS (e.g. "Needs Attention"). */
   statusLabel: string;
+  /** Deterministic one-line justification for the status assignment. */
+  statusReason: string;
   severity: Severity;
   severityScore: number;
   needsAttention: boolean;
+
   headline: string;
   whatChanged: string;
   whyItMatters: string;
@@ -162,7 +177,7 @@ const SIGNAL_META: Record<Signal, { label: string; baseSeverity: Severity; atten
   cpa_deterioration: { label: "CPA deterioration", baseSeverity: "high", attention: true },
   cpm_spike: { label: "CPM spike", baseSeverity: "high", attention: true },
   creative_fatigue: { label: "Possible creative fatigue", baseSeverity: "high", attention: true },
-  ctr_drop: { label: "CTR drop", baseSeverity: "medium", attention: true },
+  ctr_drop: { label: "CTR deterioration", baseSeverity: "medium", attention: true },
   scaling_efficiency: { label: "Scaling efficiency", baseSeverity: "medium", attention: false },
   strong_improvement: { label: "Strong improvement", baseSeverity: "info", attention: false },
   low_volume: { label: "Low volume", baseSeverity: "low", attention: false },
@@ -176,6 +191,83 @@ const SEVERITY_RANK: Record<Severity, number> = {
   low: 2,
   info: 1,
 };
+
+export const STATUS_LABEL: Record<Status, string> = {
+  needs_attention: "Needs Attention",
+  watch: "Watch",
+  stable: "Stable",
+  data_confidence: "Data Confidence",
+};
+
+/** Severity thresholds (%) above which a deterioration signal is treated as severe. */
+const SEVERE_THRESHOLD: Partial<Record<Signal, number>> = {
+  cpa_deterioration: 35,
+  ctr_drop: 20,
+};
+
+/**
+ * STATUS derivation — deterministic rules only, no hard-coded per-campaign labels.
+ *   tracking_issue, low_volume        → Data Confidence (measurement/sample trust, not performance)
+ *   creative_fatigue                  → Needs Attention
+ *   cpa_deterioration / ctr_drop      → Needs Attention when severe, otherwise Watch
+ *   cpm_spike, scaling_efficiency     → Watch
+ *   strong_improvement, stable        → Stable
+ */
+function classifyStatus(signal: Signal, absChangePct: number): { status: Status; reason: string } {
+  switch (signal) {
+    case "tracking_issue":
+      return {
+        status: "data_confidence",
+        reason: "Measurement integrity is in question, so the numbers are treated as unreliable before performance.",
+      };
+    case "low_volume":
+      return {
+        status: "data_confidence",
+        reason: "Sample size is below the reliability threshold, so no performance verdict is issued.",
+      };
+    case "creative_fatigue":
+      return {
+        status: "needs_attention",
+        reason: "Falling CTR with rising frequency is a confirmed saturation pattern and degrades further without action.",
+      };
+    case "cpa_deterioration":
+    case "ctr_drop": {
+      const threshold = SEVERE_THRESHOLD[signal]!;
+      const severe = absChangePct >= threshold;
+      return severe
+        ? {
+            status: "needs_attention",
+            reason: `Primary metric moved ${absChangePct.toFixed(1)}%, at or above the ${threshold}% severe threshold.`,
+          }
+        : {
+            status: "watch",
+            reason: `Primary metric moved ${absChangePct.toFixed(1)}%, below the ${threshold}% severe threshold — monitor before acting.`,
+          };
+    }
+    case "cpm_spike":
+      return {
+        status: "watch",
+        reason: "Auction cost rose but delivery efficiency has not broken; monitor whether it persists.",
+      };
+    case "scaling_efficiency":
+      return {
+        status: "watch",
+        reason: "Spend is scaling without an efficiency penalty; monitor as budget increases.",
+      };
+    case "strong_improvement":
+      return {
+        status: "stable",
+        reason: "Efficiency improved materially — positive, no corrective action required.",
+      };
+    case "stable":
+    default:
+      return {
+        status: "stable",
+        reason: "No monitored metric crossed a detection threshold.",
+      };
+  }
+}
+
 
 /** Severity: signal class, escalated by magnitude and spend exposure. Code-only. */
 function classifySeverity(signal: Signal, absChangePct: number, spend: number): {
@@ -496,14 +588,20 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       },
     ];
 
+    const { status, reason: statusReason } = classifyStatus(signal, Math.abs(primaryChange));
+
     findings.push({
       campaignId,
       campaignName: campaign.name,
       signal,
-      statusLabel: SIGNAL_META[signal].label,
+      signalLabel: SIGNAL_META[signal].label,
+      status,
+      statusLabel: STATUS_LABEL[status],
+      statusReason,
       severity,
       severityScore: score,
-      needsAttention: SIGNAL_META[signal].attention,
+      needsAttention: status === "needs_attention",
+
       headline,
       whatChanged,
       whyItMatters,

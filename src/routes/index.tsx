@@ -2,7 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import { SeverityBadge, StatusBadge } from "@/components/admate/badges";
+import { ConfidenceBadge, SeverityBadge, SignalBadge, StatusBadge } from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 
 export const Route = createFileRoute("/")({
@@ -26,7 +26,6 @@ export const Route = createFileRoute("/")({
   component: CampaignList,
 });
 
-const currency = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 function CampaignList() {
   const { data } = useSuspenseQuery(analysisQueryOptions);
@@ -64,10 +63,9 @@ function CampaignList() {
               <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 text-left font-medium">Campaign</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-right font-medium">Spend</th>
-                <th className="px-4 py-3 text-right font-medium">CTR</th>
-                <th className="px-4 py-3 text-right font-medium">Conversions</th>
-                <th className="px-4 py-3 text-right font-medium">Cost / result</th>
+                <th className="px-4 py-3 text-left font-medium">Signal</th>
+                <th className="px-4 py-3 text-left font-medium">Confidence</th>
+                <th className="px-4 py-3 text-left font-medium">Reason</th>
               </tr>
             </thead>
             <tbody>
@@ -86,19 +84,16 @@ function CampaignList() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge signal={f.signal} label={f.statusLabel} />
+                    <StatusBadge status={f.status} label={f.statusLabel} />
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
-                    {currency(f.snapshot.spend)}
+                  <td className="px-4 py-3">
+                    <SignalBadge signal={f.signal} label={f.signalLabel} />
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
-                    {f.snapshot.ctr.toFixed(2)}%
+                  <td className="px-4 py-3">
+                    <ConfidenceBadge confidence={f.confidence} />
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
-                    {f.snapshot.conversions.toLocaleString("en-US")}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
-                    {f.snapshot.cpa > 0 ? currency(f.snapshot.cpa) : "—"}
+                  <td className="max-w-xs px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+                    {f.statusReason}
                   </td>
                 </tr>
               ))}
@@ -107,7 +102,8 @@ function CampaignList() {
         </div>
 
         <p className="mt-4 text-xs text-muted-foreground">
-          Metrics, status, priority and confidence are computed in code. AI writes only the possible
+          Status, signal, priority and confidence are all derived by the deterministic rule engine
+          from the normalized metrics — no labels are hard-coded per campaign. AI writes only the possible
           explanation and recommended action shown inside each campaign analysis.
         </p>
       </main>
