@@ -464,13 +464,13 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `CPM rose from ${money(cpm(prev))} to ${money(cpm(cur))} (+${dCpm.toFixed(1)}%) while CTR moved ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}.`;
       whyItMatters =
         "Media is simply more expensive to buy: at flat CTR the same budget delivers fewer clicks and fewer results.";
-    } else if (dCtr !== null && dCtr <= -12) {
+    } else if (dCtr !== null && dCtr <= -15) {
       signal = "ctr_drop";
       primaryMetric = "CTR";
       primaryChange = dCtr;
       consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
       headline = `CTR dropped ${Math.abs(dCtr).toFixed(1)}%`;
-      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%); frequency moved ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, so saturation is not confirmed.`;
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%); frequency moved ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, so this alone does not confirm saturation.`;
       whyItMatters =
         "Weaker click-through raises effective CPC and reduces the volume this campaign can deliver at the same budget.";
     } else if (dSpend !== null && dSpend >= 25 && dCpa !== null && dCpa <= 10) {
