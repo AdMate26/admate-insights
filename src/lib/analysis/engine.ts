@@ -202,7 +202,7 @@ export const STATUS_LABEL: Record<Status, string> = {
 /** Severity thresholds (%) above which a deterioration signal is treated as severe. */
 const SEVERE_THRESHOLD: Partial<Record<Signal, number>> = {
   cpa_deterioration: 35,
-  ctr_drop: 20,
+  ctr_drop: 40,
 };
 
 /**
