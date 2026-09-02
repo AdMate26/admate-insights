@@ -202,7 +202,7 @@ export const STATUS_LABEL: Record<Status, string> = {
 /** Severity thresholds (%) above which a deterioration signal is treated as severe. */
 const SEVERE_THRESHOLD: Partial<Record<Signal, number>> = {
   cpa_deterioration: 35,
-  ctr_drop: 20,
+  ctr_drop: 40,
 };
 
 /**
@@ -218,7 +218,7 @@ function classifyStatus(signal: Signal, absChangePct: number): { status: Status;
     case "tracking_issue":
       return {
         status: "data_confidence",
-        reason: "Measurement integrity is in question, so the numbers are treated as unreliable before performance.",
+        reason: "The conversion collapse while clicks held may indicate a measurement issue, so the numbers are treated as unreliable before performance.",
       };
     case "low_volume":
       return {
@@ -228,7 +228,7 @@ function classifyStatus(signal: Signal, absChangePct: number): { status: Status;
     case "creative_fatigue":
       return {
         status: "needs_attention",
-        reason: "Falling CTR with rising frequency is a confirmed saturation pattern and degrades further without action.",
+        reason: "Falling CTR with rising frequency and worsening CPA may indicate creative saturation, which tends to degrade further without action.",
       };
     case "cpa_deterioration":
     case "ctr_drop": {
@@ -340,6 +340,11 @@ function classifyConfidence(input: {
     return { confidence: "Low", score: Number(score.toFixed(2)), basis };
   }
 
+  if (signal === "tracking_issue") {
+    basis.push("Possible tracking issues are capped at Low confidence by rule — the underlying data itself may be unreliable.");
+    return { confidence: "Low", score: Number(score.toFixed(2)), basis };
+  }
+
   const confidence: Confidence = score >= 3.2 ? "High" : score >= 2.1 ? "Medium" : "Low";
   return { confidence, score: Number(score.toFixed(2)), basis };
 }
@@ -428,16 +433,20 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       headline = "Conversions collapsed while clicks held steady";
       whatChanged = `Clicks moved ${dClicks?.toFixed(1)}% (${num(prev.clicks)} → ${num(cur.clicks)}) but conversions fell ${dConv?.toFixed(1)}% (${prev.conversions} → ${cur.conversions}), taking CVR from ${pctStr(cvr(prev))} to ${pctStr(cvr(cur))}.`;
       whyItMatters =
-        "Traffic volume is unchanged while recorded conversions are not, which matches a measurement/pixel break more closely than a demand change. Spend continues either way.";
-    } else if (dCtr !== null && dCtr <= -12 && dFreq !== null && dFreq >= 15) {
+        "Traffic volume is unchanged while recorded conversions are not, which may indicate a measurement/pixel issue rather than a real demand change. Spend continues either way.";
+    } else if (
+      dCtr !== null && dCtr <= -20 &&
+      dFreq !== null && dFreq >= 15 &&
+      dCpa !== null && dCpa > 0
+    ) {
       signal = "creative_fatigue";
       primaryMetric = "CTR";
       primaryChange = dCtr;
       consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
-      headline = "CTR falling while frequency climbs";
-      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%).`;
+      headline = "CTR falling while frequency climbs and CPA worsens";
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%), frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%), and CPA worsened (+${dCpa.toFixed(1)}%).`;
       whyItMatters =
-        "Falling response with rising frequency is the coded signature of audience saturation — the same users are seeing the creative more often and engaging less.";
+        "Falling response with rising frequency and worsening CPA may indicate creative fatigue — the same users may be seeing the creative more often and engaging less.";
     } else if (dCpa !== null && dCpa >= 20) {
       signal = "cpa_deterioration";
       primaryMetric = "CPA";
@@ -455,13 +464,13 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `CPM rose from ${money(cpm(prev))} to ${money(cpm(cur))} (+${dCpm.toFixed(1)}%) while CTR moved ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}.`;
       whyItMatters =
         "Media is simply more expensive to buy: at flat CTR the same budget delivers fewer clicks and fewer results.";
-    } else if (dCtr !== null && dCtr <= -12) {
+    } else if (dCtr !== null && dCtr <= -15) {
       signal = "ctr_drop";
       primaryMetric = "CTR";
       primaryChange = dCtr;
       consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
       headline = `CTR dropped ${Math.abs(dCtr).toFixed(1)}%`;
-      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%); frequency moved ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, so saturation is not confirmed.`;
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%); frequency moved ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, so this alone does not confirm saturation.`;
       whyItMatters =
         "Weaker click-through raises effective CPC and reduces the volume this campaign can deliver at the same budget.";
     } else if (dSpend !== null && dSpend >= 25 && dCpa !== null && dCpa <= 10) {
@@ -611,7 +620,7 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       evidence: {
         currentWindow: windowLabel,
         previousWindow: prevLabel,
-        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20%, CPM >= +25%, CTR <= -12% (creative fatigue when frequency also >= +15%), tracking issue when clicks > -20% while conversions <= -50%, scaling efficiency when spend >= +25% with CPA <= +10%, strong improvement when CPA <= -15% or ROAS >= +20%, low volume below 10 conversions or $250 spend.`,
+        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20% (severe >= +35%), CPM >= +25%, standalone CTR deterioration <= -15% (severe >= +40% drop, i.e. <= -40%), possible creative fatigue when CTR <= -20% AND frequency >= +15% AND CPA worsening, possible tracking issue when clicks > -20% while conversions <= -50% (confidence capped Low), scaling efficiency when spend >= +25% with CPA <= +10%, strong improvement when CPA <= -15% or ROAS >= +20%, low volume below 10 conversions or $250 spend.`,
         metrics,
       },
       snapshot: {
