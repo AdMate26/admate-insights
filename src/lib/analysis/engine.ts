@@ -218,7 +218,7 @@ function classifyStatus(signal: Signal, absChangePct: number): { status: Status;
     case "tracking_issue":
       return {
         status: "data_confidence",
-        reason: "Measurement integrity is in question, so the numbers are treated as unreliable before performance.",
+        reason: "The conversion collapse while clicks held may indicate a measurement issue, so the numbers are treated as unreliable before performance.",
       };
     case "low_volume":
       return {
@@ -228,7 +228,7 @@ function classifyStatus(signal: Signal, absChangePct: number): { status: Status;
     case "creative_fatigue":
       return {
         status: "needs_attention",
-        reason: "Falling CTR with rising frequency is a confirmed saturation pattern and degrades further without action.",
+        reason: "Falling CTR with rising frequency and worsening CPA may indicate creative saturation, which tends to degrade further without action.",
       };
     case "cpa_deterioration":
     case "ctr_drop": {
