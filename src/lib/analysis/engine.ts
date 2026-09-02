@@ -340,6 +340,11 @@ function classifyConfidence(input: {
     return { confidence: "Low", score: Number(score.toFixed(2)), basis };
   }
 
+  if (signal === "tracking_issue") {
+    basis.push("Possible tracking issues are capped at Low confidence by rule — the underlying data itself may be unreliable.");
+    return { confidence: "Low", score: Number(score.toFixed(2)), basis };
+  }
+
   const confidence: Confidence = score >= 3.2 ? "High" : score >= 2.1 ? "Medium" : "Low";
   return { confidence, score: Number(score.toFixed(2)), basis };
 }
