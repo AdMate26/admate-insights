@@ -433,16 +433,20 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       headline = "Conversions collapsed while clicks held steady";
       whatChanged = `Clicks moved ${dClicks?.toFixed(1)}% (${num(prev.clicks)} → ${num(cur.clicks)}) but conversions fell ${dConv?.toFixed(1)}% (${prev.conversions} → ${cur.conversions}), taking CVR from ${pctStr(cvr(prev))} to ${pctStr(cvr(cur))}.`;
       whyItMatters =
-        "Traffic volume is unchanged while recorded conversions are not, which matches a measurement/pixel break more closely than a demand change. Spend continues either way.";
-    } else if (dCtr !== null && dCtr <= -12 && dFreq !== null && dFreq >= 15) {
+        "Traffic volume is unchanged while recorded conversions are not, which may indicate a measurement/pixel issue rather than a real demand change. Spend continues either way.";
+    } else if (
+      dCtr !== null && dCtr <= -20 &&
+      dFreq !== null && dFreq >= 15 &&
+      dCpa !== null && dCpa > 0
+    ) {
       signal = "creative_fatigue";
       primaryMetric = "CTR";
       primaryChange = dCtr;
       consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
-      headline = "CTR falling while frequency climbs";
-      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%).`;
+      headline = "CTR falling while frequency climbs and CPA worsens";
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%), frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%), and CPA worsened (+${dCpa.toFixed(1)}%).`;
       whyItMatters =
-        "Falling response with rising frequency is the coded signature of audience saturation — the same users are seeing the creative more often and engaging less.";
+        "Falling response with rising frequency and worsening CPA may indicate creative fatigue — the same users may be seeing the creative more often and engaging less.";
     } else if (dCpa !== null && dCpa >= 20) {
       signal = "cpa_deterioration";
       primaryMetric = "CPA";
