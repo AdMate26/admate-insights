@@ -620,7 +620,7 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       evidence: {
         currentWindow: windowLabel,
         previousWindow: prevLabel,
-        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20%, CPM >= +25%, CTR <= -12% (creative fatigue when frequency also >= +15%), tracking issue when clicks > -20% while conversions <= -50%, scaling efficiency when spend >= +25% with CPA <= +10%, strong improvement when CPA <= -15% or ROAS >= +20%, low volume below 10 conversions or $250 spend.`,
+        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20% (severe >= +35%), CPM >= +25%, standalone CTR deterioration <= -15% (severe >= +40% drop, i.e. <= -40%), possible creative fatigue when CTR <= -20% AND frequency >= +15% AND CPA worsening, possible tracking issue when clicks > -20% while conversions <= -50% (confidence capped Low), scaling efficiency when spend >= +25% with CPA <= +10%, strong improvement when CPA <= -15% or ROAS >= +20%, low volume below 10 conversions or $250 spend.`,
         metrics,
       },
       snapshot: {
