@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -11,12 +12,21 @@ type Props = {
 export function AdMateHeader({ back }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSignedIn(Boolean(data.session)));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSignedIn(Boolean(session));
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   async function handleSignOut() {
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
+    navigate({ to: "/", replace: true });
   }
 
   return (
@@ -48,20 +58,29 @@ export function AdMateHeader({ back }: Props) {
             </div>
             <div className="flex items-center gap-2">
               <Link
-                to="/start"
+                to="/"
                 className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 Change data source
               </Link>
             </div>
           </dl>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Sign out
-          </button>
+          {signedIn ? (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Sign out
+            </button>
+          ) : (
+            <Link
+              to="/auth"
+              className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Sign in
+            </Link>
+          )}
         </div>
       </div>
     </header>
