@@ -62,6 +62,7 @@ function CampaignList() {
             <thead>
               <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 text-left font-medium">Campaign</th>
+                <th className="px-4 py-3 text-right font-medium">Spend (7d)</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
                 <th className="px-4 py-3 text-left font-medium">Signal</th>
                 <th className="px-4 py-3 text-left font-medium">Confidence</th>
@@ -82,6 +83,13 @@ function CampaignList() {
                     <span className="mt-1 block">
                       <SeverityBadge severity={f.severity} />
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                    {f.snapshot.spend.toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    })}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={f.status} label={f.statusLabel} />

@@ -27,7 +27,8 @@ export type Signal =
   | "stable"
   | "low_volume"
   | "tracking_issue"
-  | "cpm_spike";
+  | "cpm_spike"
+  | "insufficient_comparison";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type Confidence = "High" | "Medium" | "Low";
@@ -181,7 +182,20 @@ const SIGNAL_META: Record<Signal, { label: string; baseSeverity: Severity; atten
   scaling_efficiency: { label: "Scaling efficiency", baseSeverity: "medium", attention: false },
   strong_improvement: { label: "Strong improvement", baseSeverity: "info", attention: false },
   low_volume: { label: "Low volume", baseSeverity: "low", attention: false },
+  insufficient_comparison: { label: "Insufficient comparison", baseSeverity: "low", attention: false },
   stable: { label: "Stable", baseSeverity: "info", attention: false },
+};
+
+/**
+ * Ranking weight for confidence. Priority ordering is severity-dominant so that
+ * high-severity Data Confidence warnings (e.g. tracking issues) are never hidden;
+ * confidence only nudges ordering within/near a severity band. Status, Signal and
+ * Confidence themselves remain independent, code-owned fields.
+ */
+const CONFIDENCE_WEIGHT: Record<Confidence, number> = {
+  High: 0.6,
+  Medium: 0.3,
+  Low: 0,
 };
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -213,7 +227,12 @@ const SEVERE_THRESHOLD: Partial<Record<Signal, number>> = {
  *   cpm_spike, scaling_efficiency     → Watch
  *   strong_improvement, stable        → Stable
  */
-function classifyStatus(signal: Signal, absChangePct: number): { status: Status; reason: string } {
+function classifyStatus(
+  signal: Signal,
+  absChangePct: number,
+  /** For ctr_drop only: whether a severe CTR decline is corroborated by worsening CPA/CVR. */
+  ctrSupported = false,
+): { status: Status; reason: string } {
   switch (signal) {
     case "tracking_issue":
       return {
@@ -225,14 +244,35 @@ function classifyStatus(signal: Signal, absChangePct: number): { status: Status;
         status: "data_confidence",
         reason: "Sample size is below the reliability threshold, so no performance verdict is issued.",
       };
+    case "insufficient_comparison":
+      return {
+        status: "data_confidence",
+        reason: "No comparable prior 7-day period (new or previously inactive campaign), so no change verdict can be issued yet.",
+      };
     case "creative_fatigue":
       return {
         status: "needs_attention",
         reason: "Falling CTR with rising frequency and worsening CPA may indicate creative saturation, which tends to degrade further without action.",
       };
-    case "cpa_deterioration":
     case "ctr_drop": {
-      const threshold = SEVERE_THRESHOLD[signal]!;
+      const threshold = SEVERE_THRESHOLD.ctr_drop!;
+      const severe = absChangePct >= threshold;
+      // CTR-only decline stays a Watch; Needs Attention requires a SEVERE CTR
+      // drop that is corroborated by worsening CPA/CVR.
+      return severe && ctrSupported
+        ? {
+            status: "needs_attention",
+            reason: `CTR fell ${absChangePct.toFixed(1)}% (>= ${threshold}% severe threshold) with worsening CPA/CVR confirming downstream impact.`,
+          }
+        : {
+            status: "watch",
+            reason: severe
+              ? `CTR fell ${absChangePct.toFixed(1)}% but CPA/CVR have not worsened, so the click-through decline is not yet confirmed downstream — monitor.`
+              : `CTR fell ${absChangePct.toFixed(1)}%, below the ${threshold}% severe threshold — monitor before acting.`,
+          };
+    }
+    case "cpa_deterioration": {
+      const threshold = SEVERE_THRESHOLD.cpa_deterioration!;
       const severe = absChangePct >= threshold;
       return severe
         ? {
@@ -345,6 +385,11 @@ function classifyConfidence(input: {
     return { confidence: "Low", score: Number(score.toFixed(2)), basis };
   }
 
+  if (signal === "insufficient_comparison") {
+    basis.push("No comparable prior period, so any change is capped at Low confidence by rule.");
+    return { confidence: "Low", score: Number(score.toFixed(2)), basis };
+  }
+
   const confidence: Confidence = score >= 3.2 ? "High" : score >= 2.1 ? "Medium" : "Low";
   return { confidence, score: Number(score.toFixed(2)), basis };
 }
@@ -367,6 +412,24 @@ function consistency(
   if (values.length === 0 || !Number.isFinite(previousMean)) return 0;
   const matching = values.filter((v) => (expect === "higher" ? v > previousMean : v < previousMean));
   return matching.length / values.length;
+}
+
+/**
+ * Average DAILY frequency across a window (mean of each day's impressions/reach),
+ * NOT period impressions / summed daily reach — summing daily reach double-counts
+ * users and distorts the ratio. This is an interim measure until a native TikTok
+ * period-frequency (deduplicated reach) metric is available.
+ */
+function avgDailyFrequency(campRows: NormalizedDailyRow[], dateSet: Set<string>): number {
+  const byDate = new Map<string, Totals>();
+  for (const r of campRows) {
+    if (dateSet.has(r.date)) byDate.set(r.date, add(byDate.get(r.date) ?? EMPTY, r));
+  }
+  const daily = [...byDate.values()]
+    .map((t) => frequency(t))
+    .filter((v) => Number.isFinite(v));
+  if (daily.length === 0) return Number.NaN;
+  return daily.reduce((a, b) => a + b, 0) / daily.length;
 }
 
 export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): AnalysisResult {
@@ -401,7 +464,11 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
     const dConv = change(cur.conversions, prev.conversions);
     const dClicks = change(cur.clicks, prev.clicks);
     const dRoas = change(roas(cur), roas(prev));
-    const dFreq = change(frequency(cur), frequency(prev));
+    // Frequency uses the average of daily frequencies, not period impressions /
+    // summed daily reach (which double-counts users). See avgDailyFrequency.
+    const freqCur = avgDailyFrequency(campaign.rows, curSet);
+    const freqPrev = avgDailyFrequency(campaign.rows, prevSet);
+    const dFreq = change(freqCur, freqPrev);
 
     // ---- Signal classification cascade (deterministic, order = priority) ----
     let signal: Signal;
@@ -412,7 +479,11 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
     let whatChanged: string;
     let whyItMatters: string;
 
-    const lowVolume = cur.conversions < 10 || cur.spend < 250;
+    // Sample-size floor is conversion-based only. Spend never affects
+    // classification — it feeds priority/severity via `exposure` instead.
+    const lowVolume = cur.conversions < 10;
+    // No comparable prior period: new campaign, or one inactive last window.
+    const noComparison = prev.days === 0 || prev.spend === 0 || prev.conversions === 0;
     const clicksHeld = dClicks !== null && dClicks > -20;
     const conversionsCollapsed = dConv !== null && dConv <= -50;
 
@@ -425,6 +496,15 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `Only ${cur.conversions} conversions on ${money(cur.spend)} of spend in the current window (prior window: ${prev.conversions} conversions, ${money(prev.spend)}).`;
       whyItMatters =
         "Sample size is below the engine's reliability threshold, so metric movements here are statistically indistinguishable from noise.";
+    } else if (noComparison) {
+      signal = "insufficient_comparison";
+      primaryMetric = "Spend";
+      primaryChange = 0;
+      consistencyValue = 0.5;
+      headline = "No comparable prior period";
+      whatChanged = `Current window: ${money(cur.spend)} of spend, ${cur.conversions} conversions. Prior window had no comparable activity (${money(prev.spend)} of spend, ${prev.conversions} conversions), so period-over-period change cannot be computed.`;
+      whyItMatters =
+        "This looks like a new or previously inactive campaign. Without a comparable prior 7-day baseline, any change figure would be misleading, so no performance verdict is issued yet.";
     } else if (clicksHeld && conversionsCollapsed) {
       signal = "tracking_issue";
       primaryMetric = "CVR";
@@ -444,7 +524,7 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       primaryChange = dCtr;
       consistencyValue = consistency(campaign.rows, current, ctr(prev), ctr, "lower");
       headline = "CTR falling while frequency climbs and CPA worsens";
-      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%), frequency rose from ${num(frequency(prev))} to ${num(frequency(cur))} (+${dFreq.toFixed(1)}%), and CPA worsened (+${dCpa.toFixed(1)}%).`;
+      whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%), average daily frequency rose from ${num(freqPrev)} to ${num(freqCur)} (+${dFreq.toFixed(1)}%), and CPA worsened (+${dCpa.toFixed(1)}%).`;
       whyItMatters =
         "Falling response with rising frequency and worsening CPA may indicate creative fatigue — the same users may be seeing the creative more often and engaging less.";
     } else if (dCpa !== null && dCpa >= 20) {
@@ -473,7 +553,7 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%); frequency moved ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, so this alone does not confirm saturation.`;
       whyItMatters =
         "Weaker click-through raises effective CPC and reduces the volume this campaign can deliver at the same budget.";
-    } else if (dSpend !== null && dSpend >= 25 && dCpa !== null && dCpa <= 10) {
+    } else if (dSpend !== null && dSpend >= 25 && dCpa !== null && dCpa <= 5) {
       signal = "scaling_efficiency";
       primaryMetric = "Spend";
       primaryChange = dSpend;
@@ -482,7 +562,12 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       whatChanged = `Spend rose from ${money(prev.spend)} to ${money(cur.spend)} (+${dSpend.toFixed(1)}%) while CPA moved only ${dCpa.toFixed(1)}% (${money(cpa(prev))} → ${money(cpa(cur))}).`;
       whyItMatters =
         "Additional budget is being absorbed without an efficiency penalty, which is the coded profile of remaining headroom.";
-    } else if ((dCpa !== null && dCpa <= -15) || (dRoas !== null && dRoas >= 20)) {
+    } else if (
+      // Genuine efficiency improvement: CPA down materially, OR ROAS up
+      // materially — but never when CPA has worsened by more than +5%.
+      !(dCpa !== null && dCpa > 5) &&
+      ((dCpa !== null && dCpa <= -15) || (dRoas !== null && dRoas >= 20))
+    ) {
       signal = "strong_improvement";
       primaryMetric = dCpa !== null && dCpa <= -15 ? "CPA" : "ROAS";
       primaryChange = dCpa !== null && dCpa <= -15 ? dCpa : (dRoas ?? 0);
@@ -582,9 +667,9 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
         direction: dir(change(cur.impressions, prev.impressions)),
       },
       {
-        label: "Frequency",
-        current: num(frequency(cur)),
-        previous: num(frequency(prev)),
+        label: "Frequency (avg daily)",
+        current: num(freqCur),
+        previous: num(freqPrev),
         changePct: dFreq,
         direction: dir(dFreq),
       },
@@ -597,7 +682,14 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       },
     ];
 
-    const { status, reason: statusReason } = classifyStatus(signal, Math.abs(primaryChange));
+    // A severe CTR decline only escalates to Needs Attention when CPA/CVR
+    // confirm the click-through loss is hurting downstream results.
+    const ctrSupported = (dCpa !== null && dCpa > 5) || (dCvr !== null && dCvr < -5);
+    const { status, reason: statusReason } = classifyStatus(
+      signal,
+      Math.abs(primaryChange),
+      ctrSupported,
+    );
 
     findings.push({
       campaignId,
@@ -620,7 +712,7 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       evidence: {
         currentWindow: windowLabel,
         previousWindow: prevLabel,
-        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20% (severe >= +35%), CPM >= +25%, standalone CTR deterioration <= -15% (severe >= +40% drop, i.e. <= -40%), possible creative fatigue when CTR <= -20% AND frequency >= +15% AND CPA worsening, possible tracking issue when clicks > -20% while conversions <= -50% (confidence capped Low), scaling efficiency when spend >= +25% with CPA <= +10%, strong improvement when CPA <= -15% or ROAS >= +20%, low volume below 10 conversions or $250 spend.`,
+        method: `Deterministic comparison of the latest ${windowDays} complete calendar days (${windowLabel}) against the preceding ${windowDays} complete calendar days (${prevLabel}). Signal thresholds: CPA >= +20% (severe >= +35%), CPM >= +25%, standalone CTR deterioration <= -15% (Watch; escalates to Needs Attention only when CTR fell >= 40% AND CPA/CVR also worsened), possible creative fatigue when CTR <= -20% AND avg daily frequency >= +15% AND CPA worsening, possible tracking issue when clicks > -20% while conversions <= -50% (confidence capped Low), scaling efficiency when spend >= +25% with CPA <= +5%, strong improvement when CPA <= -15% or ROAS >= +20% (never when CPA worsened > +5%), low volume below 10 conversions (spend affects priority only, not classification), insufficient comparison when there is no comparable prior period. Confidence contributes to ranking but not to Status, Signal or Confidence classification.`,
         metrics,
       },
       snapshot: {
@@ -632,12 +724,19 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
         cpa: Number.isFinite(cpa(cur)) ? Number(cpa(cur).toFixed(2)) : 0,
         cpm: Number.isFinite(cpm(cur)) ? Number(cpm(cur).toFixed(2)) : 0,
         roas: Number.isFinite(roas(cur)) ? Number(roas(cur).toFixed(2)) : 0,
-        frequency: Number.isFinite(frequency(cur)) ? Number(frequency(cur).toFixed(2)) : 0,
+        frequency: Number.isFinite(freqCur) ? Number(freqCur.toFixed(2)) : 0,
       },
     });
   }
 
-  findings.sort((a, b) => b.severityScore - a.severityScore);
+  // Priority = severity-dominant, nudged by confidence. Severity stays the lead
+  // term so high-severity Data Confidence warnings are never buried; confidence
+  // only orders items of comparable severity. Status/Signal/Confidence unchanged.
+  findings.sort(
+    (a, b) =>
+      b.severityScore + CONFIDENCE_WEIGHT[b.confidence] -
+      (a.severityScore + CONFIDENCE_WEIGHT[a.confidence]),
+  );
 
   return {
     currentWindow,
