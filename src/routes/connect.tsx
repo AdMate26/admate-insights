@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_authenticated/connect")({
+export const Route = createFileRoute("/connect")({
   head: () => ({
     meta: [
       { title: "Connect TikTok Ads — AdMate" },

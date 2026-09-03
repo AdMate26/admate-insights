@@ -9,7 +9,7 @@ import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import type { MetricComparison } from "@/lib/analysis/engine";
 
-export const Route = createFileRoute("/_authenticated/campaigns/$campaignId")({
+export const Route = createFileRoute("/campaigns/$campaignId")({
   loader: async ({ context }) => {
     await context.queryClient.ensureQueryData(analysisQueryOptions);
   },
