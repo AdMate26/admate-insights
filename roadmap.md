@@ -18,3 +18,7 @@
 - Charts / full analytics dashboard
 - `LiveTikTokDataProvider` against the real TikTok Ads API
 - Scheduled/automatic briefings
+
+## Auth (done)
+- [x] Email/password sign up (name stored in `profiles`), login, forgot password, reset-password page, logout
+- [x] App pages gated under `_authenticated`; logged-out visitors land on `/auth`, login goes to `/home`
