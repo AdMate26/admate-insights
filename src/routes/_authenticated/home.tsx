@@ -5,7 +5,7 @@ import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import { ConfidenceBadge, SeverityBadge, SignalBadge, StatusBadge } from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/_authenticated/home")({
   loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
   head: () => ({
     meta: [
