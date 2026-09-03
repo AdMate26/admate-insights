@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_authenticated/connect")({
+export const Route = createFileRoute("/connect")({
   head: () => ({
     meta: [
       { title: "Connect TikTok Ads — AdMate" },
@@ -25,7 +25,7 @@ function ConnectPage() {
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-3xl px-6 py-6">
           <Link
-            to="/start"
+            to="/"
             className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             ← Back to data source
