@@ -58,8 +58,17 @@ async function computeAnalysis(): Promise<AdMateAnalysis> {
       aiStatus,
       aiError,
     };
+}
+
+export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AdMateAnalysis> => {
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+    const value = await computeAnalysis();
+    cached = { at: Date.now(), value };
+    return value;
   },
 );
+
 
 const SEVERITY_ICON: Record<string, string> = {
   critical: "🔴",
