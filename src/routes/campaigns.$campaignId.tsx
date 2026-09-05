@@ -65,6 +65,47 @@ function ChangeCell({ metric }: { metric: MetricComparison }) {
   );
 }
 
+/** Current 7d spend, previous 7d spend and the % change, from the Spend evidence row. */
+function SpendSummary({ metric }: { metric?: MetricComparison }) {
+  if (!metric) return null;
+  const changeTone =
+    metric.changePct === null
+      ? "text-muted-foreground"
+      : metric.changePct > 0
+        ? "text-foreground"
+        : metric.changePct < 0
+          ? "text-foreground"
+          : "text-muted-foreground";
+  return (
+    <div className="mb-6 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg border border-border bg-card">
+      <div className="px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Current 7d spend
+        </p>
+        <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{metric.current}</p>
+      </div>
+      <div className="px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Previous 7d spend
+        </p>
+        <p className="mt-1 text-lg font-semibold tabular-nums text-muted-foreground">
+          {metric.previous}
+        </p>
+      </div>
+      <div className="px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          % change
+        </p>
+        <p className={`mt-1 text-lg font-semibold tabular-nums ${changeTone}`}>
+          {metric.changePct === null
+            ? "—"
+            : `${metric.changePct > 0 ? "+" : ""}${metric.changePct.toFixed(1)}%`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function CampaignAnalysis() {
   const { campaignId } = Route.useParams();
   const { data } = useSuspenseQuery(analysisQueryOptions);
@@ -112,6 +153,8 @@ function CampaignAnalysis() {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">{finding.headline}</p>
         </div>
+
+        <SpendSummary metric={finding.evidence.metrics.find((m) => m.label === "Spend")} />
 
         <div className="space-y-6">
           <Section label="Status">

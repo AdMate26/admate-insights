@@ -31,7 +31,7 @@ type TikTokRawRow = {
     impressions: string;
     clicks: string;
     conversions: string;
-    total_complete_payment_rate: string; // revenue (TikTok returns strings)
+    total_complete_payment: string; // revenue as an actual value, not a rate (TikTok returns strings)
     reach: string;
     budget: string;
   };
@@ -297,6 +297,7 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
       impressions *= scale;
     }
     const conversions = Math.max(0, Math.round(clicks * cvr));
+    // Revenue is an actual monetary value: conversions × average order value.
     const revenue = conversions * spec.aov * jitter(`r${key}`, 0.06);
     const reach = Math.max(1, Math.round(impressions * reachRatio));
 
@@ -313,7 +314,7 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
         impressions: String(Math.round(impressions)),
         clicks: String(clicks),
         conversions: String(conversions),
-        total_complete_payment_rate: revenue.toFixed(2),
+        total_complete_payment: revenue.toFixed(2),
         reach: String(reach),
         budget: spec.dailyBudget.toFixed(2),
       },
@@ -334,7 +335,7 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
       impressions: Number(m.impressions),
       clicks: Number(m.clicks),
       conversions: Number(m.conversions),
-      revenue: Number(m.total_complete_payment_rate),
+      revenue: Number(m.total_complete_payment),
       reach: Number(m.reach),
       dailyBudget: Number(m.budget),
     };
