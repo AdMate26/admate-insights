@@ -39,6 +39,30 @@ export type Confidence = "High" | "Medium" | "Low";
  */
 export type Status = "needs_attention" | "watch" | "stable" | "data_confidence";
 
+/**
+ * PERFORMANCE RATING — a simple, customer-facing verdict derived from the
+ * numeric Performance Score. Unlike Status, it never exposes internal buckets
+ * like "Watch" or "Data Confidence". Code-owned; AI never assigns it.
+ *
+ *   85–100 = Very Good · 70–84 = Good · 50–69 = Fair · 0–49 = Needs Attention
+ */
+export type PerformanceRating = "Very Good" | "Good" | "Fair" | "Needs Attention";
+
+/** Signals for which NO performance score is issued — the UI shows "Check Data". */
+export const NO_SCORE_SIGNALS: ReadonlySet<Signal> = new Set<Signal>([
+  "tracking_issue",
+  "low_volume",
+  "insufficient_comparison",
+]);
+
+/** Map a 0–100 Performance Score to its rating band. */
+export function performanceRatingFor(score: number): PerformanceRating {
+  if (score >= 85) return "Very Good";
+  if (score >= 70) return "Good";
+  if (score >= 50) return "Fair";
+  return "Needs Attention";
+}
+
 
 export type MetricComparison = {
   label: string;
@@ -72,6 +96,15 @@ export type CampaignFinding = {
   confidence: Confidence;
   confidenceScore: number;
   confidenceBasis: string[];
+  /**
+   * Deterministic Performance Score (0–100), or null when no verdict is issued
+   * (tracking_issue / low_volume / insufficient_comparison → "Check Data").
+   * Computed by code from the signal and the PERFORMANCE change only — spend and
+   * confidence never move it.
+   */
+  performanceScore: number | null;
+  /** Customer-facing rating for the score, or null when there is no score. */
+  performanceRating: PerformanceRating | null;
   evidence: {
     currentWindow: string;
     previousWindow: string;
@@ -394,6 +427,66 @@ function classifyConfidence(input: {
   return { confidence, score: Number(score.toFixed(2)), basis };
 }
 
+function clampScore(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+/**
+ * DETERMINISTIC PERFORMANCE SCORE (0–100), code-only.
+ *
+ * Anchored per signal (each signal carries an intrinsic, spend-independent base
+ * severity) and then moved by the MAGNITUDE of the performance change — a worse
+ * deterioration scores lower, a bigger genuine improvement scores higher. Design
+ * constraints:
+ *   - Spend NEVER moves the score (it only drives business priority/severity).
+ *     For scaling_efficiency, whose primary metric IS spend, the score is fixed.
+ *   - Confidence is deliberately excluded so it stays a separate signal.
+ *   - tracking_issue / low_volume / insufficient_comparison get no score (null).
+ *
+ * Bands: strong improvement highest; stable ≈ Good; mild deterioration ≈ Fair;
+ * severe deterioration / creative fatigue = Needs Attention.
+ *
+ * @param absChangePct absolute % change of the signal's PRIMARY metric (never spend).
+ */
+function performanceScore(signal: Signal, absChangePct: number): number | null {
+  const m = Number.isFinite(absChangePct) ? absChangePct : 0;
+  switch (signal) {
+    // No performance verdict — the UI shows "Check Data".
+    case "tracking_issue":
+    case "low_volume":
+    case "insufficient_comparison":
+      return null;
+
+    // Very Good — the strongest improvement ranks highest.
+    case "strong_improvement":
+      return Math.round(clampScore(88 + Math.min(m, 40) * 0.3, 85, 100));
+
+    // Good — efficiency held while scaling; spend size must not move the score.
+    case "scaling_efficiency":
+      return 84;
+
+    // Good — nothing crossed a threshold.
+    case "stable":
+      return 76;
+
+    // Fair, sliding toward Needs Attention as the auction cost spike grows.
+    case "cpm_spike":
+      return Math.round(clampScore(64 - Math.max(0, m - 25) * 0.5, 30, 69));
+
+    // Fair for a mild CTR decline; a severe drop crosses into Needs Attention.
+    case "ctr_drop":
+      return Math.round(clampScore(64 - Math.max(0, m - 15) * 0.64, 20, 69));
+
+    // Fair for mild CPA deterioration; severe (≥ 35%) crosses into Needs Attention.
+    case "cpa_deterioration":
+      return Math.round(clampScore(66 - Math.max(0, m - 20) * 1.13, 10, 69));
+
+    // Needs Attention — creative fatigue is always a corrective-action case.
+    case "creative_fatigue":
+      return Math.round(clampScore(44 - Math.max(0, m - 20) * 0.3, 5, 49));
+  }
+}
+
 /** Share of current-window days where the primary metric sits on the signal's side of the prior mean. */
 function consistency(
   rows: NormalizedDailyRow[],
@@ -691,6 +784,10 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       ctrSupported,
     );
 
+    // Deterministic, spend-free performance score (null for Check-Data signals).
+    const perfScore = performanceScore(signal, Math.abs(primaryChange));
+    const perfRating = perfScore === null ? null : performanceRatingFor(perfScore);
+
     findings.push({
       campaignId,
       campaignName: campaign.name,
@@ -709,6 +806,8 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       confidence,
       confidenceScore,
       confidenceBasis: basis,
+      performanceScore: perfScore,
+      performanceRating: perfRating,
       evidence: {
         currentWindow: windowLabel,
         previousWindow: prevLabel,

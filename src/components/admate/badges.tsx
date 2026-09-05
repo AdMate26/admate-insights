@@ -1,4 +1,10 @@
-import type { Confidence, Severity, Signal, Status } from "@/lib/analysis/engine";
+import type {
+  Confidence,
+  PerformanceRating,
+  Severity,
+  Signal,
+  Status,
+} from "@/lib/analysis/engine";
 import { cn } from "@/lib/utils";
 
 const SIGNAL_TONE: Record<Signal, string> = {
@@ -11,7 +17,40 @@ const SIGNAL_TONE: Record<Signal, string> = {
   strong_improvement: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   stable: "border-border bg-muted text-muted-foreground",
   low_volume: "border-border bg-muted text-muted-foreground",
+  insufficient_comparison: "border-border bg-muted text-muted-foreground",
 };
+
+/** Tone per customer-facing performance rating (null = "Check Data"). */
+const RATING_TONE: Record<PerformanceRating, string> = {
+  "Very Good": "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  Good: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  Fair: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  "Needs Attention": "border-destructive/40 bg-destructive/10 text-destructive",
+};
+
+/**
+ * PERFORMANCE badge — the simple, customer-facing verdict. When `rating` is
+ * null the campaign has no score and we show "Check Data" instead.
+ */
+export function PerformanceBadge({
+  rating,
+  className,
+}: {
+  rating: PerformanceRating | null;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold whitespace-nowrap",
+        rating ? RATING_TONE[rating] : "border-border bg-muted text-muted-foreground",
+        className,
+      )}
+    >
+      {rating ?? "Check Data"}
+    </span>
+  );
+}
 
 const STATUS_TONE: Record<Status, string> = {
   needs_attention: "border-destructive/40 bg-destructive/10 text-destructive",

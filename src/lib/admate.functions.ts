@@ -91,8 +91,12 @@ function buildBriefing(analysis: AdMateAnalysis): string {
     "",
   ];
   priority.forEach((f: CampaignFinding, i) => {
+    // Customer-facing label: the simple Performance rating + score (never the
+    // internal Watch / Data Confidence status). Signal stays visible — it explains why.
+    const rating = f.performanceRating ?? "Check Data";
+    const score = f.performanceScore ?? "—";
     lines.push(
-      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(f.statusLabel)} · ${escapeHtml(f.signalLabel)}`,
+      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(rating)} ${score} · ${escapeHtml(f.signalLabel)}`,
       `<i>What changed:</i> ${escapeHtml(f.whatChanged)}`,
     );
     if (f.aiExplanation) lines.push(`<i>Possible explanation:</i> ${escapeHtml(f.aiExplanation)}`);

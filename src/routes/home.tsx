@@ -2,7 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import { ConfidenceBadge, SeverityBadge, SignalBadge, StatusBadge } from "@/components/admate/badges";
+import { ConfidenceBadge, PerformanceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 
 export const Route = createFileRoute("/home")({
@@ -62,10 +62,11 @@ function CampaignList() {
             <thead>
               <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-3 text-left font-medium">Campaign</th>
-                <th className="px-4 py-3 text-right font-medium">Spend (7d)</th>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Performance</th>
+                <th className="px-4 py-3 text-right font-medium">Score</th>
                 <th className="px-4 py-3 text-left font-medium">Signal</th>
                 <th className="px-4 py-3 text-left font-medium">Confidence</th>
+                <th className="px-4 py-3 text-right font-medium">Spend (7d)</th>
                 <th className="px-4 py-3 text-left font-medium">Reason</th>
               </tr>
             </thead>
@@ -84,21 +85,24 @@ function CampaignList() {
                       <SeverityBadge severity={f.severity} />
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
-                    {f.snapshot.spend.toLocaleString("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                      maximumFractionDigits: 0,
-                    })}
-                  </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={f.status} label={f.statusLabel} />
+                    <PerformanceBadge rating={f.performanceRating} />
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">
+                    {f.performanceScore ?? "—"}
                   </td>
                   <td className="px-4 py-3">
                     <SignalBadge signal={f.signal} label={f.signalLabel} />
                   </td>
                   <td className="px-4 py-3">
                     <ConfidenceBadge confidence={f.confidence} />
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
+                    {f.snapshot.spend.toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    })}
                   </td>
                   <td className="max-w-xs px-4 py-3 text-xs leading-relaxed text-muted-foreground">
                     {f.statusReason}
@@ -110,9 +114,10 @@ function CampaignList() {
         </div>
 
         <p className="mt-4 text-xs text-muted-foreground">
-          Status, signal, priority and confidence are all derived by the deterministic rule engine
-          from the normalized metrics — no labels are hard-coded per campaign. AI writes only the possible
-          explanation and recommended action shown inside each campaign analysis.
+          Performance score, signal, priority and confidence are all derived by the deterministic rule
+          engine from the normalized metrics — no labels are hard-coded per campaign, and spend never
+          moves the score. AI writes only the possible explanation and recommended action shown inside
+          each campaign analysis.
         </p>
       </main>
     </div>

@@ -4,10 +4,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import { ConfidenceBadge, SeverityBadge, SignalBadge, StatusBadge } from "@/components/admate/badges";
+import { ConfidenceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
-import type { MetricComparison } from "@/lib/analysis/engine";
+import type { MetricComparison, PerformanceRating } from "@/lib/analysis/engine";
 
 export const Route = createFileRoute("/campaigns/$campaignId")({
   loader: async ({ context }) => {
@@ -62,6 +62,54 @@ function ChangeCell({ metric }: { metric: MetricComparison }) {
       {metric.changePct > 0 ? "+" : ""}
       {metric.changePct.toFixed(1)}%
     </span>
+  );
+}
+
+/** Prominent, customer-facing Performance Score + rating shown near the top. */
+function PerformanceHeader({
+  rating,
+  score,
+}: {
+  rating: PerformanceRating | null;
+  score: number | null;
+}) {
+  const hasScore = score !== null && rating !== null;
+  const accent = !hasScore
+    ? "border-border bg-muted/40"
+    : rating === "Very Good"
+      ? "border-emerald-500/40 bg-emerald-500/5"
+      : rating === "Good"
+        ? "border-sky-500/40 bg-sky-500/5"
+        : rating === "Fair"
+          ? "border-amber-500/40 bg-amber-500/5"
+          : "border-destructive/50 bg-destructive/5";
+  return (
+    <div className={`mb-6 flex items-center justify-between gap-4 rounded-xl border-2 p-6 ${accent}`}>
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Performance
+        </p>
+        <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+          {hasScore ? rating : "Check Data"}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {hasScore
+            ? "Deterministic score from performance change — spend and confidence excluded."
+            : "No performance verdict for this campaign yet — review the data before judging performance."}
+        </p>
+      </div>
+      <div className="text-right">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Score
+        </p>
+        <p className="mt-1 text-4xl font-bold tabular-nums leading-none text-foreground">
+          {hasScore ? score : "—"}
+        </p>
+        {hasScore ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">out of 100</p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -147,19 +195,23 @@ function CampaignAnalysis() {
       <AdMateHeader back={{ label: "All campaigns" }} />
 
       <main className="mx-auto max-w-3xl px-6 py-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <h2 className="text-xl font-semibold tracking-tight text-foreground">
             {finding.campaignName}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">{finding.headline}</p>
         </div>
 
+        <PerformanceHeader
+          rating={finding.performanceRating}
+          score={finding.performanceScore}
+        />
+
         <SpendSummary metric={finding.evidence.metrics.find((m) => m.label === "Spend")} />
 
         <div className="space-y-6">
-          <Section label="Status">
+          <Section label="Signal">
             <div className="flex flex-wrap items-center gap-3">
-              <StatusBadge status={finding.status} label={finding.statusLabel} />
               <SignalBadge signal={finding.signal} label={finding.signalLabel} />
               <SeverityBadge severity={finding.severity} />
               <span className="text-xs text-muted-foreground">
