@@ -4,9 +4,15 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import { ConfidenceBadge, PerformanceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
+import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
 
 export const Route = createFileRoute("/home")({
-  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
+  validateSearch: (search: Record<string, unknown>): { platform: Platform } => ({
+    platform: isPlatform(search.platform) ? search.platform : DEFAULT_PLATFORM,
+  }),
+  loaderDeps: ({ search }) => ({ platform: search.platform }),
+  loader: ({ context, deps }) =>
+    context.queryClient.ensureQueryData(analysisQueryOptions(deps.platform)),
   head: () => ({
     meta: [
       { title: "AdMate — AI Marketing Analyst for TikTok Ads" },
@@ -28,12 +34,13 @@ export const Route = createFileRoute("/home")({
 
 
 function CampaignList() {
-  const { data } = useSuspenseQuery(analysisQueryOptions);
+  const { platform } = Route.useSearch();
+  const { data } = useSuspenseQuery(analysisQueryOptions(platform));
   const attention = data.findings.filter((f) => f.needsAttention).length;
 
   return (
     <div className="min-h-screen bg-background">
-      <AdMateHeader />
+      <AdMateHeader platform={platform} />
 
       <main className="mx-auto max-w-5xl px-6 py-8">
         <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
@@ -78,6 +85,7 @@ function CampaignList() {
                     <Link
                       to="/campaigns/$campaignId"
                       params={{ campaignId: f.campaignId }}
+                      search={{ platform }}
                       className="block font-medium text-foreground underline-offset-4 hover:underline"
                     >
                       {f.campaignName}

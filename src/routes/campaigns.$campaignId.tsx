@@ -8,10 +8,15 @@ import { ConfidenceBadge, SeverityBadge, SignalBadge } from "@/components/admate
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import type { CampaignTiming, MetricComparison, PerformanceRating } from "@/lib/analysis/engine";
+import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
 
 export const Route = createFileRoute("/campaigns/$campaignId")({
-  loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(analysisQueryOptions);
+  validateSearch: (search: Record<string, unknown>): { platform: Platform } => ({
+    platform: isPlatform(search.platform) ? search.platform : DEFAULT_PLATFORM,
+  }),
+  loaderDeps: ({ search }) => ({ platform: search.platform }),
+  loader: async ({ context, deps }) => {
+    await context.queryClient.ensureQueryData(analysisQueryOptions(deps.platform));
   },
   head: () => ({
     meta: [
@@ -199,7 +204,8 @@ function SpendSummary({ metric }: { metric?: MetricComparison }) {
 
 function CampaignAnalysis() {
   const { campaignId } = Route.useParams();
-  const { data } = useSuspenseQuery(analysisQueryOptions);
+  const { platform } = Route.useSearch();
+  const { data } = useSuspenseQuery(analysisQueryOptions(platform));
   const finding = data.findings.find((f) => f.campaignId === campaignId);
   if (!finding) throw notFound();
 
@@ -211,7 +217,7 @@ function CampaignAnalysis() {
   async function loadPreview() {
     setLoadingPreview(true);
     try {
-      const result = await previewBriefing();
+      const result = await previewBriefing({ data: { platform } });
       setPreview(result.text);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not build preview");
@@ -223,7 +229,7 @@ function CampaignAnalysis() {
   async function send() {
     setSending(true);
     try {
-      const result = await sendTelegramBriefing({ data: { chatId } });
+      const result = await sendTelegramBriefing({ data: { chatId, platform } });
       if (result.ok) toast.success("Briefing sent to Telegram");
       else toast.error(result.error);
     } catch (error) {
@@ -235,7 +241,7 @@ function CampaignAnalysis() {
 
   return (
     <div className="min-h-screen bg-background">
-      <AdMateHeader back={{ label: "All campaigns" }} />
+      <AdMateHeader back={{ label: "All campaigns" }} platform={platform} />
 
       <main className="mx-auto max-w-3xl px-6 py-8">
         <div className="mb-6">

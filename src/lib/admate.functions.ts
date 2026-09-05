@@ -1,130 +1,147 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { runAnalysis, type AnalysisResult, type CampaignFinding } from "./analysis/engine";
+import {
+  runAnalysis,
+  runMetaAnalysis,
+  runGoogleSearchAnalysis,
+  type AnalysisResult,
+} from "./analysis/engine";
+import type { NormalizedDailyRow } from "./tiktok/contract";
 import { DemoTikTokDataProvider } from "./tiktok/demo-provider";
+import { DemoMetaDataProvider } from "./meta/demo-provider";
+import { DemoGoogleSearchDataProvider } from "./google/demo-provider";
 import { loadNormalizedDailyRows } from "./tiktok/normalize";
+import { buildBriefing, briefingPlainText } from "./briefing";
+import { DEFAULT_PLATFORM, isPlatform, platformMeta, type Platform } from "./platforms";
 
 /**
- * MVP keeps everything in-memory: the demo provider is deterministic, so the
+ * MVP keeps everything in-memory: each demo provider is deterministic, so the
  * same synthetic history (and therefore the same findings) is reproduced on
  * every call. No persistence is required for the demo to function.
  */
 const HISTORY_DAYS = 28;
 
 export type AdMateAnalysis = AnalysisResult & {
+  platform: Platform;
   provider: string;
   providerLabel: string;
+  modeLabel: string;
   aiStatus: "ok" | "failed";
   aiError: string | null;
 };
 
-// Short-lived in-memory cache: the demo data is deterministic, so re-running the
-// AI narrative call on every navigation only adds latency (and can time out).
-const CACHE_TTL_MS = 5 * 60 * 1000;
-let cached: { at: number; value: AdMateAnalysis } | undefined;
+/**
+ * Platform registry — the ONE place platform → (own demo provider + own
+ * analyzer) is wired. Each platform runs its OWN analyzer; data and logic never
+ * mix. The AI layer is shared and only writes narrative from the findings.
+ */
+type Analyzer = (rows: NormalizedDailyRow[], windowDays?: number) => AnalysisResult;
 
-async function computeAnalysis(): Promise<AdMateAnalysis> {
-
-    const provider = new DemoTikTokDataProvider();
-
-    // 1 + 2. Provider -> normalization layer -> single internal schema.
-    const rows = await loadNormalizedDailyRows(provider, HISTORY_DAYS);
-
-    // 3. Deterministic engine owns metrics, signal, severity, evidence, confidence.
-    const result = runAnalysis(rows, 7);
-
-    // 4. AI layer adds ONLY possibleExplanation + recommendedAction.
-    let aiStatus: "ok" | "failed" = "ok";
-    let aiError: string | null = null;
-    try {
-      const { explainFindings } = await import("./ai/explain.server");
-      const narratives = await explainFindings(result.findings);
-      for (const finding of result.findings) {
-        const narrative = narratives.find((n) => n.campaignId === finding.campaignId);
-        if (!narrative) continue;
-        finding.aiExplanation = narrative.possibleExplanation;
-        finding.aiRecommendedAction = narrative.recommendedAction;
-      }
-    } catch (error) {
-      aiStatus = "failed";
-      aiError = error instanceof Error ? error.message : String(error);
-      console.error("AI explanation layer failed", error);
-    }
-
-    return {
-      ...result,
-      provider: provider.id,
-      providerLabel: provider.label,
-      aiStatus,
-      aiError,
-    };
-}
-
-export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdMateAnalysis> => {
-    if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
-    const value = await computeAnalysis();
-    cached = { at: Date.now(), value };
-    return value;
-  },
-);
-
-
-const SEVERITY_ICON: Record<string, string> = {
-  critical: "🔴",
-  high: "🟠",
-  medium: "🟡",
-  low: "⚪",
-  info: "🟢",
+const ANALYZER: Record<Platform, Analyzer> = {
+  tiktok: runAnalysis,
+  meta: runMetaAnalysis,
+  google_search: runGoogleSearchAnalysis,
 };
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/** Load + normalize a platform's demo rows with the provider's concrete type. */
+async function loadPlatformRows(
+  platform: Platform,
+): Promise<{ rows: NormalizedDailyRow[]; id: string; label: string }> {
+  switch (platform) {
+    case "meta": {
+      const p = new DemoMetaDataProvider();
+      return { rows: await loadNormalizedDailyRows(p, HISTORY_DAYS), id: p.id, label: p.label };
+    }
+    case "google_search": {
+      const p = new DemoGoogleSearchDataProvider();
+      return { rows: await loadNormalizedDailyRows(p, HISTORY_DAYS), id: p.id, label: p.label };
+    }
+    case "tiktok":
+    default: {
+      const p = new DemoTikTokDataProvider();
+      return { rows: await loadNormalizedDailyRows(p, HISTORY_DAYS), id: p.id, label: p.label };
+    }
+  }
 }
 
-function buildBriefing(analysis: AdMateAnalysis): string {
-  const priority = analysis.findings.filter((f) => f.needsAttention).slice(0, 5);
-  const lines: string[] = [
-    "<b>AdMate briefing — TikTok Ads (demo data)</b>",
-    `Window: ${analysis.currentWindow.start} → ${analysis.currentWindow.end} vs ${analysis.previousWindow.start} → ${analysis.previousWindow.end}`,
-    `Spend in window: $${analysis.totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })} · ${priority.length} campaigns need attention`,
-    "",
-  ];
-  priority.forEach((f: CampaignFinding, i) => {
-    // Customer-facing label: the simple Performance rating + score, or the
-    // code-owned label ("Early Data" / "Check Data") when there is no score.
-    // Signal stays visible — it explains why.
-    const score = f.performanceScore ?? "—";
-    lines.push(
-      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(f.performanceLabel)} ${score} · ${escapeHtml(f.signalLabel)}`,
-      `<i>What changed:</i> ${escapeHtml(f.whatChanged)}`,
-    );
-    if (f.aiExplanation) lines.push(`<i>Possible explanation:</i> ${escapeHtml(f.aiExplanation)}`);
-    // For data-confidence cases (e.g. possible tracking issue) use the
-    // deterministic guidance action; otherwise use the AI recommendation.
-    const action = f.guidance?.action ?? f.aiRecommendedAction;
-    if (action) lines.push(`<b>Recommended action:</b> ${escapeHtml(action)}`);
-    lines.push(`<i>Confidence:</i> ${f.confidence} (deterministic)`, "");
-  });
-  if (priority.length === 0) lines.push("No campaign crossed an attention threshold this week.", "");
-  lines.push("Signals, metrics, severity and confidence computed in code; AI wrote interpretation only.");
-  return lines.join("\n");
+// Short-lived in-memory cache PER PLATFORM: the demo data is deterministic, so
+// re-running the AI narrative call on every navigation only adds latency.
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const cache = new Map<Platform, { at: number; value: AdMateAnalysis }>();
+
+async function computeAnalysis(platform: Platform): Promise<AdMateAnalysis> {
+  // 1 + 2. Provider -> normalization layer -> single internal schema.
+  const { rows, id, label } = await loadPlatformRows(platform);
+
+  // 3. Deterministic PLATFORM-SPECIFIC analyzer owns metrics, signal, severity,
+  //    evidence, confidence — TikTok / Meta / Google Search each run their own.
+  const result = ANALYZER[platform](rows, 7);
+
+  // 4. AI layer adds ONLY possibleExplanation + recommendedAction (unchanged).
+  let aiStatus: "ok" | "failed" = "ok";
+  let aiError: string | null = null;
+  try {
+    const { explainFindings } = await import("./ai/explain.server");
+    const narratives = await explainFindings(result.findings);
+    for (const finding of result.findings) {
+      const narrative = narratives.find((n) => n.campaignId === finding.campaignId);
+      if (!narrative) continue;
+      finding.aiExplanation = narrative.possibleExplanation;
+      finding.aiRecommendedAction = narrative.recommendedAction;
+    }
+  } catch (error) {
+    aiStatus = "failed";
+    aiError = error instanceof Error ? error.message : String(error);
+    console.error("AI explanation layer failed", error);
+  }
+
+  return {
+    ...result,
+    platform,
+    provider: id,
+    providerLabel: label,
+    modeLabel: platformMeta(platform).modeLabel,
+    aiStatus,
+    aiError,
+  };
 }
+
+function coercePlatform(input: unknown): Platform {
+  const value =
+    input && typeof input === "object" && "platform" in input
+      ? (input as { platform?: unknown }).platform
+      : input;
+  return isPlatform(value) ? value : DEFAULT_PLATFORM;
+}
+
+export const getAdMateAnalysis = createServerFn({ method: "GET" })
+  .validator((input: { platform?: Platform } | undefined) => ({
+    platform: coercePlatform(input),
+  }))
+  .handler(async ({ data }): Promise<AdMateAnalysis> => {
+    const platform = data.platform;
+    const hit = cache.get(platform);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+    const value = await computeAnalysis(platform);
+    cache.set(platform, { at: Date.now(), value });
+    return value;
+  });
 
 /** Plain-text render of the same digest, for reviewing it before Telegram is connected. */
-export const previewBriefing = createServerFn({ method: "GET" }).handler(async () => {
-  const analysis = await getAdMateAnalysis();
-  return {
-    text: buildBriefing(analysis)
-      .replace(/<\/?(b|i)>/g, "")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">"),
-  };
-});
+export const previewBriefing = createServerFn({ method: "GET" })
+  .validator((input: { platform?: Platform } | undefined) => ({
+    platform: coercePlatform(input),
+  }))
+  .handler(async ({ data }) => {
+    const analysis = await getAdMateAnalysis({ data: { platform: data.platform } });
+    return { text: briefingPlainText(analysis) };
+  });
 
 export const sendTelegramBriefing = createServerFn({ method: "POST" })
-  .validator((input: { chatId?: string }) => ({ chatId: input?.chatId?.trim() || undefined }))
+  .validator((input: { chatId?: string; platform?: Platform }) => ({
+    chatId: input?.chatId?.trim() || undefined,
+    platform: coercePlatform(input),
+  }))
   .handler(async ({ data }) => {
     const token = process.env["TELEGRAM_BOT_TOKEN"];
     if (!token) {
@@ -135,7 +152,7 @@ export const sendTelegramBriefing = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Enter the Telegram chat ID to send the briefing." };
     }
 
-    const analysis = await getAdMateAnalysis();
+    const analysis = await getAdMateAnalysis({ data: { platform: data.platform } });
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

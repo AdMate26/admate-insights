@@ -3,13 +3,16 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { supabase } from "@/integrations/supabase/client";
+import { DEFAULT_PLATFORM, PLATFORMS, platformMeta, type Platform } from "@/lib/platforms";
 
 type Props = {
   /** Optional back link shown on the analysis view. */
   back?: { label: string };
+  /** Currently selected demo platform. */
+  platform?: Platform;
 };
 
-export function AdMateHeader({ back }: Props) {
+export function AdMateHeader({ back, platform = DEFAULT_PLATFORM }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
@@ -29,6 +32,14 @@ export function AdMateHeader({ back }: Props) {
     navigate({ to: "/", replace: true });
   }
 
+  // Switching platform returns to the campaign list for that platform. The demo
+  // analysis screen is unchanged — only the data source behind it changes.
+  function handlePlatformChange(next: Platform) {
+    navigate({ to: "/home", search: { platform: next } });
+  }
+
+  const mode = platformMeta(platform).modeLabel;
+
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-6 sm:flex-row sm:items-end sm:justify-between">
@@ -36,6 +47,7 @@ export function AdMateHeader({ back }: Props) {
           {back ? (
             <Link
               to="/home"
+              search={{ platform }}
               className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               ← {back.label}
@@ -45,14 +57,30 @@ export function AdMateHeader({ back }: Props) {
           <p className="mt-1 text-sm text-muted-foreground">AI Marketing Analyst Platform</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <dl className="flex flex-wrap gap-2">
+          <dl className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
               <dt className="uppercase tracking-wide text-muted-foreground">Platform</dt>
-              <dd className="font-medium text-foreground">TikTok Ads</dd>
+              <dd>
+                <label className="sr-only" htmlFor="platform-select">
+                  Demo platform
+                </label>
+                <select
+                  id="platform-select"
+                  value={platform}
+                  onChange={(e) => handlePlatformChange(e.target.value as Platform)}
+                  className="cursor-pointer rounded-sm bg-background font-medium text-foreground outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {PLATFORMS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </dd>
             </div>
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
               <dt className="uppercase tracking-wide text-muted-foreground">Mode</dt>
-              <dd className="font-medium text-foreground">Demo Mode — Synthetic TikTok Ads Data</dd>
+              <dd className="font-medium text-foreground">{mode}</dd>
             </div>
             <div className="flex items-center gap-2">
               <Link

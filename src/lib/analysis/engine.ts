@@ -28,7 +28,9 @@ export type Signal =
   | "low_volume"
   | "tracking_issue"
   | "cpm_spike"
-  | "insufficient_comparison";
+  | "insufficient_comparison"
+  // Google Ads — Search: visibility limited by budget or Ad Rank (lost impression share).
+  | "lost_impression_share";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type Confidence = "High" | "Medium" | "Low";
@@ -92,7 +94,11 @@ export type DataConfidenceGuidance = {
   steps?: string[];
 };
 
-export function dataConfidenceGuidanceFor(signal: Signal): DataConfidenceGuidance | null {
+export function dataConfidenceGuidanceFor(
+  signal: Signal,
+  /** Platform noun used in the tracking steps (e.g. "TikTok", "Meta", "Google"). */
+  platformNoun = "TikTok",
+): DataConfidenceGuidance | null {
   if (signal === "low_volume") {
     return {
       directionNote: "No major issue detected yet.",
@@ -103,8 +109,8 @@ export function dataConfidenceGuidanceFor(signal: Signal): DataConfidenceGuidanc
     return {
       action: "Verify conversion tracking before changing budget, targeting or creative.",
       steps: [
-        "Compare TikTok conversions with your actual orders or leads.",
-        "If they do not match, check whether the TikTok Pixel / conversion event is recording correctly.",
+        `Compare ${platformNoun} conversions with your actual orders or leads.`,
+        `If they do not match, check whether the ${platformNoun} conversion tracking (pixel / conversion event) is recording correctly.`,
         "If needed, ask your website or technical team to verify tracking.",
         "If the numbers match, treat the drop as a real campaign-performance issue and review the campaign.",
       ],
@@ -340,6 +346,7 @@ const SIGNAL_META: Record<Signal, { label: string; baseSeverity: Severity; atten
   cpm_spike: { label: "CPM spike", baseSeverity: "high", attention: true },
   creative_fatigue: { label: "Possible creative fatigue", baseSeverity: "high", attention: true },
   ctr_drop: { label: "CTR deterioration", baseSeverity: "medium", attention: true },
+  lost_impression_share: { label: "Lost impression share", baseSeverity: "medium", attention: true },
   scaling_efficiency: { label: "Scaling efficiency", baseSeverity: "medium", attention: false },
   strong_improvement: { label: "Strong improvement", baseSeverity: "info", attention: false },
   low_volume: { label: "Low volume", baseSeverity: "low", attention: false },
@@ -449,6 +456,14 @@ function classifyStatus(
       return {
         status: "watch",
         reason: "Auction cost rose but delivery efficiency has not broken; monitor whether it persists.",
+      };
+    case "lost_impression_share":
+      return {
+        status: absChangePct >= 30
+          ? "needs_attention"
+          : "watch",
+        reason:
+          "The campaign is missing eligible impressions to budget or Ad Rank, so it is not reaching all available demand — a visibility limit rather than a quality problem.",
       };
     case "scaling_efficiency":
       return {
@@ -612,6 +627,11 @@ function performanceScore(signal: Signal, absChangePct: number): number | null {
     // Needs Attention — creative fatigue is always a corrective-action case.
     case "creative_fatigue":
       return Math.round(clampScore(44 - Math.max(0, m - 20) * 0.3, 5, 49));
+
+    // Fair — lost visibility means missed demand, worse as the loss grows; a
+    // large loss slides into Needs Attention. (m = magnitude of impression loss.)
+    case "lost_impression_share":
+      return Math.round(clampScore(62 - Math.max(0, m - 10) * 0.6, 30, 69));
   }
 }
 
@@ -1000,4 +1020,471 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
     generatedAt: new Date().toISOString(),
     findings,
   };
+}
+
+/* ===========================================================================
+ * MULTI-PLATFORM ANALYZERS
+ *
+ * runAnalysis above is the TikTok analyzer (unchanged). The generic runner
+ * below shares the common AdMate OUTPUT structure — severity, confidence,
+ * status, performance score/rating/label, timing, guidance, snapshot — while
+ * each platform supplies its OWN detector: its own signal cascade, its own
+ * thresholds, and its own platform-appropriate evidence rows. No platform
+ * reuses another platform's rules.
+ *   Code calculates → rules detect → AI explains (AI layer untouched).
+ * ===========================================================================
+ */
+
+type Deltas = {
+  dCpa: number | null;
+  dCtr: number | null;
+  dCvr: number | null;
+  dCpm: number | null;
+  dCpc: number | null;
+  dSpend: number | null;
+  dConv: number | null;
+  dClicks: number | null;
+  dImpr: number | null;
+  dRoas: number | null;
+  dFreq: number | null;
+  freqCur: number;
+  freqPrev: number;
+};
+
+type DetectorCtx = Deltas & {
+  cur: Totals;
+  prev: Totals;
+  rows: NormalizedDailyRow[];
+  current: string[];
+  curSet: Set<string>;
+  prevSet: Set<string>;
+  /** Share of current-window days on the signal's side of the prior mean. */
+  consistencyOf: (
+    previousMean: number,
+    metricOf: (t: Totals) => number,
+    expect: "higher" | "lower",
+  ) => number;
+};
+
+type DetectorResult = {
+  signal: Signal;
+  primaryMetric: string;
+  /** Signed % change of the PRIMARY metric (magnitude drives score/severity). */
+  primaryChange: number;
+  consistencyValue: number;
+  headline: string;
+  whatChanged: string;
+  whyItMatters: string;
+  /** Platform-appropriate evidence rows. */
+  metrics: MetricComparison[];
+  /** Platform-specific description of the detection method/thresholds. */
+  method: string;
+  /** ctr_drop only: whether a severe CTR decline is corroborated downstream. */
+  ctrSupported?: boolean;
+};
+
+type Detector = (ctx: DetectorCtx) => DetectorResult;
+
+/** Impressions-weighted Search impression share (and share lost to budget / rank) for a window. */
+function windowImpressionShare(
+  rows: NormalizedDailyRow[],
+  dateSet: Set<string>,
+): { is: number; lostBudget: number; lostRank: number } {
+  let imprSum = 0;
+  let isW = 0;
+  let lbW = 0;
+  let lrW = 0;
+  for (const r of rows) {
+    if (!dateSet.has(r.date) || r.searchImpressionShare == null) continue;
+    const w = r.impressions;
+    imprSum += w;
+    isW += r.searchImpressionShare * w;
+    lbW += (r.searchLostIsBudget ?? 0) * w;
+    lrW += (r.searchLostIsRank ?? 0) * w;
+  }
+  if (imprSum === 0) return { is: Number.NaN, lostBudget: Number.NaN, lostRank: Number.NaN };
+  return { is: isW / imprSum, lostBudget: lbW / imprSum, lostRank: lrW / imprSum };
+}
+
+/**
+ * Generic per-campaign runner. Owns the shared output structure; delegates the
+ * signal cascade + evidence to the platform `detect` function.
+ */
+function analyzeCampaigns(
+  rows: NormalizedDailyRow[],
+  windowDays: number,
+  detect: Detector,
+  opts: { platformNoun: string },
+): AnalysisResult {
+  const today = new Date().toISOString().slice(0, 10);
+  const { current, previous } = selectWindows(rows, windowDays);
+  const curSet = new Set(current);
+  const prevSet = new Set(previous);
+  const currentWindow = { start: current[0] ?? "", end: current[current.length - 1] ?? "" };
+  const previousWindow = { start: previous[0] ?? "", end: previous[previous.length - 1] ?? "" };
+  const windowLabel = `${currentWindow.start} → ${currentWindow.end}`;
+  const prevLabel = `${previousWindow.start} → ${previousWindow.end}`;
+
+  const campaigns = new Map<string, { name: string; rows: NormalizedDailyRow[] }>();
+  for (const r of rows) {
+    const entry = campaigns.get(r.campaignId);
+    if (entry) entry.rows.push(r);
+    else campaigns.set(r.campaignId, { name: r.campaignName, rows: [r] });
+  }
+
+  const findings: CampaignFinding[] = [];
+  let totalSpend = 0;
+
+  for (const [campaignId, campaign] of campaigns) {
+    const cur = campaign.rows.filter((r) => curSet.has(r.date)).reduce(add, EMPTY);
+    const prev = campaign.rows.filter((r) => prevSet.has(r.date)).reduce(add, EMPTY);
+    totalSpend += cur.spend;
+
+    const freqCur = avgDailyFrequency(campaign.rows, curSet);
+    const freqPrev = avgDailyFrequency(campaign.rows, prevSet);
+
+    const ctx: DetectorCtx = {
+      cur,
+      prev,
+      rows: campaign.rows,
+      current,
+      curSet,
+      prevSet,
+      dCpa: change(cpa(cur), cpa(prev)),
+      dCtr: change(ctr(cur), ctr(prev)),
+      dCvr: change(cvr(cur), cvr(prev)),
+      dCpm: change(cpm(cur), cpm(prev)),
+      dCpc: change(cpc(cur), cpc(prev)),
+      dSpend: change(cur.spend, prev.spend),
+      dConv: change(cur.conversions, prev.conversions),
+      dClicks: change(cur.clicks, prev.clicks),
+      dImpr: change(cur.impressions, prev.impressions),
+      dRoas: change(roas(cur), roas(prev)),
+      dFreq: change(freqCur, freqPrev),
+      freqCur,
+      freqPrev,
+      consistencyOf: (mean, metricOf, expect) =>
+        consistency(campaign.rows, current, mean, metricOf, expect),
+    };
+
+    const d = detect(ctx);
+    const absChange = Math.abs(d.primaryChange);
+
+    const { severity, score } = classifySeverity(d.signal, absChange, cur.spend);
+    const { confidence, score: confidenceScore, basis } = classifyConfidence({
+      cur,
+      prev,
+      windowDays,
+      absChangePct: absChange,
+      dayLevelConsistency: d.consistencyValue,
+      signal: d.signal,
+    });
+    const { status, reason: statusReason } = classifyStatus(
+      d.signal,
+      absChange,
+      d.ctrSupported ?? false,
+    );
+
+    const perfScore = performanceScore(d.signal, absChange);
+    const perfRating = perfScore === null ? null : performanceRatingFor(perfScore);
+    const perfLabel = performanceLabelFor(d.signal, perfRating);
+    const guidance = dataConfidenceGuidanceFor(d.signal, opts.platformNoun);
+
+    const firstRow = campaign.rows[0];
+    const timing = computeTiming(
+      firstRow?.campaignStartDate ?? null,
+      firstRow?.campaignEndDate ?? null,
+      today,
+    );
+
+    findings.push({
+      campaignId,
+      campaignName: campaign.name,
+      signal: d.signal,
+      signalLabel: SIGNAL_META[d.signal].label,
+      status,
+      statusLabel: STATUS_LABEL[status],
+      statusReason,
+      severity,
+      severityScore: score,
+      needsAttention: status === "needs_attention",
+      headline: d.headline,
+      whatChanged: d.whatChanged,
+      whyItMatters: d.whyItMatters,
+      confidence,
+      confidenceScore,
+      confidenceBasis: basis,
+      performanceScore: perfScore,
+      performanceRating: perfRating,
+      performanceLabel: perfLabel,
+      guidance,
+      timing,
+      evidence: {
+        currentWindow: windowLabel,
+        previousWindow: prevLabel,
+        method: d.method,
+        metrics: d.metrics,
+      },
+      snapshot: {
+        spend: Number(cur.spend.toFixed(2)),
+        impressions: cur.impressions,
+        clicks: cur.clicks,
+        conversions: cur.conversions,
+        ctr: Number.isFinite(ctr(cur)) ? Number((ctr(cur) * 100).toFixed(2)) : 0,
+        cpa: Number.isFinite(cpa(cur)) ? Number(cpa(cur).toFixed(2)) : 0,
+        cpm: Number.isFinite(cpm(cur)) ? Number(cpm(cur).toFixed(2)) : 0,
+        roas: Number.isFinite(roas(cur)) ? Number(roas(cur).toFixed(2)) : 0,
+        frequency: Number.isFinite(freqCur) ? Number(freqCur.toFixed(2)) : 0,
+      },
+    });
+  }
+
+  findings.sort(
+    (a, b) =>
+      b.severityScore + CONFIDENCE_WEIGHT[b.confidence] -
+      (a.severityScore + CONFIDENCE_WEIGHT[a.confidence]),
+  );
+
+  return {
+    currentWindow,
+    previousWindow,
+    totalSpend: Number(totalSpend.toFixed(2)),
+    generatedAt: new Date().toISOString(),
+    findings,
+  };
+}
+
+/* ------------------------------- META ------------------------------------ */
+
+/** Meta-appropriate evidence rows (results, cost per result, reach/frequency). */
+function metaMetrics(ctx: DetectorCtx, primary: string): MetricComparison[] {
+  const { cur, prev, dSpend, dCpa, dCpm, dCtr, dConv, dClicks, dRoas, dFreq, freqCur, freqPrev } = ctx;
+  return [
+    { label: "Spend", current: money(cur.spend), previous: money(prev.spend), changePct: dSpend, direction: dir(dSpend), primary: primary === "Spend" },
+    { label: "Results", current: num(cur.conversions), previous: num(prev.conversions), changePct: dConv, direction: dir(dConv), primary: primary === "Results" },
+    { label: "Cost per result", current: money(cpa(cur)), previous: money(cpa(prev)), changePct: dCpa, direction: dir(dCpa), primary: primary === "Cost per result" },
+    { label: "CPM", current: money(cpm(cur)), previous: money(cpm(prev)), changePct: dCpm, direction: dir(dCpm), primary: primary === "CPM" },
+    { label: "CTR", current: pctStr(ctr(cur)), previous: pctStr(ctr(prev)), changePct: dCtr, direction: dir(dCtr), primary: primary === "CTR" },
+    { label: "Link clicks", current: num(cur.clicks), previous: num(prev.clicks), changePct: dClicks, direction: dir(dClicks) },
+    { label: "Impressions", current: num(cur.impressions), previous: num(prev.impressions), changePct: change(cur.impressions, prev.impressions), direction: dir(change(cur.impressions, prev.impressions)) },
+    { label: "Reach", current: num(cur.reach), previous: num(prev.reach), changePct: change(cur.reach, prev.reach), direction: dir(change(cur.reach, prev.reach)) },
+    { label: "Frequency (avg daily)", current: num(freqCur), previous: num(freqPrev), changePct: dFreq, direction: dir(dFreq), primary: primary === "Frequency" },
+    { label: "ROAS", current: ratio(roas(cur)), previous: ratio(roas(prev)), changePct: dRoas, direction: dir(dRoas), primary: primary === "ROAS" },
+  ];
+}
+
+const META_METHOD =
+  "Meta analyzer: latest 7 complete days vs the prior 7. Meta-specific thresholds — creative fatigue when avg daily frequency >= +12% AND CTR <= -12% AND cost per result rising (Meta saturation is frequency-led); delivery-cost pressure when CPM >= +20% with conversion rate roughly stable; cost-per-result deterioration when cost per result >= +18% (severe >= +40%); possible tracking issue when link clicks held (> -25%) while results fell >= 55%; strong improvement when cost per result <= -15% or ROAS >= +20% (never when cost per result worsened > +5%); early data below 10 results. Multiple supporting metrics required before a strong conclusion; spend never moves the score.";
+
+const detectMeta: Detector = (ctx) => {
+  const { cur, prev, dCpa, dCtr, dCvr, dCpm, dSpend, dConv, dClicks, dRoas, dFreq, freqCur, freqPrev } = ctx;
+
+  const lowVolume = cur.conversions < 10;
+  const noComparison = prev.days === 0 || prev.spend === 0 || prev.conversions === 0;
+  const clicksHeld = dClicks !== null && dClicks > -25;
+  const conversionsCollapsed = dConv !== null && dConv <= -55;
+  const trackingCondition = clicksHeld && conversionsCollapsed;
+  const fatigueCondition =
+    dFreq !== null && dFreq >= 12 && dCtr !== null && dCtr <= -12 && dCpa !== null && dCpa > 0;
+  const severeCpr = dCpa !== null && dCpa >= 40;
+  const strongerIssue = trackingCondition || fatigueCondition || severeCpr;
+
+  const base = (signal: Signal, primaryMetric: string, primaryChange: number, extra: {
+    consistencyValue: number;
+    headline: string;
+    whatChanged: string;
+    whyItMatters: string;
+    ctrSupported?: boolean;
+  }): DetectorResult => ({
+    signal,
+    primaryMetric,
+    primaryChange,
+    metrics: metaMetrics(ctx, primaryMetric),
+    method: META_METHOD,
+    ...extra,
+  });
+
+  if (lowVolume && !strongerIssue) {
+    return base("low_volume", "Results", dConv ?? 0, {
+      consistencyValue: 0.5,
+      headline: "Still gathering results — not enough for a reliable score",
+      whatChanged: `Only ${cur.conversions} results on ${money(cur.spend)} of spend this week (prior week: ${prev.conversions} results, ${money(prev.spend)}). No major issue detected yet.`,
+      whyItMatters: "AdMate has the Meta data, but there are not enough results yet for a reliable performance score.",
+    });
+  }
+  if (noComparison) {
+    return base("insufficient_comparison", "Spend", 0, {
+      consistencyValue: 0.5,
+      headline: "No comparable prior period",
+      whatChanged: `Current week: ${money(cur.spend)} of spend, ${cur.conversions} results. The prior week had no comparable activity, so period-over-period change cannot be computed.`,
+      whyItMatters: "This looks like a new or recently reactivated Meta campaign. Without a comparable prior week, any change figure would be misleading.",
+    });
+  }
+  if (trackingCondition) {
+    return base("tracking_issue", "CVR", dCvr ?? 0, {
+      consistencyValue: ctx.consistencyOf(cvr(prev), cvr, "lower"),
+      headline: "Results dropped sharply while link clicks held steady",
+      whatChanged: `Link clicks moved ${dClicks?.toFixed(1)}% but results fell ${dConv?.toFixed(1)}% (${prev.conversions} → ${cur.conversions}), taking CVR from ${pctStr(cvr(prev))} to ${pctStr(cvr(cur))}.`,
+      whyItMatters: "The same number of people are clicking, but far fewer results are being recorded. On Meta this often points to Pixel / Conversions API tracking rather than a real demand drop — and spend keeps running either way.",
+    });
+  }
+  if (fatigueCondition) {
+    return base("creative_fatigue", "Frequency", dFreq ?? 0, {
+      consistencyValue: ctx.consistencyOf(ctr(prev), ctr, "lower"),
+      headline: "Frequency climbing while CTR falls and cost per result rises",
+      whatChanged: `Avg daily frequency rose from ${num(freqPrev)} to ${num(freqCur)} (+${(dFreq ?? 0).toFixed(1)}%), CTR fell ${(dCtr ?? 0).toFixed(1)}%, and cost per result rose ${(dCpa ?? 0).toFixed(1)}%.`,
+      whyItMatters: "On Meta, rising frequency with falling CTR and a higher cost per result is the classic creative-saturation pattern — the same people are seeing the ad more often and responding less.",
+    });
+  }
+  if (dCpm !== null && dCpm >= 20 && (dCvr === null || dCvr > -10)) {
+    return base("cpm_spike", "CPM", dCpm, {
+      consistencyValue: ctx.consistencyOf(cpm(prev), cpm, "higher"),
+      headline: `Delivery cost pressure — CPM up ${dCpm.toFixed(1)}%`,
+      whatChanged: `CPM rose from ${money(cpm(prev))} to ${money(cpm(cur))} (+${dCpm.toFixed(1)}%) while conversion rate held (${pctStr(cvr(prev))} → ${pctStr(cvr(cur))}).`,
+      whyItMatters: "Meta auction/delivery cost is higher, so the same budget buys fewer impressions and results. Conversion quality looks intact, so this reads as delivery-cost pressure rather than a funnel problem.",
+    });
+  }
+  if (dCpa !== null && dCpa >= 18) {
+    return base("cpa_deterioration", "Cost per result", dCpa, {
+      consistencyValue: ctx.consistencyOf(cpa(prev), cpa, "higher"),
+      headline: `Cost per result rose ${dCpa.toFixed(1)}%`,
+      whatChanged: `Cost per result moved from ${money(cpa(prev))} to ${money(cpa(cur))} (+${dCpa.toFixed(1)}%), with conversion rate ${pctStr(cvr(prev))} → ${pctStr(cvr(cur))} and CPM ${money(cpm(prev))} → ${money(cpm(cur))}.`,
+      whyItMatters: `${money(cur.spend)} of Meta spend this week is buying results at a materially higher cost, driven by weaker conversion rate rather than delivery cost.`,
+    });
+  }
+  if (!(dCpa !== null && dCpa > 5) && ((dCpa !== null && dCpa <= -15) || (dRoas !== null && dRoas >= 20))) {
+    const byCpa = dCpa !== null && dCpa <= -15;
+    return base("strong_improvement", byCpa ? "Cost per result" : "ROAS", byCpa ? dCpa : (dRoas ?? 0), {
+      consistencyValue: ctx.consistencyOf(cpa(prev), cpa, "lower"),
+      headline: "Efficiency improved materially",
+      whatChanged: `Cost per result ${money(cpa(prev))} → ${money(cpa(cur))} (${dCpa === null ? "n/a" : `${dCpa.toFixed(1)}%`}) and ROAS ${ratio(roas(prev))} → ${ratio(roas(cur))} (${dRoas === null ? "n/a" : `${dRoas.toFixed(1)}%`}).`,
+      whyItMatters: "Results are getting cheaper (or more valuable) at current budget, so this is the strongest Meta candidate for additional spend.",
+    });
+  }
+  return base("stable", "Cost per result", dCpa ?? 0, {
+    consistencyValue: 0.5,
+    headline: "No material change detected",
+    whatChanged: `Cost per result ${dCpa === null ? "n/a" : `${dCpa.toFixed(1)}%`}, CTR ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}, CPM ${dCpm === null ? "n/a" : `${dCpm.toFixed(1)}%`}, frequency ${dFreq === null ? "n/a" : `${dFreq.toFixed(1)}%`}, spend ${dSpend === null ? "n/a" : `${dSpend.toFixed(1)}%`} — all inside Meta thresholds.`,
+    whyItMatters: "Nothing crossed a Meta detection threshold, so no action is required for this campaign.",
+  });
+};
+
+export function runMetaAnalysis(rows: NormalizedDailyRow[], windowDays = 7): AnalysisResult {
+  return analyzeCampaigns(rows, windowDays, detectMeta, { platformNoun: "Meta" });
+}
+
+/* -------------------------- GOOGLE SEARCH -------------------------------- */
+
+function googleMetrics(ctx: DetectorCtx, primary: string): MetricComparison[] {
+  const { cur, prev, dSpend, dCpa, dCpc, dCtr, dConv, dClicks, dRoas } = ctx;
+  const curIS = windowImpressionShare(ctx.rows, ctx.curSet);
+  const prevIS = windowImpressionShare(ctx.rows, ctx.prevSet);
+  return [
+    { label: "Spend", current: money(cur.spend), previous: money(prev.spend), changePct: dSpend, direction: dir(dSpend), primary: primary === "Spend" },
+    { label: "Conversions", current: num(cur.conversions), previous: num(prev.conversions), changePct: dConv, direction: dir(dConv), primary: primary === "Conversions" },
+    { label: "Cost per conversion", current: money(cpa(cur)), previous: money(cpa(prev)), changePct: dCpa, direction: dir(dCpa), primary: primary === "CPA" },
+    { label: "CPC (avg)", current: money(cpc(cur)), previous: money(cpc(prev)), changePct: dCpc, direction: dir(dCpc), primary: primary === "CPC" },
+    { label: "CTR", current: pctStr(ctr(cur)), previous: pctStr(ctr(prev)), changePct: dCtr, direction: dir(dCtr), primary: primary === "CTR" },
+    { label: "Clicks", current: num(cur.clicks), previous: num(prev.clicks), changePct: dClicks, direction: dir(dClicks) },
+    { label: "Impressions", current: num(cur.impressions), previous: num(prev.impressions), changePct: change(cur.impressions, prev.impressions), direction: dir(change(cur.impressions, prev.impressions)), primary: primary === "Impressions" },
+    { label: "Conversion value", current: money(cur.revenue), previous: money(prev.revenue), changePct: change(cur.revenue, prev.revenue), direction: dir(change(cur.revenue, prev.revenue)) },
+    { label: "ROAS", current: ratio(roas(cur)), previous: ratio(roas(prev)), changePct: dRoas, direction: dir(dRoas), primary: primary === "ROAS" },
+    { label: "Search impression share", current: pctStr(curIS.is), previous: pctStr(prevIS.is), changePct: change(curIS.is, prevIS.is), direction: dir(change(curIS.is, prevIS.is)), primary: primary === "Impression share" },
+    { label: "Lost IS (budget)", current: pctStr(curIS.lostBudget), previous: pctStr(prevIS.lostBudget), changePct: change(curIS.lostBudget, prevIS.lostBudget), direction: dir(change(curIS.lostBudget, prevIS.lostBudget)) },
+    { label: "Lost IS (rank)", current: pctStr(curIS.lostRank), previous: pctStr(prevIS.lostRank), changePct: change(curIS.lostRank, prevIS.lostRank), direction: dir(change(curIS.lostRank, prevIS.lostRank)) },
+  ];
+}
+
+const GOOGLE_METHOD =
+  "Google Search analyzer: latest 7 complete days vs the prior 7. Search-specific thresholds — lost visibility when Search impression share fell >= 8 points AND impressions are constrained by budget (>= 15% lost) or Ad Rank (>= 20% lost); CPA deterioration / rising CPC when cost per conversion >= +18% (severe >= +40%), typically alongside higher CPC; search-relevance weakness when CTR <= -12%; strong improvement when conversion value / ROAS >= +20% or cost per conversion <= -15% (never when CPA worsened > +5%); early data below 10 conversions. Quality Score is NOT used as the performance score. Cautious wording; multiple supporting metrics required.";
+
+const detectGoogleSearch: Detector = (ctx) => {
+  const { cur, prev, dCpa, dCpc, dCtr, dConv, dClicks, dImpr, dRoas } = ctx;
+
+  const lowVolume = cur.conversions < 10;
+  const noComparison = prev.days === 0 || prev.spend === 0 || prev.conversions === 0;
+  const curIS = windowImpressionShare(ctx.rows, ctx.curSet);
+  const prevIS = windowImpressionShare(ctx.rows, ctx.prevSet);
+  const isDropPts = Number.isFinite(curIS.is) && Number.isFinite(prevIS.is) ? prevIS.is - curIS.is : 0;
+  const budgetOrRankLimited =
+    (Number.isFinite(curIS.lostBudget) && curIS.lostBudget >= 0.15) ||
+    (Number.isFinite(curIS.lostRank) && curIS.lostRank >= 0.2);
+  const visibilityLimited = isDropPts >= 0.08 && budgetOrRankLimited;
+  const severeCpa = dCpa !== null && dCpa >= 40;
+
+  const base = (signal: Signal, primaryMetric: string, primaryChange: number, extra: {
+    consistencyValue: number;
+    headline: string;
+    whatChanged: string;
+    whyItMatters: string;
+    ctrSupported?: boolean;
+  }): DetectorResult => ({
+    signal,
+    primaryMetric,
+    primaryChange,
+    metrics: googleMetrics(ctx, primaryMetric),
+    method: GOOGLE_METHOD,
+    ...extra,
+  });
+
+  if (lowVolume && !severeCpa && !visibilityLimited) {
+    return base("low_volume", "Conversions", dConv ?? 0, {
+      consistencyValue: 0.5,
+      headline: "Still gathering conversions — not enough for a reliable score",
+      whatChanged: `Only ${cur.conversions} conversions on ${money(cur.spend)} of spend this week (prior week: ${prev.conversions}). No major issue detected yet.`,
+      whyItMatters: "AdMate has the Google Search data, but there are not enough conversions yet for a reliable performance score.",
+    });
+  }
+  if (noComparison) {
+    return base("insufficient_comparison", "Spend", 0, {
+      consistencyValue: 0.5,
+      headline: "No comparable prior period",
+      whatChanged: `Current week: ${money(cur.spend)} of spend, ${cur.conversions} conversions. The prior week had no comparable activity, so period-over-period change cannot be computed.`,
+      whyItMatters: "This looks like a new or recently reactivated Search campaign. Without a comparable prior week, any change figure would be misleading.",
+    });
+  }
+  if (visibilityLimited) {
+    return base("lost_impression_share", "Impression share", -(isDropPts * 100), {
+      consistencyValue: ctx.consistencyOf(prev.impressions / Math.max(1, prev.days), (t) => t.impressions, "lower"),
+      headline: `Losing visibility — impression share down ${(isDropPts * 100).toFixed(1)} points`,
+      whatChanged: `Search impression share fell from ${pctStr(prevIS.is)} to ${pctStr(curIS.is)}; impressions moved ${dImpr === null ? "n/a" : `${dImpr.toFixed(1)}%`}. Share lost to budget is ${pctStr(curIS.lostBudget)} and to rank ${pctStr(curIS.lostRank)}.`,
+      whyItMatters: "The ads are eligible for more searches than they are showing on, so demand is being missed — a budget or Ad Rank limit, not a conversion-quality problem.",
+    });
+  }
+  if (dCpa !== null && dCpa >= 18) {
+    return base("cpa_deterioration", "CPA", dCpa, {
+      consistencyValue: ctx.consistencyOf(cpa(prev), cpa, "higher"),
+      headline: `Cost per conversion rose ${dCpa.toFixed(1)}%`,
+      whatChanged: `Cost per conversion moved ${money(cpa(prev))} → ${money(cpa(cur))} (+${dCpa.toFixed(1)}%), with average CPC ${money(cpc(prev))} → ${money(cpc(cur))} (${dCpc === null ? "n/a" : `${dCpc.toFixed(1)}%`}).`,
+      whyItMatters: "Rising auction prices (CPC) are lifting cost per conversion, so each result costs more at the same budget.",
+    });
+  }
+  if (dCtr !== null && dCtr <= -12) {
+    return base("ctr_drop", "CTR", dCtr, {
+      consistencyValue: ctx.consistencyOf(ctr(prev), ctr, "lower"),
+      headline: `CTR dropped ${Math.abs(dCtr).toFixed(1)}%`,
+      whatChanged: `CTR fell from ${pctStr(ctr(prev))} to ${pctStr(ctr(cur))} (${dCtr.toFixed(1)}%) while impression share held, pointing to ad relevance rather than a visibility limit.`,
+      whyItMatters: "Fewer searchers are clicking the ad. On Search this usually signals weaker query/ad relevance, which raises effective CPC and can pressure Ad Rank over time.",
+      ctrSupported: (dCpa !== null && dCpa > 5),
+    });
+  }
+  if (!(dCpa !== null && dCpa > 5) && ((dRoas !== null && dRoas >= 20) || (dCpa !== null && dCpa <= -15))) {
+    const byRoas = !(dCpa !== null && dCpa <= -15);
+    return base("strong_improvement", byRoas ? "ROAS" : "CPA", byRoas ? (dRoas ?? 0) : (dCpa ?? 0), {
+      consistencyValue: ctx.consistencyOf(cpa(prev), cpa, "lower"),
+      headline: "Conversion value improved materially",
+      whatChanged: `ROAS ${ratio(roas(prev))} → ${ratio(roas(cur))} (${dRoas === null ? "n/a" : `${dRoas.toFixed(1)}%`}) and cost per conversion ${money(cpa(prev))} → ${money(cpa(cur))} (${dCpa === null ? "n/a" : `${dCpa.toFixed(1)}%`}).`,
+      whyItMatters: "Conversion value is rising faster than cost, so this Search campaign is the strongest candidate for additional budget.",
+    });
+  }
+  return base("stable", "CPA", dCpa ?? 0, {
+    consistencyValue: 0.5,
+    headline: "No material change detected",
+    whatChanged: `Cost per conversion ${dCpa === null ? "n/a" : `${dCpa.toFixed(1)}%`}, CPC ${dCpc === null ? "n/a" : `${dCpc.toFixed(1)}%`}, CTR ${dCtr === null ? "n/a" : `${dCtr.toFixed(1)}%`}, impressions ${dImpr === null ? "n/a" : `${dImpr.toFixed(1)}%`} — all inside Search thresholds.`,
+    whyItMatters: "Nothing crossed a Google Search detection threshold, so no action is required for this campaign.",
+  });
+};
+
+export function runGoogleSearchAnalysis(rows: NormalizedDailyRow[], windowDays = 7): AnalysisResult {
+  return analyzeCampaigns(rows, windowDays, detectGoogleSearch, { platformNoun: "Google" });
 }
