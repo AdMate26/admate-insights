@@ -47,4 +47,17 @@ export type NormalizedDailyRow = {
    */
   campaignStartDate?: string | null;
   campaignEndDate?: string | null;
+  /**
+   * Ad platform this row came from. Optional so existing single-platform sources
+   * keep working; analysis is always run per-platform with the matching analyzer.
+   */
+  platform?: "tiktok" | "meta" | "google_search";
+  /**
+   * Google Ads — Search only. Daily Search impression share and the share LOST to
+   * budget / rank (Ad Rank), each 0..1. Used by the Google Search analyzer's
+   * visibility logic; absent for other platforms.
+   */
+  searchImpressionShare?: number | null;
+  searchLostIsBudget?: number | null;
+  searchLostIsRank?: number | null;
 };

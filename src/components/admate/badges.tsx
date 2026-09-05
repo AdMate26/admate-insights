@@ -13,6 +13,7 @@ const SIGNAL_TONE: Record<Signal, string> = {
   cpm_spike: "border-destructive/30 bg-destructive/5 text-destructive",
   creative_fatigue: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   ctr_drop: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  lost_impression_share: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   scaling_efficiency: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
   strong_improvement: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   stable: "border-border bg-muted text-muted-foreground",
