@@ -59,6 +59,9 @@ export async function explainFindings(findings: CampaignFinding[]): Promise<Find
 
   const response = await fetch(GATEWAY_URL, {
     method: "POST",
+    // Cap the wait: the deterministic findings must reach the UI even if the
+    // gateway is slow. A timeout here degrades to "narratives unavailable".
+    signal: AbortSignal.timeout(15_000),
     headers: {
       "Content-Type": "application/json",
       "Lovable-API-Key": apiKey,
@@ -76,6 +79,7 @@ export async function explainFindings(findings: CampaignFinding[]): Promise<Find
       ],
     }),
   });
+
 
   if (!response.ok) {
     const body = await response.text();
