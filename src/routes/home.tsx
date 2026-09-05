@@ -4,6 +4,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import { ConfidenceBadge, PerformanceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
+import { needsAttentionCount } from "@/lib/attention";
 import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
 
 export const Route = createFileRoute("/home")({
@@ -36,7 +37,9 @@ export const Route = createFileRoute("/home")({
 function CampaignList() {
   const { platform } = Route.useSearch();
   const { data } = useSuspenseQuery(analysisQueryOptions(platform));
-  const attention = data.findings.filter((f) => f.needsAttention).length;
+  // Count comes ONLY from Performance Rating = Needs Attention (single source of
+  // truth) — never from priority/severity/Check Data/Early Data/Fair/Good.
+  const attention = needsAttentionCount(data.findings);
 
   return (
     <div className="min-h-screen bg-background">

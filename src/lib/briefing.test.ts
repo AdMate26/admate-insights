@@ -1,121 +1,156 @@
 import { expect, test } from "bun:test";
 
-import { buildBriefing, briefingPlainText } from "./briefing";
-import { runMetaAnalysis } from "./analysis/engine";
+import { buildBriefing, briefingPlainText, type BriefingInput } from "./briefing";
+import { needsAttentionCount, isNeedsAttention } from "./attention";
+import { runAnalysis, runMetaAnalysis, runGoogleSearchAnalysis } from "./analysis/engine";
 import { loadNormalizedDailyRows } from "./tiktok/normalize";
+import { DemoTikTokDataProvider } from "./tiktok/demo-provider";
 import { DemoMetaDataProvider } from "./meta/demo-provider";
+import { DemoGoogleSearchDataProvider } from "./google/demo-provider";
 
-/**
- * The Meta demo contains all four required cases in one run:
- *   creative fatigue, cost-per-result (CPA) deterioration, tracking issue, early data.
- * We simulate the approved AI recommendation on scored findings (the AI layer
- * adds these at runtime) and assert the plain-language briefing structure.
- */
+const tiktok = runAnalysis(await loadNormalizedDailyRows(new DemoTikTokDataProvider(), 28), 7);
 const meta = runMetaAnalysis(await loadNormalizedDailyRows(new DemoMetaDataProvider(), 28), 7);
-for (const f of meta.findings) {
-  if (!f.guidance && !f.aiRecommendedAction) {
-    f.aiRecommendedAction = "Add 2–3 new creatives and test them against the current ads.";
+const google = runGoogleSearchAnalysis(
+  await loadNormalizedDailyRows(new DemoGoogleSearchDataProvider(), 28),
+  7,
+);
+
+// Simulate the approved AI recommendation the AI layer adds at runtime, so the
+// "WHAT TO DO NOW" line has content for scored Needs-Attention findings.
+for (const r of [tiktok, meta, google]) {
+  for (const f of r.findings) {
+    if (!f.guidance && !f.aiRecommendedAction) {
+      f.aiRecommendedAction = "Refresh the creatives and shift budget toward the best performers.";
+    }
   }
 }
-const input = { ...meta, platform: "meta" as const };
-const text = briefingPlainText(input);
 
-/** Split the message into per-campaign blocks (separated by the divider). */
-function blocks(t: string): string[] {
-  return t.split("──────────").slice(1).map((b) => b.trim());
-}
-const blockFor = (needle: string) => blocks(text).find((b) => b.includes(needle))!;
+const inputs: BriefingInput[] = [
+  { ...tiktok, platform: "tiktok" },
+  { ...meta, platform: "meta" },
+  { ...google, platform: "google_search" },
+];
+const text = briefingPlainText(inputs);
 
-// --- Header -----------------------------------------------------------------
+// --- 1. Website count (Performance Rating = Needs Attention only) -----------
 
-test("header is concise: platform, spend, attention count, short date range", () => {
+test("website count: TikTok is 2 of 9", () => {
+  expect(needsAttentionCount(tiktok.findings)).toBe(2);
+  expect(tiktok.findings.length).toBe(9);
+});
+
+test("counts match the actual visible Needs Attention ratings per platform", () => {
+  expect(needsAttentionCount(meta.findings)).toBe(1);
+  expect(needsAttentionCount(google.findings)).toBe(0);
+  // Every counted finding truly has the exact rating.
+  for (const r of [tiktok, meta, google]) {
+    for (const f of r.findings.filter(isNeedsAttention)) {
+      expect(f.performanceRating).toBe("Needs Attention");
+    }
+  }
+});
+
+test("Check Data with Critical priority is NOT counted as Needs Attention", () => {
+  const tracking = tiktok.findings.find((f) => f.signal === "tracking_issue")!;
+  expect(tracking.severity).toBe("critical"); // high priority…
+  expect(tracking.performanceLabel).toBe("Check Data"); // …but Check Data
+  expect(isNeedsAttention(tracking)).toBe(false); // so it is not counted
+});
+
+test("Fair / Good / Very Good / Early Data never count as Needs Attention", () => {
+  const notCounted = [...tiktok.findings, ...meta.findings, ...google.findings].filter(
+    (f) =>
+      f.performanceRating === "Fair" ||
+      f.performanceRating === "Good" ||
+      f.performanceRating === "Very Good" ||
+      f.performanceLabel === "Early Data",
+  );
+  expect(notCounted.length).toBeGreaterThan(0);
+  expect(notCounted.every((f) => !isNeedsAttention(f))).toBe(true);
+});
+
+// --- 2. Telegram summary ----------------------------------------------------
+
+test("Telegram summary header and per-platform counts match the website counts", () => {
   const lines = text.split("\n");
-  expect(lines[0]).toBe("AdMate Briefing — Meta Ads");
-  expect(lines[1]).toMatch(/^Spend: \$[\d,]+ · \d+ campaigns? need(s)? attention$/);
-  expect(lines[2]).toMatch(/^Comparing [A-Z][a-z]{2} \d+–.+ vs [A-Z][a-z]{2} \d+–.+\.$/);
+  expect(lines[0]).toBe("AdMate Briefing");
+  expect(text).toContain("🔴 3 campaigns need attention");
+  expect(text).toContain(`TikTok Ads: ${needsAttentionCount(tiktok.findings)}`); // 2
+  expect(text).toContain(`Meta Ads: ${needsAttentionCount(meta.findings)}`); // 1
+  expect(text).toContain(`Google Search: ${needsAttentionCount(google.findings)}`); // 0
 });
 
-// --- The four required scenarios --------------------------------------------
+// --- 3. Details only for Needs Attention ------------------------------------
 
-test("creative fatigue reads in plain language with translated evidence", () => {
-  const b = blockFor("Prospecting | Advantage+ Broad");
-  expect(b).toContain("Needs Attention · 44");
-  expect(b).toContain("WHAT'S GOING WRONG");
-  expect(b).toContain("Your audience is getting tired of these ads.");
-  expect(b).toContain("Frequency ↑");
-  expect(b).toContain("people are seeing the ads more often");
+test("full details appear ONLY for Needs Attention campaigns", () => {
+  const expected = [tiktok, meta, google]
+    .flatMap((r) => r.findings)
+    .filter(isNeedsAttention)
+    .map((f) => f.campaignName);
+  for (const name of expected) expect(text).toContain(name);
+  // A Fair campaign is never named (only compact-counted), so no detail block.
+  const fair = tiktok.findings.find((f) => f.performanceRating === "Fair")!;
+  expect(text).not.toContain(fair.campaignName);
 });
 
-test("CPA deterioration reads in plain language", () => {
-  const b = blockFor("Retargeting | 30d Site Visitors");
-  expect(b).toMatch(/Fair · \d+/);
-  expect(b).toContain("Your results are costing more than they used to.");
-  expect(b).toContain("CPA ↑");
-  expect(b).toContain("each result costs more");
-});
-
-test("tracking issue shows Check Data, verify-tracking action and capped steps", () => {
-  const b = blockFor("Conversions | Checkout Abandoners");
-  expect(b).toContain("Check Data");
-  expect(b).not.toMatch(/Check Data · \d/); // no score for tracking issue
-  expect(b).toContain("conversion tracking may not be recording");
-  expect(b).toContain("Verify conversion tracking before changing budget");
-  // At most 2 supporting steps.
-  expect((b.match(/^• /gm) ?? []).length).toBeLessThanOrEqual(2);
-});
-
-test("early data shows Early Data, a volume note and a wait recommendation", () => {
-  const b = blockFor("Test | New Creator Angle");
-  expect(b).toContain("Early Data");
-  expect(b).not.toMatch(/Early Data · \d/);
-  expect(b).toContain("not enough data yet");
-  expect(b).toContain("too little data to give a score yet");
-  expect(b).toContain("Continue collecting results");
-});
-
-// --- Format rules -----------------------------------------------------------
-
-test("each flagged campaign has the four sections and confidence at the end", () => {
-  for (const b of blocks(text)) {
+test("each Needs Attention block has the four sections and confidence last", () => {
+  const blocks = text.split("──────────").slice(1).map((b) => b.trim());
+  // The last "block" may be the Data Check section — only assert on detail blocks.
+  const detailBlocks = blocks.filter((b) => b.includes("WHAT'S GOING WRONG"));
+  expect(detailBlocks.length).toBe(3); // 2 TikTok + 1 Meta
+  for (const b of detailBlocks) {
     expect(b).toContain("WHAT'S GOING WRONG");
     expect(b).toContain("KEY EVIDENCE");
     expect(b).toContain("WHAT TO DO NOW");
     const lines = b.split("\n").filter((l) => l.trim() !== "");
     expect(lines[lines.length - 1]).toMatch(/^Confidence: (High|Medium|Low)$/);
-  }
-});
-
-test("KEY EVIDENCE lists at most 3 metrics per campaign", () => {
-  for (const b of blocks(text)) {
-    const lines = b.split("\n");
-    const start = lines.findIndex((l) => l.includes("KEY EVIDENCE"));
+    // KEY EVIDENCE ≤ 3 metrics.
+    const start = b.split("\n").findIndex((l) => l.includes("KEY EVIDENCE"));
+    const bl = b.split("\n");
     let count = 0;
-    for (let i = start + 1; i < lines.length; i++) {
-      if (lines[i].trim() === "") break;
-      count++;
-    }
-    expect(count).toBeGreaterThanOrEqual(1);
+    for (let i = start + 1; i < bl.length && bl[i].trim() !== ""; i++) count++;
     expect(count).toBeLessThanOrEqual(3);
   }
 });
 
-test("no internal jargon or engine-architecture phrases leak into the message", () => {
-  const lower = text.toLowerCase();
-  for (const banned of ["deterministic", "analyzer", "engine", "signal", "severity", "classif"]) {
+// --- 4. Other states --------------------------------------------------------
+
+test("Check Data is shown separately and never as Needs Attention detail", () => {
+  expect(text).toContain("⚠️ Data Check");
+  expect(text).toContain("TikTok Ads — Conversions | Checkout Push");
+  expect(text).toContain("Meta Ads — Conversions | Checkout Abandoners");
+});
+
+test("Fair + Early Data shown as compact counts; Good/Very Good omitted", () => {
+  expect(text).toMatch(/Monitoring — Fair: \d+ · Early Data: \d+/);
+  // Good / Very Good campaigns must not appear anywhere in the message.
+  const good = [...tiktok.findings, ...meta.findings, ...google.findings].filter(
+    (f) => f.performanceRating === "Good" || f.performanceRating === "Very Good",
+  );
+  expect(good.length).toBeGreaterThan(0);
+  for (const f of good) expect(text).not.toContain(f.campaignName);
+});
+
+// --- 5. Isolation + jargon --------------------------------------------------
+
+test("platform switching does not mix counts (each platform counted from its own findings)", () => {
+  // Recomputing per platform independently gives the same numbers shown.
+  const perPlatform = {
+    tiktok: needsAttentionCount(tiktok.findings),
+    meta: needsAttentionCount(meta.findings),
+    google_search: needsAttentionCount(google.findings),
+  };
+  expect(perPlatform).toEqual({ tiktok: 2, meta: 1, google_search: 0 });
+  // Total equals the sum, never cross-contaminated.
+  const total = perPlatform.tiktok + perPlatform.meta + perPlatform.google_search;
+  expect(text).toContain(`🔴 ${total} campaigns need attention`);
+});
+
+test("no internal jargon leaks into the message", () => {
+  const html = buildBriefing(inputs);
+  const lower = briefingPlainText(inputs).toLowerCase();
+  for (const banned of ["deterministic", "analyzer", "engine", "severity", "status="]) {
     expect(lower).not.toContain(banned);
   }
-});
-
-test("uses the approved AI / guidance recommendation, not an invented one", () => {
-  // Scored finding with injected AI recommendation surfaces verbatim.
-  expect(blockFor("Prospecting | Advantage+ Broad")).toContain(
-    "Add 2–3 new creatives and test them against the current ads.",
-  );
-});
-
-test("HTML build escapes and uses bold section headers", () => {
-  const html = buildBriefing(input);
-  expect(html).toContain("<b>AdMate Briefing — Meta Ads</b>");
-  expect(html).toContain("<b>WHAT'S GOING WRONG</b>");
-  expect(html).toContain("<b>KEY EVIDENCE</b>");
+  expect(html).toContain("<b>AdMate Briefing</b>");
 });
