@@ -18,8 +18,13 @@ export type AdMateAnalysis = AnalysisResult & {
   aiError: string | null;
 };
 
-export const getAdMateAnalysis = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdMateAnalysis> => {
+// Short-lived in-memory cache: the demo data is deterministic, so re-running the
+// AI narrative call on every navigation only adds latency (and can time out).
+const CACHE_TTL_MS = 5 * 60 * 1000;
+let cached: { at: number; value: AdMateAnalysis } | undefined;
+
+async function computeAnalysis(): Promise<AdMateAnalysis> {
+
     const provider = new DemoTikTokDataProvider();
 
     // 1 + 2. Provider -> normalization layer -> single internal schema.
