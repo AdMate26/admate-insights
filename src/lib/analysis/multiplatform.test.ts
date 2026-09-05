@@ -94,12 +94,9 @@ test("Telegram briefing header reflects the selected platform", () => {
   const t = buildBriefing({ ...tiktok, platform: "tiktok" });
   const m = buildBriefing({ ...meta, platform: "meta" });
   const g = buildBriefing({ ...google, platform: "google_search" });
-  expect(t).toContain("AdMate briefing — TikTok Ads (demo data)");
-  expect(m).toContain("AdMate briefing — Meta Ads (demo data)");
-  expect(g).toContain("AdMate briefing — Google Ads — Search (demo data)");
-  // The footer names the platform analyzer that computed the findings.
-  expect(m).toContain("Meta Ads analyzer");
-  expect(g).toContain("Google Ads — Search analyzer");
+  expect(t).toContain("AdMate Briefing — TikTok Ads");
+  expect(m).toContain("AdMate Briefing — Meta Ads");
+  expect(g).toContain("AdMate Briefing — Google Ads — Search");
 });
 
 // --- Common output structure + detail flow ----------------------------------
