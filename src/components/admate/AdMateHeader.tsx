@@ -52,16 +52,14 @@ export function AdMateHeader({ back }: Props) {
             </div>
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
               <dt className="uppercase tracking-wide text-muted-foreground">Mode</dt>
-              <dd className="font-medium text-foreground">
-                Demo Mode — Synthetic TikTok Ads Data
-              </dd>
+              <dd className="font-medium text-foreground">Demo Mode — Synthetic TikTok Ads Data</dd>
             </div>
             <div className="flex items-center gap-2">
               <Link
-                to="/"
+                to="/connect"
                 className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                Change data source
+                Connect TikTok Ads
               </Link>
             </div>
           </dl>
@@ -73,14 +71,7 @@ export function AdMateHeader({ back }: Props) {
             >
               Sign out
             </button>
-          ) : (
-            <Link
-              to="/auth"
-              className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Sign in
-            </Link>
-          )}
+          ) : null}
         </div>
       </div>
     </header>
