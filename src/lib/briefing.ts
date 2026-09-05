@@ -1,31 +1,35 @@
 import type { AnalysisResult, CampaignFinding, Signal } from "./analysis/engine";
-import { platformMeta, type Platform } from "./platforms";
+import { type Platform } from "./platforms";
+import { isCheckData, isEarlyData, isFair, isNeedsAttention } from "./attention";
 
 /**
  * Pure Telegram briefing builder (no server/runtime imports) so it is unit
  * testable. The Telegram DELIVERY mechanism lives in admate.functions and is
- * unchanged — this only produces the message TEXT for the selected platform.
+ * unchanged — this only produces the message TEXT.
  *
- * Wording goal: a non-technical marketer should grasp, within seconds, what is
- * wrong, why it matters, and what to do now. It only reformats data the engine
- * already produced (findings, evidence metrics) and the approved AI / guidance
- * recommendation — no new metrics or recommendations are invented here.
+ * The briefing is CROSS-PLATFORM: one summary counting only campaigns whose
+ * Performance Rating is exactly "Needs Attention", then full details for those
+ * campaigns only. Check Data is listed separately; Fair + Early Data are shown as
+ * compact counts; Good + Very Good are omitted. No new metrics or
+ * recommendations are invented — it only reformats existing engine output and the
+ * approved AI / guidance recommendation.
  */
 export type BriefingInput = Pick<
   AnalysisResult,
   "currentWindow" | "previousWindow" | "totalSpend" | "findings"
 > & { platform: Platform };
 
+/** Short platform names used in the briefing (as specified for the summary). */
+const SHORT_LABEL: Record<Platform, string> = {
+  tiktok: "TikTok Ads",
+  meta: "Meta Ads",
+  google_search: "Google Search",
+};
+const PLATFORM_ORDER: Platform[] = ["tiktok", "meta", "google_search"];
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-
-/** Positive signals we never flag as "needing action" in the briefing. */
-const NON_ACTIONABLE: ReadonlySet<Signal> = new Set<Signal>([
-  "stable",
-  "strong_improvement",
-  "scaling_efficiency",
-]);
 
 /** One short, plain-English sentence per signal — what is going wrong. */
 const WHATS_WRONG: Record<Signal, string> = {
@@ -41,14 +45,6 @@ const WHATS_WRONG: Record<Signal, string> = {
   strong_improvement: "This campaign is performing better than last week.",
   stable: "This campaign is steady with no major change.",
 };
-
-/** Emoji per performance rating, for fast scanning. */
-function ratingEmoji(finding: CampaignFinding): string {
-  if (finding.performanceRating === "Needs Attention") return "🔴";
-  if (finding.performanceRating === "Fair") return "🟠";
-  if (finding.performanceRating === "Good" || finding.performanceRating === "Very Good") return "🟢";
-  return "⚪"; // Early Data / Check Data
-}
 
 type MetricKind =
   | "ctr"
@@ -91,7 +87,6 @@ function kindOf(label: string): MetricKind {
   return null;
 }
 
-/** Short display token + plain-English meaning for each metric movement. */
 function displayLabel(kind: Exclude<MetricKind, null>): string {
   switch (kind) {
     case "cpa":
@@ -166,20 +161,8 @@ function meaning(kind: Exclude<MetricKind, null>, up: boolean): string {
   }
 }
 
-/** Up to 3 translated evidence lines, most important first. Spend is excluded (it is in the header). */
+/** Up to 3 translated evidence lines, most important first. Spend is excluded (redundant with header). */
 function keyEvidence(f: CampaignFinding): string[] {
-  // For no-comparison / early-data cases, % changes are meaningless — show a
-  // plain volume note instead, drawn from the existing evidence numbers.
-  if (f.signal === "insufficient_comparison") {
-    return ["Last week had no comparable data to measure against."];
-  }
-  if (f.signal === "low_volume") {
-    const vol = f.evidence.metrics.find((m) => kindOf(m.label) === "conversions");
-    const label = vol?.label.toLowerCase().includes("results") ? "Results" : "Conversions";
-    const current = vol?.current ?? String(f.snapshot.conversions);
-    return [`${label}: ${current} so far — too little data to give a score yet`];
-  }
-
   const candidates = f.evidence.metrics
     .map((m) => ({ m, kind: kindOf(m.label) }))
     .filter(
@@ -211,76 +194,94 @@ function keyEvidence(f: CampaignFinding): string[] {
 
 /** "What to do now": the approved primary action, then at most 2 short steps. */
 function whatToDo(f: CampaignFinding): { action: string; steps: string[] } {
-  const action = f.guidance?.action ?? f.aiRecommendedAction ?? "Review this campaign before making changes.";
+  const action =
+    f.guidance?.action ?? f.aiRecommendedAction ?? "Review this campaign before making changes.";
   const steps = (f.guidance?.steps ?? []).slice(0, 2);
   return { action, steps };
 }
 
-/** "2026-08-29" → "Aug 29"; range collapses the month when both dates share it. */
-function fmtDay(iso: string): { month: string; day: number } {
-  const d = new Date(`${iso}T12:00:00Z`);
-  return {
-    month: d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }),
-    day: d.getUTCDate(),
-  };
-}
-
-function fmtRange(startIso: string, endIso: string): string {
-  if (!startIso || !endIso) return "—";
-  const s = fmtDay(startIso);
-  const e = fmtDay(endIso);
-  const end = s.month === e.month ? `${e.day}` : `${e.month} ${e.day}`;
-  return `${s.month} ${s.day}–${end}`;
-}
-
-export function buildBriefing(analysis: BriefingInput): string {
-  const platformLabel = platformMeta(analysis.platform).label;
-  // Surface anything that needs the marketer's eyes — performance problems plus
-  // data-quality flags (tracking / early data) — but not stable or positive
-  // signals. Findings arrive pre-sorted by priority. This is presentation only.
-  const flagged = analysis.findings.filter((f) => !NON_ACTIONABLE.has(f.signal)).slice(0, 6);
-
-  const spend = `$${analysis.totalSpend.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  const lines: string[] = [
-    `<b>AdMate Briefing — ${escapeHtml(platformLabel)}</b>`,
-    `Spend: ${spend} · ${flagged.length} ${flagged.length === 1 ? "campaign needs" : "campaigns need"} attention`,
-    `Comparing ${fmtRange(analysis.currentWindow.start, analysis.currentWindow.end)} vs ${fmtRange(analysis.previousWindow.start, analysis.previousWindow.end)}.`,
+/** Full plain-language block for a single Needs Attention campaign. */
+function detailBlock(platform: Platform, f: CampaignFinding): string[] {
+  const score = f.performanceScore !== null ? ` · ${f.performanceScore}` : "";
+  const { action, steps } = whatToDo(f);
+  return [
+    "",
+    "──────────",
+    `🔴 <b>${escapeHtml(SHORT_LABEL[platform])} — ${escapeHtml(f.campaignName)}</b>`,
+    `${escapeHtml(f.performanceLabel)}${score}`,
+    "",
+    "<b>WHAT'S GOING WRONG</b>",
+    escapeHtml(WHATS_WRONG[f.signal]),
+    "",
+    "<b>KEY EVIDENCE</b>",
+    ...keyEvidence(f).map((line) => escapeHtml(line)),
+    "",
+    "<b>WHAT TO DO NOW</b>",
+    escapeHtml(action),
+    ...steps.map((s) => `• ${escapeHtml(s)}`),
+    "",
+    `Confidence: ${f.confidence}`,
   ];
+}
 
-  if (flagged.length === 0) {
-    lines.push("", "Everything looks healthy this week — no campaigns need attention.");
-    return lines.join("\n");
+export function buildBriefing(platforms: BriefingInput[]): string {
+  const ordered = [...platforms].sort(
+    (a, b) => PLATFORM_ORDER.indexOf(a.platform) - PLATFORM_ORDER.indexOf(b.platform),
+  );
+
+  const naByPlatform = new Map<Platform, CampaignFinding[]>();
+  let totalNA = 0;
+  let checkData: { platform: Platform; f: CampaignFinding }[] = [];
+  let fairCount = 0;
+  let earlyCount = 0;
+
+  for (const p of ordered) {
+    const na = p.findings.filter(isNeedsAttention);
+    naByPlatform.set(p.platform, na);
+    totalNA += na.length;
+    for (const f of p.findings) {
+      if (isCheckData(f)) checkData.push({ platform: p.platform, f });
+      else if (isFair(f)) fairCount += 1;
+      else if (isEarlyData(f)) earlyCount += 1;
+    }
   }
 
-  flagged.forEach((f) => {
-    const score = f.performanceScore !== null ? ` · ${f.performanceScore}` : "";
-    const { action, steps } = whatToDo(f);
-    lines.push(
-      "",
-      "──────────",
-      `${ratingEmoji(f)} <b>${escapeHtml(f.campaignName)}</b>`,
-      `${escapeHtml(f.performanceLabel)}${score}`,
-      "",
-      "<b>WHAT'S GOING WRONG</b>",
-      escapeHtml(WHATS_WRONG[f.signal]),
-      "",
-      "<b>KEY EVIDENCE</b>",
-      ...keyEvidence(f).map((line) => escapeHtml(line)),
-      "",
-      "<b>WHAT TO DO NOW</b>",
-      escapeHtml(action),
-      ...steps.map((s) => `• ${escapeHtml(s)}`),
-      "",
-      `Confidence: ${f.confidence}`,
-    );
-  });
+  // Summary — counts come ONLY from Performance Rating = Needs Attention.
+  const lines: string[] = [
+    "<b>AdMate Briefing</b>",
+    "",
+    `🔴 <b>${totalNA} ${totalNA === 1 ? "campaign needs" : "campaigns need"} attention</b>`,
+  ];
+  for (const p of ordered) {
+    lines.push(`${SHORT_LABEL[p.platform]}: ${naByPlatform.get(p.platform)!.length}`);
+  }
+
+  // Full details — Needs Attention campaigns only.
+  for (const p of ordered) {
+    for (const f of naByPlatform.get(p.platform)!) {
+      lines.push(...detailBlock(p.platform, f));
+    }
+  }
+
+  // Check Data — listed separately, never counted as Needs Attention.
+  if (checkData.length > 0) {
+    lines.push("", "──────────", "⚠️ <b>Data Check</b>");
+    for (const { platform, f } of checkData) {
+      lines.push(`${escapeHtml(SHORT_LABEL[platform])} — ${escapeHtml(f.campaignName)}`);
+    }
+  }
+
+  // Fair + Early Data — compact counts only.
+  if (fairCount > 0 || earlyCount > 0) {
+    lines.push("", `Monitoring — Fair: ${fairCount} · Early Data: ${earlyCount}`);
+  }
 
   return lines.join("\n");
 }
 
 /** Plain-text render of the same digest (Telegram preview before connecting). */
-export function briefingPlainText(analysis: BriefingInput): string {
-  return buildBriefing(analysis)
+export function briefingPlainText(platforms: BriefingInput[]): string {
+  return buildBriefing(platforms)
     .replace(/<\/?(b|i)>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")

@@ -114,6 +114,13 @@ function coercePlatform(input: unknown): Platform {
   return isPlatform(value) ? value : DEFAULT_PLATFORM;
 }
 
+const ALL_PLATFORMS: Platform[] = ["tiktok", "meta", "google_search"];
+
+/** Gather every platform's analysis for the cross-platform Telegram briefing. */
+async function gatherAllAnalyses(): Promise<AdMateAnalysis[]> {
+  return Promise.all(ALL_PLATFORMS.map((platform) => getAdMateAnalysis({ data: { platform } })));
+}
+
 export const getAdMateAnalysis = createServerFn({ method: "GET" })
   .validator((input: { platform?: Platform } | undefined) => ({
     platform: coercePlatform(input),
@@ -127,20 +134,18 @@ export const getAdMateAnalysis = createServerFn({ method: "GET" })
     return value;
   });
 
-/** Plain-text render of the same digest, for reviewing it before Telegram is connected. */
-export const previewBriefing = createServerFn({ method: "GET" })
-  .validator((input: { platform?: Platform } | undefined) => ({
-    platform: coercePlatform(input),
-  }))
-  .handler(async ({ data }) => {
-    const analysis = await getAdMateAnalysis({ data: { platform: data.platform } });
-    return { text: briefingPlainText(analysis) };
-  });
+/**
+ * Plain-text render of the CROSS-PLATFORM digest (Telegram preview). The briefing
+ * spans all platforms and counts only Performance Rating = Needs Attention.
+ */
+export const previewBriefing = createServerFn({ method: "GET" }).handler(async () => {
+  const analyses = await gatherAllAnalyses();
+  return { text: briefingPlainText(analyses) };
+});
 
 export const sendTelegramBriefing = createServerFn({ method: "POST" })
-  .validator((input: { chatId?: string; platform?: Platform }) => ({
+  .validator((input: { chatId?: string } | undefined) => ({
     chatId: input?.chatId?.trim() || undefined,
-    platform: coercePlatform(input),
   }))
   .handler(async ({ data }) => {
     const token = process.env["TELEGRAM_BOT_TOKEN"];
@@ -152,13 +157,13 @@ export const sendTelegramBriefing = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Enter the Telegram chat ID to send the briefing." };
     }
 
-    const analysis = await getAdMateAnalysis({ data: { platform: data.platform } });
+    const analyses = await gatherAllAnalyses();
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: buildBriefing(analysis),
+        text: buildBriefing(analyses),
         parse_mode: "HTML",
         disable_web_page_preview: true,
       }),

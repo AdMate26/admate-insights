@@ -217,7 +217,7 @@ function CampaignAnalysis() {
   async function loadPreview() {
     setLoadingPreview(true);
     try {
-      const result = await previewBriefing({ data: { platform } });
+      const result = await previewBriefing();
       setPreview(result.text);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not build preview");
@@ -229,7 +229,7 @@ function CampaignAnalysis() {
   async function send() {
     setSending(true);
     try {
-      const result = await sendTelegramBriefing({ data: { chatId, platform } });
+      const result = await sendTelegramBriefing({ data: { chatId } });
       if (result.ok) toast.success("Briefing sent to Telegram");
       else toast.error(result.error);
     } catch (error) {

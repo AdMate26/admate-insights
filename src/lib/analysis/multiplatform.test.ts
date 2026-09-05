@@ -90,13 +90,16 @@ test("switching platform does not mix data or logic", () => {
 
 // --- Telegram briefing uses the selected platform ---------------------------
 
-test("Telegram briefing header reflects the selected platform", () => {
-  const t = buildBriefing({ ...tiktok, platform: "tiktok" });
-  const m = buildBriefing({ ...meta, platform: "meta" });
-  const g = buildBriefing({ ...google, platform: "google_search" });
-  expect(t).toContain("AdMate Briefing — TikTok Ads");
-  expect(m).toContain("AdMate Briefing — Meta Ads");
-  expect(g).toContain("AdMate Briefing — Google Ads — Search");
+test("cross-platform Telegram briefing lists every platform in the summary", () => {
+  const brief = buildBriefing([
+    { ...tiktok, platform: "tiktok" },
+    { ...meta, platform: "meta" },
+    { ...google, platform: "google_search" },
+  ]);
+  expect(brief).toContain("<b>AdMate Briefing</b>");
+  expect(brief).toContain("TikTok Ads:");
+  expect(brief).toContain("Meta Ads:");
+  expect(brief).toContain("Google Search:");
 });
 
 // --- Common output structure + detail flow ----------------------------------
