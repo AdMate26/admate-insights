@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as StartRouteImport } from './routes/start'
 import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$campaignId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -41,6 +42,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StartRoute = StartRouteImport.update({
+  id: '/start',
+  path: '/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CampaignsCampaignIdRoute = CampaignsCampaignIdRouteImport.update({
   id: '/campaigns/$campaignId',
   path: '/campaigns/$campaignId',
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/connect': typeof ConnectRoute
   '/home': typeof HomeRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/start': typeof StartRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
   '/home': typeof HomeRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/start': typeof StartRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/connect': typeof ConnectRoute
   '/home': typeof HomeRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/start': typeof StartRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +89,7 @@ export interface FileRouteTypes {
     | '/connect'
     | '/home'
     | '/reset-password'
+    | '/start'
     | '/campaigns/$campaignId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/connect'
     | '/home'
     | '/reset-password'
+    | '/start'
     | '/campaigns/$campaignId'
   id:
     | '__root__'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/connect'
     | '/home'
     | '/reset-password'
+    | '/start'
     | '/campaigns/$campaignId'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +117,7 @@ export interface RootRouteChildren {
   ConnectRoute: typeof ConnectRoute
   HomeRoute: typeof HomeRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  StartRoute: typeof StartRoute
   CampaignsCampaignIdRoute: typeof CampaignsCampaignIdRoute
 }
 
@@ -145,6 +158,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/start': {
+      id: '/start'
+      path: '/start'
+      fullPath: '/start'
+      preLoaderRoute: typeof StartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/campaigns/$campaignId': {
       id: '/campaigns/$campaignId'
       path: '/campaigns/$campaignId'
@@ -161,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConnectRoute: ConnectRoute,
   HomeRoute: HomeRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  StartRoute: StartRoute,
   CampaignsCampaignIdRoute: CampaignsCampaignIdRoute,
 }
 export const routeTree = rootRouteImport
