@@ -39,12 +39,8 @@ Hard rules:
 Return JSON only:
 {"narratives":[{"campaignId":"...","possibleExplanation":"...","recommendedAction":"..."}]}`;
 
-export async function explainFindings(findings: CampaignFinding[]): Promise<FindingNarrative[]> {
-  if (findings.length === 0) return [];
-  const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
-
-  const payload = findings.map((f) => ({
+function toPayload(f: CampaignFinding) {
+  return {
     campaignId: f.campaignId,
     campaignName: f.campaignName,
     signal: f.signal,
@@ -55,10 +51,29 @@ export async function explainFindings(findings: CampaignFinding[]): Promise<Find
     whatChanged: f.whatChanged,
     whyItMatters: f.whyItMatters,
     evidence: f.evidence,
-  }));
+  };
+}
 
+function parseNarratives(content: string): FindingNarrative[] {
+  let parsed: { narratives?: FindingNarrative[] } = {};
+  try {
+    parsed = JSON.parse(content) as { narratives?: FindingNarrative[] };
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]) as { narratives?: FindingNarrative[] };
+  }
+  return parsed.narratives ?? [];
+}
+
+async function explainOne(
+  finding: CampaignFinding,
+  apiKey: string,
+): Promise<FindingNarrative[]> {
   const response = await fetch(GATEWAY_URL, {
     method: "POST",
+    // Cap the wait: the deterministic findings must reach the UI even if the
+    // gateway is slow. A timeout here only drops this campaign's narrative.
+    signal: AbortSignal.timeout(20_000),
     headers: {
       "Content-Type": "application/json",
       "Lovable-API-Key": apiKey,
@@ -71,7 +86,7 @@ export async function explainFindings(findings: CampaignFinding[]): Promise<Find
         { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
-          content: `Findings JSON (${findings.length} campaigns):\n${JSON.stringify(payload)}`,
+          content: `Findings JSON (1 campaign):\n${JSON.stringify([toPayload(finding)])}`,
         },
       ],
     }),
@@ -84,13 +99,31 @@ export async function explainFindings(findings: CampaignFinding[]): Promise<Find
   }
 
   const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-  const content = data.choices?.[0]?.message?.content ?? "{}";
-  let parsed: { narratives?: FindingNarrative[] } = {};
-  try {
-    parsed = JSON.parse(content) as { narratives?: FindingNarrative[] };
-  } catch {
-    const match = content.match(/\{[\s\S]*\}/);
-    if (match) parsed = JSON.parse(match[0]) as { narratives?: FindingNarrative[] };
-  }
-  return parsed.narratives ?? [];
+  return parseNarratives(data.choices?.[0]?.message?.content ?? "{}");
 }
+
+/**
+ * One small request per finding, issued in parallel: a single batched call for
+ * every campaign is slow enough that the page can time out. Individual failures
+ * are tolerated — the deterministic finding stands on its own.
+ */
+export async function explainFindings(findings: CampaignFinding[]): Promise<FindingNarrative[]> {
+  if (findings.length === 0) return [];
+  const apiKey = process.env["LOVABLE_API_KEY"];
+  if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+
+  const results = await Promise.allSettled(findings.map((f) => explainOne(f, apiKey)));
+  const narratives: FindingNarrative[] = [];
+  let failures = 0;
+  for (const result of results) {
+    if (result.status === "fulfilled") narratives.push(...result.value);
+    else failures++;
+  }
+  if (narratives.length === 0) {
+    throw new Error(
+      failures > 0 ? "Lovable AI did not return any narratives" : "No narratives returned",
+    );
+  }
+  return narratives;
+}
+
