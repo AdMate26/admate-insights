@@ -4,11 +4,16 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import { ConfidenceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
+import {
+  PerformanceBadge,
+  ConfidenceBadge,
+  SeverityBadge,
+  SignalBadge,
+} from "@/components/admate/badges";
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import type { CampaignTiming, MetricComparison, PerformanceRating } from "@/lib/analysis/engine";
-import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
+import { DEFAULT_PLATFORM, isPlatform, platformMeta, type Platform } from "@/lib/platforms";
 
 export const Route = createFileRoute("/campaigns/$campaignId")({
   validateSearch: (search: Record<string, unknown>): { platform: Platform } => ({
@@ -37,18 +42,10 @@ export const Route = createFileRoute("/campaigns/$campaignId")({
   component: CampaignAnalysis,
 });
 
-function Section({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-border pt-6">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </h3>
+    <section className="detail-section">
+      <h3 className="eyebrow">{label}</h3>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -83,34 +80,20 @@ function PerformanceHeader({
   note: string;
 }) {
   const hasScore = score !== null;
-  const accent = !rating
-    ? "border-border bg-muted/40"
-    : rating === "Very Good"
-      ? "border-emerald-500/40 bg-emerald-500/5"
-      : rating === "Good"
-        ? "border-sky-500/40 bg-sky-500/5"
-        : rating === "Fair"
-          ? "border-amber-500/40 bg-amber-500/5"
-          : "border-destructive/50 bg-destructive/5";
+
   return (
-    <div className={`mb-6 flex items-center justify-between gap-4 rounded-xl border-2 p-6 ${accent}`}>
+    <div className="performance-summary">
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Performance
-        </p>
-        <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{label}</p>
+        <p className="eyebrow">Performance</p>
+        <div className="mt-3">
+          <PerformanceBadge rating={rating} label={label} />
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">{note}</p>
       </div>
       <div className="text-right">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Score
-        </p>
-        <p className="mt-1 text-4xl font-bold tabular-nums leading-none text-foreground">
-          {hasScore ? score : "—"}
-        </p>
-        {hasScore ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">out of 100</p>
-        ) : null}
+        <p className="eyebrow">Score</p>
+        <p className="detail-score">{hasScore ? score : "—"}</p>
+        {hasScore ? <p className="mt-1 text-[11px] text-muted-foreground">out of 100</p> : null}
       </div>
     </div>
   );
@@ -136,18 +119,18 @@ function CampaignTimingCard({ timing }: { timing: CampaignTiming }) {
           ? "Ended"
           : `${timing.daysRemaining} ${timing.daysRemaining === 1 ? "day" : "days"}`;
   return (
-    <div className="mb-6 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg border border-border bg-card">
+    <div className="summary-grid">
       <div className="px-4 py-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Start date
         </p>
-        <p className="mt-1 text-sm font-medium text-foreground">{fmt(timing.startDate)}</p>
+        <p className="mt-2 font-mono text-sm text-foreground">{fmt(timing.startDate)}</p>
       </div>
       <div className="px-4 py-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           End date
         </p>
-        <p className="mt-1 text-sm font-medium text-foreground">
+        <p className="mt-2 font-mono text-sm text-foreground">
           {timing.endDate ? fmt(timing.endDate) : "No end date"}
         </p>
       </div>
@@ -155,7 +138,7 @@ function CampaignTimingCard({ timing }: { timing: CampaignTiming }) {
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Days remaining
         </p>
-        <p className="mt-1 text-sm font-medium text-foreground">{remaining}</p>
+        <p className="mt-2 font-mono text-sm text-foreground">{remaining}</p>
       </div>
     </div>
   );
@@ -173,26 +156,24 @@ function SpendSummary({ metric }: { metric?: MetricComparison }) {
           ? "text-foreground"
           : "text-muted-foreground";
   return (
-    <div className="mb-6 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg border border-border bg-card">
+    <div className="summary-grid">
       <div className="px-4 py-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Current 7d spend
         </p>
-        <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{metric.current}</p>
+        <p className="mt-2 font-mono text-base font-medium text-foreground">{metric.current}</p>
       </div>
       <div className="px-4 py-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Previous 7d spend
         </p>
-        <p className="mt-1 text-lg font-semibold tabular-nums text-muted-foreground">
-          {metric.previous}
-        </p>
+        <p className="mt-2 font-mono text-base text-muted-foreground">{metric.previous}</p>
       </div>
       <div className="px-4 py-3">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           % change
         </p>
-        <p className={`mt-1 text-lg font-semibold tabular-nums ${changeTone}`}>
+        <p className={`mt-2 font-mono text-base ${changeTone}`}>
           {metric.changePct === null
             ? "—"
             : `${metric.changePct > 0 ? "+" : ""}${metric.changePct.toFixed(1)}%`}
@@ -242,164 +223,199 @@ function CampaignAnalysis() {
   return (
     <div className="min-h-screen bg-background">
       <AdMateHeader back={{ label: "All campaigns" }} platform={platform} />
-
-      <main className="mx-auto max-w-3xl px-6 py-8">
-        <div className="mb-6">
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">
-            {finding.campaignName}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">{finding.headline}</p>
+      <main className="admate-container detail-page">
+        <div className="detail-heading">
+          <p className="eyebrow">{platformMeta(platform).label} / Campaign analysis</p>
+          <h1>{finding.campaignName}</h1>
+          <p className="page-description">{finding.headline}</p>
         </div>
-
-        <PerformanceHeader
-          rating={finding.performanceRating}
-          score={finding.performanceScore}
-          label={finding.performanceLabel}
-          note={
-            finding.performanceScore !== null
-              ? "Deterministic score from performance change — spend and confidence excluded."
-              : finding.whyItMatters
-          }
-        />
-
-        <CampaignTimingCard timing={finding.timing} />
-
-        <SpendSummary metric={finding.evidence.metrics.find((m) => m.label === "Spend")} />
-
-        <div className="space-y-6">
-          <Section label="Signal">
-            <div className="flex flex-wrap items-center gap-3">
-              <SignalBadge signal={finding.signal} label={finding.signalLabel} />
+        <div className="detail-top-grid">
+          <div className="detail-diagnosis">
+            <PerformanceHeader
+              rating={finding.performanceRating}
+              score={finding.performanceScore}
+              label={finding.performanceLabel}
+              note={
+                finding.performanceScore !== null
+                  ? "Deterministic score from performance change — spend and confidence excluded."
+                  : finding.whyItMatters
+              }
+            />
+            <div className="detail-meta">
               <SeverityBadge severity={finding.severity} />
-              <span className="text-xs text-muted-foreground">
+              <ConfidenceBadge confidence={finding.confidence} />
+            </div>
+            <Section label="What AdMate detected">
+              <SignalBadge signal={finding.signal} label={finding.signalLabel} />
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                 {finding.statusReason}
-              </span>
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">{finding.whyItMatters}</p>
-          </Section>
-
-          <Section label="What changed">
-            <p className="text-sm leading-relaxed text-foreground">{finding.whatChanged}</p>
-          </Section>
-
-          <Section label="Possible explanation">
-            <p className="text-sm leading-relaxed text-foreground">
-              {finding.aiExplanation ?? "AI narrative unavailable for this finding."}
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">Written by Lovable AI from the structured finding above.</p>
-          </Section>
-
-          {/* RECOMMENDED ACTION — the focal point of this view. */}
-          {finding.guidance ? (
-            <section className="rounded-xl border-2 border-primary/70 bg-primary/5 p-6 shadow-sm">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-                Recommended action
-              </h3>
-              {finding.guidance.directionNote ? (
-                <p className="mt-3 text-sm font-medium text-muted-foreground">
-                  {finding.guidance.directionNote}
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {finding.whyItMatters}
+              </p>
+            </Section>
+            <Section label="What changed">
+              <p className="text-sm leading-relaxed">{finding.whatChanged}</p>
+            </Section>
+            <Section label="Possible explanation">
+              <p className="text-sm leading-relaxed">
+                {finding.aiExplanation ?? "AI narrative unavailable for this finding."}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Written by Lovable AI from the structured finding above.
+              </p>
+            </Section>
+          </div>
+          <div className="action-column">
+            {finding.guidance ? (
+              <section className="recommendation-panel">
+                <h3 className="eyebrow text-primary">Recommended action</h3>
+                {finding.guidance.directionNote ? (
+                  <p className="mt-3 text-sm font-medium text-muted-foreground">
+                    {finding.guidance.directionNote}
+                  </p>
+                ) : null}
+                <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
+                  {finding.guidance.action}
                 </p>
-              ) : null}
-              <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
-                {finding.guidance.action}
-              </p>
-              {finding.guidance.steps ? (
-                <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-foreground">
-                  {finding.guidance.steps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-              ) : null}
-              <p className="mt-4 text-xs text-muted-foreground">
-                Deterministic guidance for a data-confidence case · priority {finding.severity} ·{" "}
-                {finding.confidence} confidence (computed in code)
+                {finding.guidance.steps ? (
+                  <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-foreground">
+                    {finding.guidance.steps.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
+                ) : null}
+                <p className="mt-4 text-xs text-muted-foreground">
+                  Deterministic guidance for a data-confidence case · priority {finding.severity} ·{" "}
+                  {finding.confidence} confidence (computed in code)
+                </p>
+              </section>
+            ) : (
+              <section className="recommendation-panel">
+                <h3 className="eyebrow text-primary">Recommended action</h3>
+                <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
+                  {finding.aiRecommendedAction ??
+                    "AI narrative unavailable — review the evidence below before acting."}
+                </p>
+                <p className="mt-4 text-xs text-muted-foreground">
+                  Suggested by Lovable AI · priority {finding.severity} · {finding.confidence}{" "}
+                  confidence (both computed in code)
+                </p>
+              </section>
+            )}
+            <section className="key-evidence" aria-label="Key evidence">
+              <h3 className="eyebrow">Key evidence</h3>
+              {finding.evidence.metrics
+                .filter((m) => m.primary)
+                .map((m) => (
+                  <div key={m.label} className="key-metric">
+                    <span>{m.label}</span>
+                    <strong>{m.current}</strong>
+                    <p>
+                      Previously {m.previous}{" "}
+                      <span>
+                        · <ChangeCell metric={m} />
+                      </span>
+                    </p>
+                  </div>
+                ))}
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {finding.evidence.currentWindow} vs {finding.evidence.previousWindow}
               </p>
             </section>
-          ) : (
-            <section className="rounded-xl border-2 border-primary/70 bg-primary/5 p-6 shadow-sm">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-                Recommended action
-              </h3>
-              <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
-                {finding.aiRecommendedAction ??
-                  "AI narrative unavailable — review the evidence below before acting."}
+          </div>
+        </div>
+        <div className="detail-facts-grid">
+          <section>
+            <h2 className="eyebrow mb-4">Spend comparison</h2>
+            <SpendSummary metric={finding.evidence.metrics.find((m) => m.label === "Spend")} />
+          </section>
+          <section>
+            <h2 className="eyebrow mb-4">Campaign timing</h2>
+            <CampaignTimingCard timing={finding.timing} />
+            <p className="mt-3 text-sm text-muted-foreground">{finding.timing.label}</p>
+          </section>
+        </div>
+        <div className="detail-evidence-grid">
+          <details className="evidence-disclosure" open>
+            <summary>
+              Evidence behind the judgment <span>Metrics & comparison method</span>
+            </summary>
+            <Section label="Detailed evidence">
+              <p className="text-xs text-muted-foreground">
+                Current window {finding.evidence.currentWindow} vs prior window{" "}
+                {finding.evidence.previousWindow}
               </p>
-              <p className="mt-4 text-xs text-muted-foreground">
-                Suggested by Lovable AI · priority {finding.severity} · {finding.confidence} confidence
-                (both computed in code)
-              </p>
-            </section>
-          )}
-
-          <Section label="Evidence">
-            <p className="text-xs text-muted-foreground">
-              Current window {finding.evidence.currentWindow} vs prior window{" "}
-              {finding.evidence.previousWindow}
-            </p>
-            <div className="mt-3 overflow-hidden rounded-lg border border-border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-3 py-2 text-left font-medium">Metric</th>
-                    <th className="px-3 py-2 text-right font-medium">Current 7d</th>
-                    <th className="px-3 py-2 text-right font-medium">Prior 7d</th>
-                    <th className="px-3 py-2 text-right font-medium">Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {finding.evidence.metrics.map((m) => (
-                    <tr
-                      key={m.label}
-                      className={`border-b border-border/60 last:border-0 ${m.primary ? "bg-muted/30" : ""}`}
-                    >
-                      <td className="px-3 py-2 text-foreground">
-                        {m.label}
-                        {m.primary ? (
-                          <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                            trigger
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-foreground">{m.current}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                        {m.previous}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        <ChangeCell metric={m} />
-                      </td>
+              <div className="evidence-table-wrap">
+                <table className="evidence-table">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-3 py-2 text-left font-medium">Metric</th>
+                      <th className="px-3 py-2 text-right font-medium">Current 7d</th>
+                      <th className="px-3 py-2 text-right font-medium">Prior 7d</th>
+                      <th className="px-3 py-2 text-right font-medium">Change</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              {finding.evidence.method}
-            </p>
-          </Section>
-
-          <Section label="Confidence">
-            <ConfidenceBadge confidence={finding.confidence} />
-            <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
-              {finding.confidenceBasis.map((line) => (
-                <li key={line} className="flex gap-2">
-                  <span className="text-muted-foreground/60">•</span>
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Confidence score {finding.confidenceScore} — assigned by the deterministic engine from
-              volume, consistency, magnitude and data completeness. AI does not influence it.
-            </p>
-          </Section>
-
+                  </thead>
+                  <tbody>
+                    {finding.evidence.metrics.map((m) => (
+                      <tr
+                        key={m.label}
+                        className={`border-b border-border/60 last:border-0 ${m.primary ? "bg-muted/30" : ""}`}
+                      >
+                        <td className="px-3 py-2 text-foreground">
+                          {m.label}
+                          {m.primary ? (
+                            <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                              trigger
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground">
+                          {m.current}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                          {m.previous}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">
+                          <ChangeCell metric={m} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                {finding.evidence.method}
+              </p>
+            </Section>
+          </details>
+          <div className="confidence-panel">
+            <Section label="Confidence">
+              <ConfidenceBadge confidence={finding.confidence} />
+              <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
+                {finding.confidenceBasis.map((line) => (
+                  <li key={line} className="flex gap-2">
+                    <span className="text-muted-foreground/60">•</span>
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Confidence score {finding.confidenceScore} — assigned by the deterministic engine
+                from volume, consistency, magnitude and data completeness. AI does not influence it.
+              </p>
+            </Section>
+          </div>
+        </div>
+        <div className="telegram-panel">
           <Section label="Telegram briefing">
             <div className="flex flex-wrap items-center gap-2">
               <input
                 value={chatId}
                 onChange={(e) => setChatId(e.target.value)}
                 placeholder="Telegram chat ID (optional)"
-                className="h-9 min-w-56 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="Telegram chat ID (optional)"
+                className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button
                 onClick={send}

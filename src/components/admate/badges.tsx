@@ -1,3 +1,4 @@
+import { CircleAlert, CircleCheck, CircleHelp, Clock3, Minus } from "lucide-react";
 import type {
   Confidence,
   PerformanceRating,
@@ -7,33 +8,13 @@ import type {
 } from "@/lib/analysis/engine";
 import { cn } from "@/lib/utils";
 
-const SIGNAL_TONE: Record<Signal, string> = {
-  tracking_issue: "border-destructive/40 bg-destructive/10 text-destructive",
-  cpa_deterioration: "border-destructive/40 bg-destructive/10 text-destructive",
-  cpm_spike: "border-destructive/30 bg-destructive/5 text-destructive",
-  creative_fatigue: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  ctr_drop: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  lost_impression_share: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  scaling_efficiency: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
-  strong_improvement: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  stable: "border-border bg-muted text-muted-foreground",
-  low_volume: "border-border bg-muted text-muted-foreground",
-  insufficient_comparison: "border-border bg-muted text-muted-foreground",
-};
-
-/** Tone per customer-facing performance rating (null = "Check Data"). */
 const RATING_TONE: Record<PerformanceRating, string> = {
-  "Very Good": "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  Good: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
-  Fair: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  "Needs Attention": "border-destructive/40 bg-destructive/10 text-destructive",
+  "Very Good": "performance-excellent",
+  Good: "performance-good",
+  Fair: "performance-fair",
+  "Needs Attention": "performance-attention",
 };
 
-/**
- * PERFORMANCE badge — the simple, customer-facing verdict. Tone comes from the
- * rating; text comes from the code-owned label ("Early Data" for low volume,
- * "Check Data" for other no-score signals) so no-score cases read clearly.
- */
 export function PerformanceBadge({
   rating,
   label,
@@ -43,27 +24,34 @@ export function PerformanceBadge({
   label: string;
   className?: string;
 }) {
+  const Icon =
+    rating === "Very Good" || rating === "Good"
+      ? CircleCheck
+      : rating === "Needs Attention"
+        ? CircleAlert
+        : rating === "Fair"
+          ? Minus
+          : label === "Check Data"
+            ? CircleHelp
+            : Clock3;
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold whitespace-nowrap",
-        rating ? RATING_TONE[rating] : "border-border bg-muted text-muted-foreground",
+        "performance-badge",
+        rating
+          ? RATING_TONE[rating]
+          : label === "Check Data"
+            ? "performance-check"
+            : "performance-early",
         className,
       )}
     >
+      <Icon size={14} aria-hidden="true" />
       {label}
     </span>
   );
 }
 
-const STATUS_TONE: Record<Status, string> = {
-  needs_attention: "border-destructive/40 bg-destructive/10 text-destructive",
-  watch: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  stable: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  data_confidence: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
-};
-
-/** STATUS badge — the coarse action bucket assigned by the rule engine. */
 export function StatusBadge({
   status,
   label,
@@ -76,8 +64,8 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
-        STATUS_TONE[status],
+        "performance-badge",
+        status === "needs_attention" ? "performance-attention" : "performance-early",
         className,
       )}
     >
@@ -86,7 +74,6 @@ export function StatusBadge({
   );
 }
 
-/** SIGNAL badge — the specific detected pattern. */
 export function SignalBadge({
   signal,
   label,
@@ -97,13 +84,7 @@ export function SignalBadge({
   className?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
-        SIGNAL_TONE[signal],
-        className,
-      )}
-    >
+    <span className={cn("signal-label", className)} data-signal={signal}>
       {label}
     </span>
   );
@@ -116,20 +97,14 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   low: "Low priority",
   info: "Informational",
 };
-
 export function SeverityBadge({ severity }: { severity: Severity }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+    <span className="priority-label">
       <span
+        aria-hidden="true"
         className={cn(
-          "size-2 rounded-full",
-          severity === "critical" || severity === "high"
-            ? "bg-destructive"
-            : severity === "medium"
-              ? "bg-amber-500"
-              : severity === "low"
-                ? "bg-muted-foreground/50"
-                : "bg-emerald-500",
+          "priority-dot",
+          (severity === "critical" || severity === "high") && "priority-dot-high",
         )}
       />
       {SEVERITY_LABEL[severity]}
@@ -138,17 +113,14 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
 }
 
 export function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
+  const bars = confidence === "High" ? 3 : confidence === "Medium" ? 2 : 1;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
-        confidence === "High"
-          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-          : confidence === "Medium"
-            ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-            : "border-border bg-muted text-muted-foreground",
-      )}
-    >
+    <span className="confidence-label">
+      <span className="confidence-bars" aria-hidden="true">
+        {[1, 2, 3].map((n) => (
+          <i key={n} className={n <= bars ? "filled" : ""} />
+        ))}
+      </span>
       {confidence} confidence
     </span>
   );
