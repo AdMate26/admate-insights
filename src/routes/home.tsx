@@ -67,6 +67,7 @@ function CampaignList() {
                 <th className="px-4 py-3 text-left font-medium">Signal</th>
                 <th className="px-4 py-3 text-left font-medium">Confidence</th>
                 <th className="px-4 py-3 text-right font-medium">Spend (7d)</th>
+                <th className="px-4 py-3 text-left font-medium">Timing</th>
                 <th className="px-4 py-3 text-left font-medium">Reason</th>
               </tr>
             </thead>
@@ -86,7 +87,7 @@ function CampaignList() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <PerformanceBadge rating={f.performanceRating} />
+                    <PerformanceBadge rating={f.performanceRating} label={f.performanceLabel} />
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">
                     {f.performanceScore ?? "—"}
@@ -103,6 +104,9 @@ function CampaignList() {
                       currency: "USD",
                       maximumFractionDigits: 0,
                     })}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
+                    {f.timing.label}
                   </td>
                   <td className="max-w-xs px-4 py-3 text-xs leading-relaxed text-muted-foreground">
                     {f.statusReason}

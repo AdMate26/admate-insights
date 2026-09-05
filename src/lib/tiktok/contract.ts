@@ -40,4 +40,11 @@ export type NormalizedDailyRow = {
   revenue: number;
   reach: number;
   dailyBudget: number;
+  /**
+   * Campaign schedule (YYYY-MM-DD), informational only. Same for every row of a
+   * campaign; null when unknown or when the campaign has no end date. Used for
+   * display-only timing — never for analysis, scoring or ranking.
+   */
+  campaignStartDate?: string | null;
+  campaignEndDate?: string | null;
 };

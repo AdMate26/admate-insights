@@ -7,7 +7,7 @@ import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import { ConfidenceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
-import type { MetricComparison, PerformanceRating } from "@/lib/analysis/engine";
+import type { CampaignTiming, MetricComparison, PerformanceRating } from "@/lib/analysis/engine";
 
 export const Route = createFileRoute("/campaigns/$campaignId")({
   loader: async ({ context }) => {
@@ -69,12 +69,16 @@ function ChangeCell({ metric }: { metric: MetricComparison }) {
 function PerformanceHeader({
   rating,
   score,
+  label,
+  note,
 }: {
   rating: PerformanceRating | null;
   score: number | null;
+  label: string;
+  note: string;
 }) {
-  const hasScore = score !== null && rating !== null;
-  const accent = !hasScore
+  const hasScore = score !== null;
+  const accent = !rating
     ? "border-border bg-muted/40"
     : rating === "Very Good"
       ? "border-emerald-500/40 bg-emerald-500/5"
@@ -89,14 +93,8 @@ function PerformanceHeader({
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           Performance
         </p>
-        <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-          {hasScore ? rating : "Check Data"}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {hasScore
-            ? "Deterministic score from performance change — spend and confidence excluded."
-            : "No performance verdict for this campaign yet — review the data before judging performance."}
-        </p>
+        <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{label}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{note}</p>
       </div>
       <div className="text-right">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -108,6 +106,51 @@ function PerformanceHeader({
         {hasScore ? (
           <p className="mt-1 text-[11px] text-muted-foreground">out of 100</p>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Informational campaign timing: start, end and days remaining / ongoing. */
+function CampaignTimingCard({ timing }: { timing: CampaignTiming }) {
+  const fmt = (iso: string | null) =>
+    iso
+      ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        })
+      : "—";
+  const remaining =
+    timing.endDate === null
+      ? "Ongoing"
+      : timing.daysRemaining === null
+        ? "—"
+        : timing.daysRemaining < 0
+          ? "Ended"
+          : `${timing.daysRemaining} ${timing.daysRemaining === 1 ? "day" : "days"}`;
+  return (
+    <div className="mb-6 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-lg border border-border bg-card">
+      <div className="px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Start date
+        </p>
+        <p className="mt-1 text-sm font-medium text-foreground">{fmt(timing.startDate)}</p>
+      </div>
+      <div className="px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          End date
+        </p>
+        <p className="mt-1 text-sm font-medium text-foreground">
+          {timing.endDate ? fmt(timing.endDate) : "No end date"}
+        </p>
+      </div>
+      <div className="px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Days remaining
+        </p>
+        <p className="mt-1 text-sm font-medium text-foreground">{remaining}</p>
       </div>
     </div>
   );
@@ -205,7 +248,15 @@ function CampaignAnalysis() {
         <PerformanceHeader
           rating={finding.performanceRating}
           score={finding.performanceScore}
+          label={finding.performanceLabel}
+          note={
+            finding.performanceScore !== null
+              ? "Deterministic score from performance change — spend and confidence excluded."
+              : finding.whyItMatters
+          }
         />
+
+        <CampaignTimingCard timing={finding.timing} />
 
         <SpendSummary metric={finding.evidence.metrics.find((m) => m.label === "Spend")} />
 
@@ -233,19 +284,46 @@ function CampaignAnalysis() {
           </Section>
 
           {/* RECOMMENDED ACTION — the focal point of this view. */}
-          <section className="rounded-xl border-2 border-primary/70 bg-primary/5 p-6 shadow-sm">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-              Recommended action
-            </h3>
-            <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
-              {finding.aiRecommendedAction ??
-                "AI narrative unavailable — review the evidence below before acting."}
-            </p>
-            <p className="mt-4 text-xs text-muted-foreground">
-              Suggested by Lovable AI · priority {finding.severity} · {finding.confidence} confidence
-              (both computed in code)
-            </p>
-          </section>
+          {finding.guidance ? (
+            <section className="rounded-xl border-2 border-primary/70 bg-primary/5 p-6 shadow-sm">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+                Recommended action
+              </h3>
+              {finding.guidance.directionNote ? (
+                <p className="mt-3 text-sm font-medium text-muted-foreground">
+                  {finding.guidance.directionNote}
+                </p>
+              ) : null}
+              <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
+                {finding.guidance.action}
+              </p>
+              {finding.guidance.steps ? (
+                <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-foreground">
+                  {finding.guidance.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              ) : null}
+              <p className="mt-4 text-xs text-muted-foreground">
+                Deterministic guidance for a data-confidence case · priority {finding.severity} ·{" "}
+                {finding.confidence} confidence (computed in code)
+              </p>
+            </section>
+          ) : (
+            <section className="rounded-xl border-2 border-primary/70 bg-primary/5 p-6 shadow-sm">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
+                Recommended action
+              </h3>
+              <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
+                {finding.aiRecommendedAction ??
+                  "AI narrative unavailable — review the evidence below before acting."}
+              </p>
+              <p className="mt-4 text-xs text-muted-foreground">
+                Suggested by Lovable AI · priority {finding.severity} · {finding.confidence} confidence
+                (both computed in code)
+              </p>
+            </section>
+          )}
 
           <Section label="Evidence">
             <p className="text-xs text-muted-foreground">
