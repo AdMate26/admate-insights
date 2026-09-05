@@ -29,14 +29,17 @@ const RATING_TONE: Record<PerformanceRating, string> = {
 };
 
 /**
- * PERFORMANCE badge — the simple, customer-facing verdict. When `rating` is
- * null the campaign has no score and we show "Check Data" instead.
+ * PERFORMANCE badge — the simple, customer-facing verdict. Tone comes from the
+ * rating; text comes from the code-owned label ("Early Data" for low volume,
+ * "Check Data" for other no-score signals) so no-score cases read clearly.
  */
 export function PerformanceBadge({
   rating,
+  label,
   className,
 }: {
   rating: PerformanceRating | null;
+  label: string;
   className?: string;
 }) {
   return (
@@ -47,7 +50,7 @@ export function PerformanceBadge({
         className,
       )}
     >
-      {rating ?? "Check Data"}
+      {label}
     </span>
   );
 }

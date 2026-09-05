@@ -91,17 +91,19 @@ function buildBriefing(analysis: AdMateAnalysis): string {
     "",
   ];
   priority.forEach((f: CampaignFinding, i) => {
-    // Customer-facing label: the simple Performance rating + score (never the
-    // internal Watch / Data Confidence status). Signal stays visible — it explains why.
-    const rating = f.performanceRating ?? "Check Data";
+    // Customer-facing label: the simple Performance rating + score, or the
+    // code-owned label ("Early Data" / "Check Data") when there is no score.
+    // Signal stays visible — it explains why.
     const score = f.performanceScore ?? "—";
     lines.push(
-      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(rating)} ${score} · ${escapeHtml(f.signalLabel)}`,
+      `${SEVERITY_ICON[f.severity] ?? "⚪"} <b>${i + 1}. ${escapeHtml(f.campaignName)}</b> — ${escapeHtml(f.performanceLabel)} ${score} · ${escapeHtml(f.signalLabel)}`,
       `<i>What changed:</i> ${escapeHtml(f.whatChanged)}`,
     );
     if (f.aiExplanation) lines.push(`<i>Possible explanation:</i> ${escapeHtml(f.aiExplanation)}`);
-    if (f.aiRecommendedAction)
-      lines.push(`<b>Recommended action:</b> ${escapeHtml(f.aiRecommendedAction)}`);
+    // For data-confidence cases (e.g. possible tracking issue) use the
+    // deterministic guidance action; otherwise use the AI recommendation.
+    const action = f.guidance?.action ?? f.aiRecommendedAction;
+    if (action) lines.push(`<b>Recommended action:</b> ${escapeHtml(action)}`);
     lines.push(`<i>Confidence:</i> ${f.confidence} (deterministic)`, "");
   });
   if (priority.length === 0) lines.push("No campaign crossed an attention threshold this week.", "");

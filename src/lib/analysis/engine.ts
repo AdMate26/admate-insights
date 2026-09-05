@@ -63,6 +63,121 @@ export function performanceRatingFor(score: number): PerformanceRating {
   return "Needs Attention";
 }
 
+/**
+ * Customer-facing performance label. Uses the rating when a score exists;
+ * otherwise low volume reads "Early Data" (we have the data, just not enough
+ * results yet) while other no-score signals read "Check Data".
+ */
+export function performanceLabelFor(
+  signal: Signal,
+  rating: PerformanceRating | null,
+): string {
+  if (rating) return rating;
+  if (signal === "low_volume") return "Early Data";
+  return "Check Data";
+}
+
+/**
+ * Deterministic, code-owned UX guidance for the data-confidence signals
+ * (low volume / tracking issue). This is plain-language help text only — it does
+ * NOT affect score, rating, signal, confidence or priority, and the AI layer is
+ * untouched. Returns null for signals that use the normal AI recommendation.
+ */
+export type DataConfidenceGuidance = {
+  /** Optional plain-language read on current direction. */
+  directionNote?: string;
+  /** Recommended next action in simple wording. */
+  action: string;
+  /** Optional ordered steps the user can follow. */
+  steps?: string[];
+};
+
+export function dataConfidenceGuidanceFor(signal: Signal): DataConfidenceGuidance | null {
+  if (signal === "low_volume") {
+    return {
+      directionNote: "No major issue detected yet.",
+      action: "Continue collecting results before making a major optimization.",
+    };
+  }
+  if (signal === "tracking_issue") {
+    return {
+      action: "Verify conversion tracking before changing budget, targeting or creative.",
+      steps: [
+        "Compare TikTok conversions with your actual orders or leads.",
+        "If they do not match, check whether the TikTok Pixel / conversion event is recording correctly.",
+        "If needed, ask your website or technical team to verify tracking.",
+        "If the numbers match, treat the drop as a real campaign-performance issue and review the campaign.",
+      ],
+    };
+  }
+  return null;
+}
+
+/**
+ * CAMPAIGN TIMING — informational only. Never affects score, rating, signal,
+ * confidence, priority or recommendations. Derived from the campaign's start/end
+ * dates for display in the overview and detail views.
+ */
+export type CampaignTiming = {
+  startDate: string | null;
+  endDate: string | null;
+  /** Whole days from today until the end date; null when there is no end date. */
+  daysRemaining: number | null;
+  /** Compact display string, e.g. "Ends Sep 18 · 13 days left", "Ongoing · No end date". */
+  label: string;
+};
+
+function formatShortDate(iso: string): string {
+  // Parse as UTC noon to avoid timezone slippage on the date boundary.
+  const d = new Date(`${iso}T12:00:00Z`);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  const from = Date.parse(`${fromIso}T00:00:00Z`);
+  const to = Date.parse(`${toIso}T00:00:00Z`);
+  return Math.round((to - from) / 86_400_000);
+}
+
+/**
+ * Build the display-only timing summary. `todayIso` is injectable for testing;
+ * it defaults to the current UTC date.
+ */
+export function computeTiming(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+  todayIso: string = new Date().toISOString().slice(0, 10),
+): CampaignTiming {
+  const start = startDate ?? null;
+  const end = endDate ?? null;
+
+  // Not started yet takes precedence.
+  if (start && start > todayIso) {
+    return { startDate: start, endDate: end, daysRemaining: null, label: `Starts ${formatShortDate(start)}` };
+  }
+
+  if (end) {
+    const remaining = daysBetween(todayIso, end);
+    if (remaining < 0) {
+      return { startDate: start, endDate: end, daysRemaining: remaining, label: `Ended ${formatShortDate(end)}` };
+    }
+    if (remaining === 0) {
+      return { startDate: start, endDate: end, daysRemaining: 0, label: "Ends Today" };
+    }
+    if (remaining === 1) {
+      return { startDate: start, endDate: end, daysRemaining: 1, label: "Ends Tomorrow" };
+    }
+    return {
+      startDate: start,
+      endDate: end,
+      daysRemaining: remaining,
+      label: `Ends ${formatShortDate(end)} · ${remaining} days left`,
+    };
+  }
+
+  return { startDate: start, endDate: end, daysRemaining: null, label: "Ongoing · No end date" };
+}
+
 
 export type MetricComparison = {
   label: string;
@@ -105,6 +220,19 @@ export type CampaignFinding = {
   performanceScore: number | null;
   /** Customer-facing rating for the score, or null when there is no score. */
   performanceRating: PerformanceRating | null;
+  /**
+   * Customer-facing label shown even when there is no score: the rating when a
+   * score exists, "Early Data" for low volume, "Check Data" for other no-score
+   * signals. Display-only; never affects classification.
+   */
+  performanceLabel: string;
+  /**
+   * Deterministic plain-language guidance for data-confidence signals
+   * (low volume / tracking issue); null otherwise. Does not affect any scoring.
+   */
+  guidance: DataConfidenceGuidance | null;
+  /** Informational campaign timing (display-only; never affects analysis). */
+  timing: CampaignTiming;
   evidence: {
     currentWindow: string;
     previousWindow: string;
@@ -526,6 +654,7 @@ function avgDailyFrequency(campRows: NormalizedDailyRow[], dateSet: Set<string>)
 }
 
 export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): AnalysisResult {
+  const today = new Date().toISOString().slice(0, 10);
   const { current, previous } = selectWindows(rows, windowDays);
   const curSet = new Set(current);
   const prevSet = new Set(previous);
@@ -580,15 +709,28 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
     const clicksHeld = dClicks !== null && dClicks > -20;
     const conversionsCollapsed = dConv !== null && dConv <= -50;
 
-    if (lowVolume) {
+    // Low volume must not MASK a stronger, more urgent issue. A tracking problem
+    // or SEVERE performance deterioration takes precedence over the low-volume
+    // notice so it is never hidden. (Mild moves on thin data still read as low
+    // volume — the point of the notice is that thin data is unreliable.)
+    const trackingCondition = clicksHeld && conversionsCollapsed;
+    const supportsCtr = (dCpa !== null && dCpa > 5) || (dCvr !== null && dCvr < -5);
+    const severeCpa = dCpa !== null && dCpa >= (SEVERE_THRESHOLD.cpa_deterioration ?? 35);
+    const severeCtr =
+      dCtr !== null && dCtr <= -(SEVERE_THRESHOLD.ctr_drop ?? 40) && supportsCtr;
+    const fatigueCondition =
+      dCtr !== null && dCtr <= -20 && dFreq !== null && dFreq >= 15 && dCpa !== null && dCpa > 0;
+    const strongerIssue = trackingCondition || severeCpa || severeCtr || fatigueCondition;
+
+    if (lowVolume && !strongerIssue) {
       signal = "low_volume";
       primaryMetric = "Conversions";
       primaryChange = dConv ?? 0;
       consistencyValue = 0.5;
-      headline = "Not enough volume to judge performance";
-      whatChanged = `Only ${cur.conversions} conversions on ${money(cur.spend)} of spend in the current window (prior window: ${prev.conversions} conversions, ${money(prev.spend)}).`;
+      headline = "Still gathering results — not enough for a reliable score";
+      whatChanged = `Only ${cur.conversions} conversions on ${money(cur.spend)} of spend in the current window (prior window: ${prev.conversions} conversions, ${money(prev.spend)}). No major issue detected yet.`;
       whyItMatters =
-        "Sample size is below the engine's reliability threshold, so metric movements here are statistically indistinguishable from noise.";
+        "AdMate has the campaign data, but there are not enough results yet for a reliable performance score.";
     } else if (noComparison) {
       signal = "insufficient_comparison";
       primaryMetric = "Spend";
@@ -603,10 +745,10 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       primaryMetric = "CVR";
       primaryChange = dCvr ?? 0;
       consistencyValue = consistency(campaign.rows, current, cvr(prev), cvr, "lower");
-      headline = "Conversions collapsed while clicks held steady";
+      headline = "Conversions dropped sharply while clicks stayed steady";
       whatChanged = `Clicks moved ${dClicks?.toFixed(1)}% (${num(prev.clicks)} → ${num(cur.clicks)}) but conversions fell ${dConv?.toFixed(1)}% (${prev.conversions} → ${cur.conversions}), taking CVR from ${pctStr(cvr(prev))} to ${pctStr(cvr(cur))}.`;
       whyItMatters =
-        "Traffic volume is unchanged while recorded conversions are not, which may indicate a measurement/pixel issue rather than a real demand change. Spend continues either way.";
+        "The same number of people are clicking, but far fewer conversions are being recorded. That often means conversions are not being tracked correctly, rather than a real drop in demand — and spend keeps running either way. Check tracking before making campaign changes.";
     } else if (
       dCtr !== null && dCtr <= -20 &&
       dFreq !== null && dFreq >= 15 &&
@@ -787,6 +929,17 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
     // Deterministic, spend-free performance score (null for Check-Data signals).
     const perfScore = performanceScore(signal, Math.abs(primaryChange));
     const perfRating = perfScore === null ? null : performanceRatingFor(perfScore);
+    const perfLabel = performanceLabelFor(signal, perfRating);
+    const guidance = dataConfidenceGuidanceFor(signal);
+
+    // Informational timing only — derived from the campaign's start/end dates,
+    // never used in any classification, scoring or ranking above.
+    const firstRow = campaign.rows[0];
+    const timing = computeTiming(
+      firstRow?.campaignStartDate ?? null,
+      firstRow?.campaignEndDate ?? null,
+      today,
+    );
 
     findings.push({
       campaignId,
@@ -808,6 +961,9 @@ export function runAnalysis(rows: NormalizedDailyRow[], windowDays = 7): Analysi
       confidenceBasis: basis,
       performanceScore: perfScore,
       performanceRating: perfRating,
+      performanceLabel: perfLabel,
+      guidance,
+      timing,
       evidence: {
         currentWindow: windowLabel,
         previousWindow: prevLabel,

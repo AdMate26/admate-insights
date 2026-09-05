@@ -35,6 +35,8 @@ type TikTokRawRow = {
     reach: string;
     budget: string;
   };
+  campaign_start_date: string | null; // YYYY-MM-DD, informational only
+  campaign_end_date: string | null; // YYYY-MM-DD or null (ongoing)
 };
 
 export type DemoCase =
@@ -60,6 +62,10 @@ type CampaignSpec = {
   aov: number;
   dailyBudget: number;
   demoCase: DemoCase;
+  /** Days before today the campaign started (informational timing only). */
+  startOffsetDays?: number;
+  /** Days from today the campaign ends: >0 future, 0 today, <0 past, null = no end date. */
+  endOffsetDays?: number | null;
 };
 
 const CAMPAIGNS: CampaignSpec[] = [
@@ -75,6 +81,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 71,
     dailyBudget: 620,
     demoCase: "cpa_deterioration",
+    startOffsetDays: 45,
+    endOffsetDays: null,
   },
   {
     campaignId: "c_1002",
@@ -88,6 +96,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 58,
     dailyBudget: 760,
     demoCase: "ctr_drop",
+    startOffsetDays: 30,
+    endOffsetDays: 13,
   },
   {
     campaignId: "c_1003",
@@ -101,6 +111,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 62,
     dailyBudget: 900,
     demoCase: "creative_fatigue",
+    startOffsetDays: 60,
+    endOffsetDays: null,
   },
   {
     campaignId: "c_1004",
@@ -114,6 +126,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 66,
     dailyBudget: 1400,
     demoCase: "scaling_efficiency",
+    startOffsetDays: 20,
+    endOffsetDays: 1,
   },
   {
     campaignId: "c_1005",
@@ -127,6 +141,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 64,
     dailyBudget: 700,
     demoCase: "strong_improvement",
+    startOffsetDays: 25,
+    endOffsetDays: 0,
   },
   {
     campaignId: "c_1006",
@@ -140,6 +156,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 60,
     dailyBudget: 480,
     demoCase: "stable",
+    startOffsetDays: 90,
+    endOffsetDays: null,
   },
   {
     campaignId: "c_1007",
@@ -153,6 +171,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 59,
     dailyBudget: 40,
     demoCase: "low_volume",
+    startOffsetDays: 3,
+    endOffsetDays: null,
   },
   {
     campaignId: "c_1008",
@@ -166,6 +186,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 68,
     dailyBudget: 540,
     demoCase: "tracking_issue",
+    startOffsetDays: 50,
+    endOffsetDays: null,
   },
   {
     campaignId: "c_1009",
@@ -179,6 +201,8 @@ const CAMPAIGNS: CampaignSpec[] = [
     aov: 61,
     dailyBudget: 820,
     demoCase: "cpm_spike",
+    startOffsetDays: 10,
+    endOffsetDays: 30,
   },
 ];
 
@@ -198,6 +222,14 @@ function jitter(seed: string, spread: number): number {
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/** YYYY-MM-DD for today (UTC) shifted by `deltaDays` (negative = past). */
+function offsetDate(deltaDays: number): string {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return isoDate(d);
 }
 
 export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
@@ -318,6 +350,10 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
         reach: String(reach),
         budget: spec.dailyBudget.toFixed(2),
       },
+      campaign_start_date:
+        spec.startOffsetDays != null ? offsetDate(-spec.startOffsetDays) : null,
+      campaign_end_date:
+        spec.endOffsetDays == null ? null : offsetDate(spec.endOffsetDays),
     };
   }
 
@@ -338,6 +374,8 @@ export class DemoTikTokDataProvider implements AdsDataProvider<TikTokRawRow> {
       revenue: Number(m.total_complete_payment),
       reach: Number(m.reach),
       dailyBudget: Number(m.budget),
+      campaignStartDate: raw.campaign_start_date,
+      campaignEndDate: raw.campaign_end_date,
     };
   }
 }
