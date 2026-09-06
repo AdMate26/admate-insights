@@ -3,12 +3,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import {
-  ConfidenceBadge,
-  PerformanceBadge,
-  SeverityBadge,
-  SignalBadge,
-} from "@/components/admate/badges";
+import { ConfidenceBadge, PerformanceBadge, PriorityBadge, SignalBadge } from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import { needsAttentionCount } from "@/lib/attention";
 import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
@@ -22,17 +17,17 @@ export const Route = createFileRoute("/home")({
     context.queryClient.ensureQueryData(analysisQueryOptions(deps.platform)),
   head: () => ({
     meta: [
-      { title: "AdMate — AI Marketing Analyst for TikTok Ads" },
+      { title: "AdMate — Platform-aware marketing analyst" },
       {
         name: "description",
         content:
-          "AdMate reviews TikTok Ads campaigns and tells you what changed, what needs attention, why, and the recommended action — with deterministic evidence and confidence.",
+          "AdMate judges every campaign on the metric its objective was bought against, across Meta, TikTok and Google — with the evidence behind every verdict.",
       },
-      { property: "og:title", content: "AdMate — AI Marketing Analyst for TikTok Ads" },
+      { property: "og:title", content: "AdMate — Platform-aware marketing analyst" },
       {
         property: "og:description",
         content:
-          "Campaign findings, evidence and recommended actions for TikTok Ads, computed deterministically and explained in plain language.",
+          "Objective-aware campaign analysis: performance, signal, why and action for Meta, TikTok and Google Ads.",
       },
     ],
   }),
@@ -43,14 +38,10 @@ function CampaignList() {
   const { platform } = Route.useSearch();
   const { data } = useSuspenseQuery(analysisQueryOptions(platform));
   const attention = needsAttentionCount(data.findings);
-  // Overview only aggregates existing scores; no performance rules are recomputed.
-  const scores = data.findings
-    .filter((f) => f.performanceLabel !== "Check Data" && f.performanceLabel !== "Early Data")
-    .map((f) => f.performanceScore)
-    .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
-  const averageScore = scores.length
-    ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
-    : null;
+  const inReview = data.findings.filter((f) => f.performance === "In Review").length;
+  const budgetAtRisk = data.findings
+    .filter((f) => f.exposure.kind === "budget_at_risk")
+    .reduce((sum, f) => sum + f.exposure.amount, 0);
   const money = (value: number) =>
     value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -66,7 +57,8 @@ function CampaignList() {
               <br className="mobile-break" /> Know your next move.
             </h1>
             <p className="page-description">
-              A clear read on performance, with the evidence behind every judgment.
+              Every campaign judged on the metric its objective was bought against — with the evidence
+              behind each verdict.
             </p>
           </div>
           <div className="date-window">
@@ -91,7 +83,7 @@ function CampaignList() {
           <div>
             <dt>Needs Attention</dt>
             <dd className="overview-attention">{attention.toString().padStart(2, "0")}</dd>
-            <span>Based on performance rating</span>
+            <span>Performance rated Low</span>
           </div>
           <div>
             <dt>Spend (Last 7 Days)</dt>
@@ -99,12 +91,9 @@ function CampaignList() {
             <span>Across all campaigns</span>
           </div>
           <div>
-            <dt>Average Performance Score</dt>
-            <dd>
-              {averageScore ?? "—"}
-              <small> / 100</small>
-            </dd>
-            <span>{scores.length} scored campaigns · no-score cases excluded</span>
+            <dt>Budget at Risk</dt>
+            <dd>{budgetAtRisk > 0 ? money(budgetAtRisk) : "—"}</dd>
+            <span>{inReview} in review this week</span>
           </div>
         </dl>
         {data.aiStatus === "failed" ? (
@@ -132,7 +121,7 @@ function CampaignList() {
           <div className="campaign-columns" aria-hidden="true">
             <span>Campaign</span>
             <span>Performance</span>
-            <span>Score</span>
+            <span>Primary KPI</span>
             <span>Signal</span>
             <span>Confidence</span>
             <span>Spend (7d)</span>
@@ -154,27 +143,32 @@ function CampaignList() {
                         {f.campaignName}
                         <ArrowUpRight size={16} aria-hidden="true" />
                       </h3>
-                      <SeverityBadge severity={f.severity} />
+                      <span className="campaign-objective-line">
+                        {f.objectiveLabel}
+                        {f.campaignType ? ` · ${f.campaignType}` : f.optimizationGoal ? ` · ${f.optimizationGoal}` : ""}
+                      </span>
+                      <PriorityBadge tier={f.priorityTier} />
                     </div>
                     <div className="campaign-cell performance-cell">
                       <span className="cell-label">Performance</span>
-                      <PerformanceBadge rating={f.performanceRating} label={f.performanceLabel} />
+                      <PerformanceBadge performance={f.performance} />
                     </div>
                     <div className="campaign-cell score-cell">
-                      <span className="cell-label">Score</span>
-                      <span className="score-value">{f.performanceScore ?? "—"}</span>
+                      <span className="cell-label">Primary KPI</span>
+                      <span className="metric-value">{f.primaryMetricValue}</span>
+                      <span className="kpi-sublabel">{f.primaryMetric}</span>
                     </div>
                     <div className="campaign-cell signal-cell">
                       <span className="cell-label">Signal</span>
-                      <SignalBadge signal={f.signal} label={f.signalLabel} />
+                      <SignalBadge signal={f.signal} />
                     </div>
                     <div className="campaign-cell confidence-cell">
                       <span className="cell-label">Confidence</span>
-                      <ConfidenceBadge confidence={f.confidence} />
+                      <ConfidenceBadge confidence={f.diagnosticConfidence} />
                     </div>
                     <div className="campaign-cell spend-cell">
                       <span className="cell-label">Spend (7d)</span>
-                      <span className="metric-value">{money(f.snapshot.spend)}</span>
+                      <span className="metric-value">{money(f.spend)}</span>
                     </div>
                     <div className="campaign-cell timing-cell">
                       <span className="cell-label">Timing</span>
@@ -183,7 +177,7 @@ function CampaignList() {
                   </div>
                   <p className="campaign-reason">
                     <span>Why this judgment</span>
-                    {f.statusReason}
+                    {f.why}
                   </p>
                 </Link>
               </li>
@@ -191,8 +185,9 @@ function CampaignList() {
           </ul>
         </section>
         <p className="method-note">
-          Performance, signals, priority and confidence are computed from your metrics. Spend never
-          moves the score. AI adds explanations and recommended actions.
+          Each campaign is graded on the KPI its objective was bought against, compared to its target,
+          its own baseline, or similar campaigns. Performance, signals, priority and confidence are
+          computed from your metrics; AI only rephrases the explanation and action.
         </p>
       </main>
     </div>

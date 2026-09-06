@@ -1298,3 +1298,19 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Objective-aware additions (objective-aware engine) */
+.campaign-objective-line {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted-foreground, #6b7280);
+  margin: 2px 0 6px;
+}
+.kpi-sublabel {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground, #6b7280);
+  margin-top: 2px;
+}
