@@ -1,26 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import {
-  runAnalysis,
-  runMetaAnalysis,
-  runGoogleSearchAnalysis,
-  type AnalysisResult,
-} from "./analysis/engine";
-import type { NormalizedDailyRow } from "./tiktok/contract";
-import { DemoTikTokDataProvider } from "./tiktok/demo-provider";
-import { DemoMetaDataProvider } from "./meta/demo-provider";
-import { DemoGoogleSearchDataProvider } from "./google/demo-provider";
-import { loadNormalizedDailyRows } from "./tiktok/normalize";
+import { analyzeCampaigns, type AnalysisResult } from "./analysis/engine";
+import { getDemoCampaigns } from "./analysis/demo";
 import { buildBriefing, briefingPlainText } from "./briefing";
 import { DEFAULT_PLATFORM, isPlatform, platformMeta, type Platform } from "./platforms";
 
 /**
- * MVP keeps everything in-memory: each demo provider is deterministic, so the
+ * MVP keeps everything in-memory: the demo campaigns are deterministic, so the
  * same synthetic history (and therefore the same findings) is reproduced on
  * every call. No persistence is required for the demo to function.
  */
-const HISTORY_DAYS = 28;
-
 export type AdMateAnalysis = AnalysisResult & {
   platform: Platform;
   provider: string;
@@ -30,54 +19,17 @@ export type AdMateAnalysis = AnalysisResult & {
   aiError: string | null;
 };
 
-/**
- * Platform registry — the ONE place platform → (own demo provider + own
- * analyzer) is wired. Each platform runs its OWN analyzer; data and logic never
- * mix. The AI layer is shared and only writes narrative from the findings.
- */
-type Analyzer = (rows: NormalizedDailyRow[], windowDays?: number) => AnalysisResult;
-
-const ANALYZER: Record<Platform, Analyzer> = {
-  tiktok: runAnalysis,
-  meta: runMetaAnalysis,
-  google_search: runGoogleSearchAnalysis,
-};
-
-/** Load + normalize a platform's demo rows with the provider's concrete type. */
-async function loadPlatformRows(
-  platform: Platform,
-): Promise<{ rows: NormalizedDailyRow[]; id: string; label: string }> {
-  switch (platform) {
-    case "meta": {
-      const p = new DemoMetaDataProvider();
-      return { rows: await loadNormalizedDailyRows(p, HISTORY_DAYS), id: p.id, label: p.label };
-    }
-    case "google_search": {
-      const p = new DemoGoogleSearchDataProvider();
-      return { rows: await loadNormalizedDailyRows(p, HISTORY_DAYS), id: p.id, label: p.label };
-    }
-    case "tiktok":
-    default: {
-      const p = new DemoTikTokDataProvider();
-      return { rows: await loadNormalizedDailyRows(p, HISTORY_DAYS), id: p.id, label: p.label };
-    }
-  }
-}
-
 // Short-lived in-memory cache PER PLATFORM: the demo data is deterministic, so
 // re-running the AI narrative call on every navigation only adds latency.
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<Platform, { at: number; value: AdMateAnalysis }>();
 
 async function computeAnalysis(platform: Platform): Promise<AdMateAnalysis> {
-  // 1 + 2. Provider -> normalization layer -> single internal schema.
-  const { rows, id, label } = await loadPlatformRows(platform);
+  // 1 + 2. Objective-aware demo campaigns -> the ONE analysis engine. The same
+  //        result powers Campaigns, Overview, Needs Attention, Telegram & reports.
+  const result = analyzeCampaigns(getDemoCampaigns(platform));
 
-  // 3. Deterministic PLATFORM-SPECIFIC analyzer owns metrics, signal, severity,
-  //    evidence, confidence — TikTok / Meta / Google Search each run their own.
-  const result = ANALYZER[platform](rows, 7);
-
-  // 4. AI layer adds ONLY possibleExplanation + recommendedAction (unchanged).
+  // 3. AI layer only REPHRASES the deterministic diagnosis (explanation + action).
   let aiStatus: "ok" | "failed" = "ok";
   let aiError: string | null = null;
   try {
@@ -98,8 +50,8 @@ async function computeAnalysis(platform: Platform): Promise<AdMateAnalysis> {
   return {
     ...result,
     platform,
-    provider: id,
-    providerLabel: label,
+    provider: `${platform}-demo`,
+    providerLabel: `${platformMeta(platform).label} (synthetic demo)`,
     modeLabel: platformMeta(platform).modeLabel,
     aiStatus,
     aiError,

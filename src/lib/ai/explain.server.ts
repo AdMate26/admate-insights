@@ -22,18 +22,20 @@ export type FindingNarrative = {
   recommendedAction: string;
 };
 
-const SYSTEM_PROMPT = `You are AdMate, a senior TikTok Ads analyst.
+const SYSTEM_PROMPT = `You are AdMate, a senior paid-media analyst covering Meta, TikTok and Google Ads.
 
-Deterministic code has already detected, measured and classified each finding: the signal/status,
-severity, evidence, every metric comparison, and the confidence level are FIXED and correct.
+Deterministic code has already judged each campaign ON THE METRIC ITS OBJECTIVE WAS BOUGHT AGAINST.
+The platform, objective, performance verdict, signal (the analytical condition), the diagnosis ("why"),
+the recommended action, the primary KPI, the comparison source and every evidence figure are FIXED and correct.
 
-Write exactly two fields per finding:
-1. "possibleExplanation" — the most plausible cause of the finding, framed as a hypothesis (2-3 sentences).
-2. "recommendedAction" — one specific, executable next action for a media buyer today (1-2 sentences).
+Write exactly two fields per campaign, rephrasing the supplied analysis for a busy marketer:
+1. "possibleExplanation" — restate the given diagnosis and why, in 2-3 plain sentences. Do not introduce a new cause.
+2. "recommendedAction" — one specific next action, consistent with the given action (1-2 sentences).
 
 Hard rules:
-- Never restate a different status, severity or confidence, and never contradict them.
-- Never invent, recompute or adjust a number. Only reference figures present in the supplied evidence.
+- Never change the performance verdict, signal, objective or confidence, and never contradict them.
+- Never invent, recompute or adjust a number, a target, a tracking failure or a metric. Only reference the supplied figures.
+- Judge upper-funnel objectives (awareness, video, traffic) on their own KPI — never on ROAS/CPA.
 - No markdown, no bullets, no emojis. Plain professional prose.
 
 Return JSON only:
@@ -43,14 +45,18 @@ function toPayload(f: CampaignFinding) {
   return {
     campaignId: f.campaignId,
     campaignName: f.campaignName,
+    platform: f.platform,
+    objective: f.objectiveLabel,
+    performance: f.performance,
+    primaryMetric: f.primaryMetric,
+    primaryMetricValue: f.primaryMetricValue,
+    comparison: f.comparisonLabel,
+    target: f.targetOrBaseline,
     signal: f.signal,
-    status: f.statusLabel,
-    signalLabel: f.signalLabel,
-    severity: f.severity,
-    confidence: f.confidence,
-    whatChanged: f.whatChanged,
-    whyItMatters: f.whyItMatters,
-    evidence: f.evidence,
+    why: f.why,
+    action: f.action,
+    confidence: f.diagnosticConfidence,
+    evidence: f.evidence.map((e) => ({ label: e.label, current: e.current, previous: e.previous, change: e.changePct })),
   };
 }
 

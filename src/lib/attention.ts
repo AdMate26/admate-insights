@@ -1,24 +1,20 @@
 import type { CampaignFinding } from "./analysis/engine";
 
 /**
- * SINGLE SOURCE OF TRUTH for "Needs Attention".
+ * SINGLE SOURCE OF TRUTH for "Needs attention".
  *
- * A campaign counts as Needs Attention ONLY when its Performance Rating is
- * exactly "Needs Attention". Priority/severity, Check Data, Early Data, Fair,
- * Good and Very Good never count. This does not touch analysis logic — it only
- * reads the rating the engine already assigned.
+ * A campaign needs attention ONLY when its Performance verdict is exactly "Low"
+ * (the primary objective KPI is materially underperforming with enough valid
+ * evidence to judge it). Priority/exposure, In Review, Error, Moderate and High
+ * never count here. This reads the verdict the engine already assigned.
  */
-export const isNeedsAttention = (f: CampaignFinding): boolean =>
-  f.performanceRating === "Needs Attention";
+export const isNeedsAttention = (f: CampaignFinding): boolean => f.performance === "Low";
 
-/** No-score campaigns whose tracking looks unreliable (shown separately, never counted). */
-export const isCheckData = (f: CampaignFinding): boolean => f.performanceLabel === "Check Data";
+/** Data/tracking problems that block analysis — surfaced separately, never counted. */
+export const isError = (f: CampaignFinding): boolean => f.performance === "Error";
 
-/** New / low-volume campaigns still gathering data (shown as a count, never counted as attention). */
-export const isEarlyData = (f: CampaignFinding): boolean => f.performanceLabel === "Early Data";
+/** Too early/unstable to judge — surfaced separately, never counted. */
+export const isInReview = (f: CampaignFinding): boolean => f.performance === "In Review";
 
-export const isFair = (f: CampaignFinding): boolean => f.performanceRating === "Fair";
-
-/** Count of campaigns whose Performance Rating is exactly "Needs Attention". */
 export const needsAttentionCount = (findings: CampaignFinding[]): number =>
   findings.filter(isNeedsAttention).length;

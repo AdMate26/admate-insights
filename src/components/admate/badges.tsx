@@ -1,113 +1,75 @@
-import { CircleAlert, CircleCheck, CircleHelp, Clock3, Minus } from "lucide-react";
-import type {
-  Confidence,
-  PerformanceRating,
-  Severity,
-  Signal,
-  Status,
-} from "@/lib/analysis/engine";
+import { CircleAlert, CircleCheck, CircleHelp, Clock3, Minus, TriangleAlert } from "lucide-react";
+import type { Confidence, Performance, PriorityTier } from "@/lib/analysis/engine";
 import { cn } from "@/lib/utils";
 
-const RATING_TONE: Record<PerformanceRating, string> = {
-  "Very Good": "performance-excellent",
-  Good: "performance-good",
-  Fair: "performance-fair",
-  "Needs Attention": "performance-attention",
+const PERF_TONE: Record<Performance, string> = {
+  High: "performance-excellent",
+  Moderate: "performance-fair",
+  Low: "performance-attention",
+  "In Review": "performance-early",
+  Error: "performance-check",
 };
 
+/** Customer-facing performance verdict — no numeric score, ever. */
 export function PerformanceBadge({
-  rating,
-  label,
+  performance,
   className,
 }: {
-  rating: PerformanceRating | null;
-  label: string;
+  performance: Performance;
   className?: string;
 }) {
   const Icon =
-    rating === "Very Good" || rating === "Good"
+    performance === "High"
       ? CircleCheck
-      : rating === "Needs Attention"
-        ? CircleAlert
-        : rating === "Fair"
-          ? Minus
-          : label === "Check Data"
-            ? CircleHelp
+      : performance === "Moderate"
+        ? Minus
+        : performance === "Low"
+          ? CircleAlert
+          : performance === "Error"
+            ? TriangleAlert
             : Clock3;
   return (
-    <span
-      className={cn(
-        "performance-badge",
-        rating
-          ? RATING_TONE[rating]
-          : label === "Check Data"
-            ? "performance-check"
-            : "performance-early",
-        className,
-      )}
-    >
+    <span className={cn("performance-badge", PERF_TONE[performance], className)}>
       <Icon size={14} aria-hidden="true" />
-      {label}
+      {performance}
     </span>
   );
 }
 
-export function StatusBadge({
-  status,
-  label,
-  className,
-}: {
-  status: Status;
-  label: string;
-  className?: string;
-}) {
+/** The analytical condition (e.g. "Creative fatigue"), never a bare metric. */
+export function SignalBadge({ signal, className }: { signal: string; className?: string }) {
   return (
-    <span
-      className={cn(
-        "performance-badge",
-        status === "needs_attention" ? "performance-attention" : "performance-early",
-        className,
-      )}
-    >
-      {label}
+    <span className={cn("signal-label", className)}>
+      {signal}
     </span>
   );
 }
 
-export function SignalBadge({
-  signal,
-  label,
-  className,
-}: {
-  signal: Signal;
-  label: string;
-  className?: string;
-}) {
-  return (
-    <span className={cn("signal-label", className)} data-signal={signal}>
-      {label}
-    </span>
-  );
-}
-
-const SEVERITY_LABEL: Record<Severity, string> = {
-  critical: "Critical priority",
-  high: "High priority",
-  medium: "Medium priority",
-  low: "Low priority",
-  info: "Informational",
+const TIER_LABEL: Record<PriorityTier, string> = {
+  Critical: "Critical priority",
+  High: "High priority",
+  Medium: "Medium priority",
+  Low: "Low priority",
 };
-export function SeverityBadge({ severity }: { severity: Severity }) {
+
+export function PriorityBadge({ tier }: { tier: PriorityTier }) {
   return (
     <span className="priority-label">
       <span
         aria-hidden="true"
-        className={cn(
-          "priority-dot",
-          (severity === "critical" || severity === "high") && "priority-dot-high",
-        )}
+        className={cn("priority-dot", (tier === "Critical" || tier === "High") && "priority-dot-high")}
       />
-      {SEVERITY_LABEL[severity]}
+      {TIER_LABEL[tier]}
+    </span>
+  );
+}
+
+/** Small chip describing the campaign's maturity/state. */
+export function StateBadge({ label }: { label: string }) {
+  return (
+    <span className="signal-label" style={{ opacity: 0.85 }}>
+      <CircleHelp size={12} aria-hidden="true" style={{ marginRight: 4, verticalAlign: "-2px" }} />
+      {label}
     </span>
   );
 }

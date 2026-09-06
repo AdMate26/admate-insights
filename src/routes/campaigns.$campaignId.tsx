@@ -5,14 +5,14 @@ import { toast } from "sonner";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
 import {
-  PerformanceBadge,
   ConfidenceBadge,
-  SeverityBadge,
+  PerformanceBadge,
+  PriorityBadge,
   SignalBadge,
 } from "@/components/admate/badges";
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
-import type { CampaignTiming, MetricComparison, PerformanceRating } from "@/lib/analysis/engine";
+import type { CampaignTiming, EvidenceRow } from "@/lib/analysis/engine";
 import { DEFAULT_PLATFORM, isPlatform, platformMeta, type Platform } from "@/lib/platforms";
 
 export const Route = createFileRoute("/campaigns/$campaignId")({
@@ -29,13 +29,7 @@ export const Route = createFileRoute("/campaigns/$campaignId")({
       {
         name: "description",
         content:
-          "Status, what changed, possible explanation, recommended action, evidence and confidence for a single TikTok Ads campaign.",
-      },
-      { property: "og:title", content: "Campaign analysis — AdMate" },
-      {
-        property: "og:description",
-        content:
-          "One TikTok Ads campaign: deterministic status and evidence, with an AI-written explanation and recommended action.",
+          "Objective-aware analysis of one campaign: performance, the analytical signal, why, the recommended action and the evidence behind it.",
       },
     ],
   }),
@@ -51,55 +45,25 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function ChangeCell({ metric }: { metric: MetricComparison }) {
+function ChangeCell({ metric }: { metric: EvidenceRow }) {
   if (metric.changePct === null) return <span className="text-muted-foreground">—</span>;
-  const tone =
-    metric.direction === "flat"
-      ? "text-muted-foreground"
-      : metric.direction === "up"
-        ? "text-foreground"
-        : "text-foreground";
   return (
-    <span className={tone}>
+    <span className={metric.direction === "flat" ? "text-muted-foreground" : "text-foreground"}>
       {metric.changePct > 0 ? "+" : ""}
       {metric.changePct.toFixed(1)}%
     </span>
   );
 }
 
-/** Prominent, customer-facing Performance Score + rating shown near the top. */
-function PerformanceHeader({
-  rating,
-  score,
-  label,
-  note,
-}: {
-  rating: PerformanceRating | null;
-  score: number | null;
-  label: string;
-  note: string;
-}) {
-  const hasScore = score !== null;
-
+function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="performance-summary">
-      <div>
-        <p className="eyebrow">Performance</p>
-        <div className="mt-3">
-          <PerformanceBadge rating={rating} label={label} />
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">{note}</p>
-      </div>
-      <div className="text-right">
-        <p className="eyebrow">Score</p>
-        <p className="detail-score">{hasScore ? score : "—"}</p>
-        {hasScore ? <p className="mt-1 text-[11px] text-muted-foreground">out of 100</p> : null}
-      </div>
+    <div className="px-4 py-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-sm font-medium text-foreground">{value || "—"}</p>
     </div>
   );
 }
 
-/** Informational campaign timing: start, end and days remaining / ongoing. */
 function CampaignTimingCard({ timing }: { timing: CampaignTiming }) {
   const fmt = (iso: string | null) =>
     iso
@@ -120,65 +84,9 @@ function CampaignTimingCard({ timing }: { timing: CampaignTiming }) {
           : `${timing.daysRemaining} ${timing.daysRemaining === 1 ? "day" : "days"}`;
   return (
     <div className="summary-grid">
-      <div className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Start date
-        </p>
-        <p className="mt-2 font-mono text-sm text-foreground">{fmt(timing.startDate)}</p>
-      </div>
-      <div className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          End date
-        </p>
-        <p className="mt-2 font-mono text-sm text-foreground">
-          {timing.endDate ? fmt(timing.endDate) : "No end date"}
-        </p>
-      </div>
-      <div className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Days remaining
-        </p>
-        <p className="mt-2 font-mono text-sm text-foreground">{remaining}</p>
-      </div>
-    </div>
-  );
-}
-
-/** Current 7d spend, previous 7d spend and the % change, from the Spend evidence row. */
-function SpendSummary({ metric }: { metric?: MetricComparison }) {
-  if (!metric) return null;
-  const changeTone =
-    metric.changePct === null
-      ? "text-muted-foreground"
-      : metric.changePct > 0
-        ? "text-foreground"
-        : metric.changePct < 0
-          ? "text-foreground"
-          : "text-muted-foreground";
-  return (
-    <div className="summary-grid">
-      <div className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Current 7d spend
-        </p>
-        <p className="mt-2 font-mono text-base font-medium text-foreground">{metric.current}</p>
-      </div>
-      <div className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Previous 7d spend
-        </p>
-        <p className="mt-2 font-mono text-base text-muted-foreground">{metric.previous}</p>
-      </div>
-      <div className="px-4 py-3">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          % change
-        </p>
-        <p className={`mt-2 font-mono text-base ${changeTone}`}>
-          {metric.changePct === null
-            ? "—"
-            : `${metric.changePct > 0 ? "+" : ""}${metric.changePct.toFixed(1)}%`}
-        </p>
-      </div>
+      <Fact label="Start date" value={fmt(timing.startDate)} />
+      <Fact label="End date" value={timing.endDate ? fmt(timing.endDate) : "No end date"} />
+      <Fact label="Days remaining" value={remaining} />
     </div>
   );
 }
@@ -220,92 +128,86 @@ function CampaignAnalysis() {
     }
   }
 
+  const setupParts = [
+    finding.optimizationGoal,
+    finding.campaignType,
+    finding.bidStrategy,
+  ].filter(Boolean) as string[];
+
   return (
     <div className="min-h-screen bg-background">
       <AdMateHeader back={{ label: "All campaigns" }} platform={platform} />
       <main className="admate-container detail-page">
         <div className="detail-heading">
-          <p className="eyebrow">{platformMeta(platform).label} / Campaign analysis</p>
+          <p className="eyebrow">
+            {platformMeta(platform).label} / {finding.objectiveLabel}
+          </p>
           <h1>{finding.campaignName}</h1>
-          <p className="page-description">{finding.headline}</p>
+          <p className="page-description">{finding.signal}</p>
         </div>
+
         <div className="detail-top-grid">
           <div className="detail-diagnosis">
-            <PerformanceHeader
-              rating={finding.performanceRating}
-              score={finding.performanceScore}
-              label={finding.performanceLabel}
-              note={
-                finding.performanceScore !== null
-                  ? "Deterministic score from performance change — spend and confidence excluded."
-                  : finding.whyItMatters
-              }
-            />
-            <div className="detail-meta">
-              <SeverityBadge severity={finding.severity} />
-              <ConfidenceBadge confidence={finding.confidence} />
+            <div className="performance-summary">
+              <div>
+                <p className="eyebrow">Performance</p>
+                <div className="mt-3">
+                  <PerformanceBadge performance={finding.performance} />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Judged on {finding.primaryMetric} — the KPI this objective was bought against.
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="eyebrow">{finding.primaryMetric}</p>
+                <p className="detail-score">{finding.primaryMetricValue}</p>
+                {finding.targetOrBaseline ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground">{finding.targetOrBaseline}</p>
+                ) : null}
+              </div>
             </div>
+            <div className="detail-meta">
+              <PriorityBadge tier={finding.priorityTier} />
+              <ConfidenceBadge confidence={finding.diagnosticConfidence} />
+            </div>
+
             <Section label="What AdMate detected">
-              <SignalBadge signal={finding.signal} label={finding.signalLabel} />
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                {finding.statusReason}
-              </p>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {finding.whyItMatters}
-              </p>
+              <SignalBadge signal={finding.signal} />
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{finding.why}</p>
             </Section>
-            <Section label="What changed">
-              <p className="text-sm leading-relaxed">{finding.whatChanged}</p>
-            </Section>
+
             <Section label="Possible explanation">
               <p className="text-sm leading-relaxed">
-                {finding.aiExplanation ?? "AI narrative unavailable for this finding."}
+                {finding.aiExplanation ?? finding.why}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                Written by Lovable AI from the structured finding above.
+                {finding.aiExplanation
+                  ? "Rephrased by AI from the structured analysis above — no facts added."
+                  : "AI narrative unavailable; showing the deterministic diagnosis."}
               </p>
             </Section>
           </div>
+
           <div className="action-column">
-            {finding.guidance ? (
-              <section className="recommendation-panel">
-                <h3 className="eyebrow text-primary">Recommended action</h3>
-                {finding.guidance.directionNote ? (
-                  <p className="mt-3 text-sm font-medium text-muted-foreground">
-                    {finding.guidance.directionNote}
-                  </p>
-                ) : null}
-                <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
-                  {finding.guidance.action}
-                </p>
-                {finding.guidance.steps ? (
-                  <ol className="mt-4 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-foreground">
-                    {finding.guidance.steps.map((step) => (
-                      <li key={step}>{step}</li>
-                    ))}
-                  </ol>
-                ) : null}
-                <p className="mt-4 text-xs text-muted-foreground">
-                  Deterministic guidance for a data-confidence case · priority {finding.severity} ·{" "}
-                  {finding.confidence} confidence (computed in code)
-                </p>
-              </section>
-            ) : (
-              <section className="recommendation-panel">
-                <h3 className="eyebrow text-primary">Recommended action</h3>
-                <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
-                  {finding.aiRecommendedAction ??
-                    "AI narrative unavailable — review the evidence below before acting."}
-                </p>
-                <p className="mt-4 text-xs text-muted-foreground">
-                  Suggested by Lovable AI · priority {finding.severity} · {finding.confidence}{" "}
-                  confidence (both computed in code)
-                </p>
-              </section>
-            )}
+            <section className="recommendation-panel">
+              <h3 className="eyebrow text-primary">Recommended action</h3>
+              <p className="mt-3 text-xl font-medium leading-snug tracking-tight text-foreground">
+                {finding.aiRecommendedAction ?? finding.action}
+              </p>
+              <p className="mt-4 text-xs text-muted-foreground">
+                {finding.exposure.label}:{" "}
+                {finding.exposure.amount.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}{" "}
+                · {finding.priorityTier} priority · {finding.diagnosticConfidence} confidence
+              </p>
+            </section>
+
             <section className="key-evidence" aria-label="Key evidence">
               <h3 className="eyebrow">Key evidence</h3>
-              {finding.evidence.metrics
+              {finding.evidence
                 .filter((m) => m.primary)
                 .map((m) => (
                   <div key={m.label} className="key-metric">
@@ -320,31 +222,42 @@ function CampaignAnalysis() {
                   </div>
                 ))}
               <p className="text-xs leading-relaxed text-muted-foreground">
-                {finding.evidence.currentWindow} vs {finding.evidence.previousWindow}
+                {finding.comparisonLabel}
+                {finding.targetOrBaseline ? ` · ${finding.targetOrBaseline}` : ""}
               </p>
             </section>
           </div>
         </div>
+
         <div className="detail-facts-grid">
           <section>
-            <h2 className="eyebrow mb-4">Spend comparison</h2>
-            <SpendSummary metric={finding.evidence.metrics.find((m) => m.label === "Spend")} />
+            <h2 className="eyebrow mb-4">Campaign setup</h2>
+            <div className="summary-grid">
+              <Fact label="Objective" value={`${finding.objectiveLabel}`} />
+              <Fact label="Optimized for" value={finding.optimizationGoal ?? finding.objective} />
+              <Fact
+                label={finding.campaignType ? "Campaign type" : "Bid strategy"}
+                value={finding.campaignType ?? finding.bidStrategy ?? "—"}
+              />
+              <Fact label="State" value={finding.campaignStateLabel} />
+            </div>
           </section>
           <section>
             <h2 className="eyebrow mb-4">Campaign timing</h2>
             <CampaignTimingCard timing={finding.timing} />
-            <p className="mt-3 text-sm text-muted-foreground">{finding.timing.label}</p>
           </section>
         </div>
+
         <div className="detail-evidence-grid">
           <details className="evidence-disclosure" open>
             <summary>
-              Evidence behind the judgment <span>Metrics & comparison method</span>
+              Evidence behind the judgment <span>Objective-aware metrics</span>
             </summary>
             <Section label="Detailed evidence">
               <p className="text-xs text-muted-foreground">
-                Current window {finding.evidence.currentWindow} vs prior window{" "}
-                {finding.evidence.previousWindow}
+                Current window {data.currentWindow.start} → {data.currentWindow.end} vs prior{" "}
+                {data.previousWindow.start} → {data.previousWindow.end}. Compared against{" "}
+                {finding.comparisonLabel.toLowerCase()}.
               </p>
               <div className="evidence-table-wrap">
                 <table className="evidence-table">
@@ -357,7 +270,7 @@ function CampaignAnalysis() {
                     </tr>
                   </thead>
                   <tbody>
-                    {finding.evidence.metrics.map((m) => (
+                    {finding.evidence.map((m) => (
                       <tr
                         key={m.label}
                         className={`border-b border-border/60 last:border-0 ${m.primary ? "bg-muted/30" : ""}`}
@@ -366,8 +279,11 @@ function CampaignAnalysis() {
                           {m.label}
                           {m.primary ? (
                             <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                              trigger
+                              primary KPI
                             </span>
+                          ) : null}
+                          {m.meaning ? (
+                            <span className="block text-[11px] text-muted-foreground">{m.meaning}</span>
                           ) : null}
                         </td>
                         <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground">
@@ -384,29 +300,33 @@ function CampaignAnalysis() {
                   </tbody>
                 </table>
               </div>
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                {finding.evidence.method}
-              </p>
             </Section>
           </details>
           <div className="confidence-panel">
-            <Section label="Confidence">
-              <ConfidenceBadge confidence={finding.confidence} />
+            <Section label="How this was judged">
+              <ConfidenceBadge confidence={finding.diagnosticConfidence} />
               <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
-                {finding.confidenceBasis.map((line) => (
-                  <li key={line} className="flex gap-2">
-                    <span className="text-muted-foreground/60">•</span>
-                    <span>{line}</span>
-                  </li>
-                ))}
+                <li className="flex gap-2">
+                  <span className="text-muted-foreground/60">•</span>
+                  <span>Graded on {finding.primaryMetric}, the KPI for a {finding.objectiveLabel.toLowerCase()} objective.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-muted-foreground/60">•</span>
+                  <span>Compared against {finding.comparisonLabel.toLowerCase()}.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-muted-foreground/60">•</span>
+                  <span>{finding.campaignStateLabel} — confidence {finding.diagnosticConfidence}.</span>
+                </li>
               </ul>
               <p className="mt-3 text-xs text-muted-foreground">
-                Confidence score {finding.confidenceScore} — assigned by the deterministic engine
-                from volume, consistency, magnitude and data completeness. AI does not influence it.
+                Performance, signal and priority are computed in code. AI never sets the verdict, the
+                cause, a target or a metric — it only rephrases the explanation and action.
               </p>
             </Section>
           </div>
         </div>
+
         <div className="telegram-panel">
           <Section label="Telegram briefing">
             <div className="flex flex-wrap items-center gap-2">
@@ -433,8 +353,9 @@ function CampaignAnalysis() {
               </button>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Sends the top priority findings and their recommended actions as a formatted digest.
-              Telegram is not connected yet — use the preview to review the exact message.
+              The briefing spans all platforms and lists every campaign whose performance is Low, plus
+              any tracking problems — the same analysis shown here. Telegram is not connected yet; use
+              the preview to review the exact message.
             </p>
             {preview ? (
               <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 text-xs leading-relaxed text-foreground">
