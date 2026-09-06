@@ -86,9 +86,14 @@ export const getAdMateAnalysis = createServerFn({ method: "GET" })
     return value;
   });
 
+/** Every platform's analysis in one call — powers Overview, the shell and Alerts. */
+export const getAllAnalyses = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AdMateAnalysis[]> => gatherAllAnalyses(),
+);
+
 /**
  * Plain-text render of the CROSS-PLATFORM digest (Telegram preview). The briefing
- * spans all platforms and counts only Performance Rating = Needs Attention.
+ * spans all platforms and counts only Performance = Low.
  */
 export const previewBriefing = createServerFn({ method: "GET" }).handler(async () => {
   const analyses = await gatherAllAnalyses();
