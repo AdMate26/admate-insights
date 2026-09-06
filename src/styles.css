@@ -503,10 +503,9 @@
 .campaign-columns,
 .campaign-row-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.35fr) minmax(0, 0.5fr) minmax(
-      0,
-      1.4fr
-    ) minmax(0, 1.25fr) minmax(0, 0.85fr) minmax(0, 1.25fr);
+  grid-template-columns:
+    minmax(0, 1.8fr) minmax(0, 1.35fr) minmax(0, 0.5fr) minmax(0, 1.4fr)
+    minmax(0, 1.25fr) minmax(0, 0.85fr) minmax(0, 1.25fr);
   gap: 18px;
 }
 .campaign-columns {
@@ -549,7 +548,7 @@
   min-width: 0;
 }
 .campaign-name-cell h3 {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.5;
   display: flex;
@@ -683,20 +682,29 @@
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+.campaign-row .signal-label,
+.campaign-row .metric-value {
+  font-size: 16px;
+}
+.campaign-row .confidence-label,
+.campaign-row .priority-label,
+.campaign-row .timing-cell {
+  font-size: 15px;
+}
 .campaign-reason {
   display: flex;
   gap: 16px;
   padding-block: 12px;
   margin-top: 16px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 16px;
   line-height: 1.6;
   color: var(--muted-foreground);
 }
 .campaign-reason > span {
-  font-size: 11px;
+  font-size: 15px;
   white-space: nowrap;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--foreground);
 }
 .method-note {
@@ -1130,7 +1138,7 @@
   }
   .campaign-name-cell h3 {
     justify-content: space-between;
-    font-size: 15px;
+    font-size: 18px;
   }
   .performance-cell {
     grid-column: 1;
@@ -1229,6 +1237,59 @@
     padding-block: 10px;
   }
 }
+/* Readability refinements are scoped to campaign content, not global UI tokens. */
+.campaign-row .performance-badge {
+  font-size: 13px;
+}
+.detail-page .eyebrow,
+.detail-page .priority-label,
+.detail-page .detail-meta .confidence-label,
+.detail-page .summary-grid p:first-child,
+.detail-page .performance-summary .text-\[11px\] {
+  font-size: 13px;
+}
+.detail-page .page-description,
+.detail-page .text-sm {
+  font-size: 16px;
+  line-height: 1.65;
+}
+.detail-page .text-xs {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.detail-page .detail-section .signal-label {
+  font-size: 19px;
+}
+.detail-page .key-metric > span {
+  font-size: 15px;
+}
+.detail-page .key-metric p,
+.detail-page .evidence-disclosure > summary > span {
+  font-size: 13px;
+}
+.detail-page .evidence-disclosure > summary {
+  font-size: 17px;
+}
+.detail-page .confidence-panel .confidence-label {
+  font-size: 16px;
+}
+.detail-page .evidence-table td {
+  font-size: 14px;
+}
+.detail-page .evidence-table th,
+.detail-page .evidence-table td .text-\[10px\] {
+  font-size: 12px;
+}
+@media (max-width: 767px) {
+  .detail-page .evidence-table td {
+    font-size: 12px;
+  }
+  .detail-page .evidence-table th,
+  .detail-page .evidence-table td .text-\[10px\] {
+    font-size: 11px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
