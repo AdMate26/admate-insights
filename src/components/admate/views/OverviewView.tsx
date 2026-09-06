@@ -3,6 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { StatusPill } from "@/components/admate/badges";
 import type { AdMateAnalysis } from "@/lib/admate.functions";
 import type { CampaignFinding, Performance } from "@/lib/analysis/engine";
+import { brandMeta, type Brand } from "@/lib/brands";
 import { platformMeta, type Platform } from "@/lib/platforms";
 
 const money = (n: number) =>
@@ -16,13 +17,16 @@ function worstPerformance(findings: CampaignFinding[]): Performance {
 
 export function OverviewView({
   analyses,
+  brand,
   onOpenCampaigns,
   onOpenBriefings,
 }: {
   analyses: AdMateAnalysis[];
+  brand: Brand;
   onOpenCampaigns: (p: Platform) => void;
   onOpenBriefings: () => void;
 }) {
+  const meta = brandMeta(brand);
   const all = analyses.flatMap((a) => a.findings);
   const totalCampaigns = all.length;
   const needsAttention = all.filter((f) => f.performance === "Low").length;
@@ -40,11 +44,11 @@ export function OverviewView({
     <section aria-labelledby="ov-title">
       <div className="view-head">
         <h1 className="view-title" id="ov-title">
-          Every ad account in one live view
+          {meta.label} — every connected account in one view
         </h1>
         <p className="view-sub">
-          Meta, TikTok and Google — each campaign judged on the KPI its objective was bought against,
-          compared to its target, its own baseline or comparable campaigns.
+          {meta.blurb}. Each campaign is judged on the KPI its objective was bought against, compared
+          to its target, its own baseline or comparable campaigns — per platform, never blended.
         </p>
       </div>
 
@@ -52,7 +56,9 @@ export function OverviewView({
         <div>
           <dt>Campaigns</dt>
           <dd>{totalCampaigns}</dd>
-          <span>across 3 platforms</span>
+          <span>
+            across {meta.platforms.length} connected {meta.platforms.length === 1 ? "platform" : "platforms"}
+          </span>
         </div>
         <div>
           <dt>Needs attention</dt>
@@ -62,7 +68,7 @@ export function OverviewView({
         <div>
           <dt>Spend (7 days)</dt>
           <dd>{money(totalSpend)}</dd>
-          <span>all platforms</span>
+          <span>connected platforms</span>
         </div>
         <div>
           <dt>Budget at risk</dt>

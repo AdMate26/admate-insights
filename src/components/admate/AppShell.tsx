@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { ThemeToggle } from "./ThemeToggle";
 import { sendTelegramBriefing } from "@/lib/admate.functions";
 import { supabase } from "@/integrations/supabase/client";
-import type { Platform } from "@/lib/platforms";
+import { BRANDS, brandMeta, type Brand } from "@/lib/brands";
+import { platformMeta, type Platform } from "@/lib/platforms";
 
 export type ViewKey = "overview" | "campaigns" | "alerts" | "briefings" | "reports";
 
@@ -21,12 +22,16 @@ const NAV: { key: ViewKey; label: string; icon: typeof LayoutGrid }[] = [
 
 export function AppShell({
   active,
+  brand,
   platform,
+  onSelectBrand,
   railNote,
   children,
 }: {
   active: ViewKey;
+  brand: Brand;
   platform: Platform;
+  onSelectBrand: (brand: Brand) => void;
   railNote?: string;
   children: React.ReactNode;
 }) {
@@ -34,6 +39,7 @@ export function AppShell({
   const queryClient = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
   const [sending, setSending] = useState(false);
+  const activeBrand = brandMeta(brand);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSignedIn(Boolean(data.session)));
@@ -53,7 +59,7 @@ export function AppShell({
   async function sendNow() {
     setSending(true);
     try {
-      const res = await sendTelegramBriefing({ data: {} });
+      const res = await sendTelegramBriefing({ data: { brand } });
       if (res.ok) toast.success("Briefing sent to Telegram");
       else toast.error(res.error);
     } catch (e) {
@@ -66,7 +72,12 @@ export function AppShell({
   return (
     <div className="app-shell">
       <nav className="rail" aria-label="Primary">
-        <Link to="/home" search={{ view: "overview", platform }} className="rail-brand" aria-label="AdMate">
+        <Link
+          to="/home"
+          search={{ view: "overview", brand, platform }}
+          className="rail-brand"
+          aria-label="AdMate"
+        >
           <img src="/brand/mark-light-bg.svg" alt="" className="brand-mark brand-mark-light" width="30" height="30" />
           <img src="/brand/mark-violet.svg" alt="" className="brand-mark brand-mark-dark" width="30" height="30" />
           <span className="brand-wordmark">
@@ -78,7 +89,7 @@ export function AppShell({
             <Link
               key={key}
               to="/home"
-              search={{ view: key, platform }}
+              search={{ view: key, brand, platform }}
               className={`nav-item${active === key ? " is-active" : ""}`}
             >
               <Icon size={16} aria-hidden="true" />
@@ -97,8 +108,14 @@ export function AppShell({
       <div className="shell-main">
         <div className="topbar">
           <div className="scope">
-            <span className="scope-label">Showing</span>
-            <span className="scope-value">All platforms</span>
+            <span className="scope-label">Brand</span>
+            <span className="scope-value">{activeBrand.label}</span>
+          </div>
+          <div className="scope">
+            <span className="scope-label">Connected</span>
+            <span className="scope-value">
+              {activeBrand.platforms.map((p) => platformMeta(p).label.split(" ")[0]).join(" · ")}
+            </span>
           </div>
           <div className="scope">
             <span className="scope-label">Window</span>
@@ -116,6 +133,29 @@ export function AppShell({
             </button>
           ) : null}
         </div>
+
+        <div className="brand-bar" role="tablist" aria-label="Brands">
+          {BRANDS.map((b) => (
+            <button
+              key={b.id}
+              type="button"
+              role="tab"
+              aria-selected={b.id === brand}
+              className={`brand-chip${b.id === brand ? " is-active" : ""}`}
+              onClick={() => onSelectBrand(b.id)}
+              title={b.blurb}
+            >
+              <span className="brand-chip-name">{b.label}</span>
+              <span className="brand-chip-conns">
+                {b.platforms.map((p) => (
+                  <span key={p} className={`dot dot--${p}`} aria-hidden="true" title={platformMeta(p).label} />
+                ))}
+                <span className="brand-chip-count">{b.platforms.length} connected</span>
+              </span>
+            </button>
+          ))}
+        </div>
+
         <main className="shell-content">{children}</main>
       </div>
     </div>

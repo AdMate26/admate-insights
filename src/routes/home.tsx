@@ -8,26 +8,42 @@ import { AlertsView } from "@/components/admate/views/AlertsView";
 import { BriefingsView } from "@/components/admate/views/BriefingsView";
 import { ReportsView } from "@/components/admate/views/ReportsView";
 import { allAnalysisQueryOptions } from "@/lib/analysis-query";
-import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
+import {
+  DEFAULT_BRAND,
+  isBrand,
+  resolveBrandPlatform,
+  brandPlatforms,
+  type Brand,
+} from "@/lib/brands";
+import { type Platform } from "@/lib/platforms";
 
 const VIEWS: ViewKey[] = ["overview", "campaigns", "alerts", "briefings", "reports"];
 function isView(v: unknown): v is ViewKey {
   return typeof v === "string" && (VIEWS as string[]).includes(v);
 }
 
+type HomeSearch = { view: ViewKey; brand: Brand; platform: Platform };
+
 export const Route = createFileRoute("/home")({
-  validateSearch: (search: Record<string, unknown>): { view: ViewKey; platform: Platform } => ({
-    view: isView(search.view) ? search.view : "overview",
-    platform: isPlatform(search.platform) ? search.platform : DEFAULT_PLATFORM,
-  }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(allAnalysisQueryOptions()),
+  validateSearch: (search: Record<string, unknown>): HomeSearch => {
+    const brand = isBrand(search.brand) ? search.brand : DEFAULT_BRAND;
+    return {
+      view: isView(search.view) ? search.view : "overview",
+      brand,
+      // Platform is always clamped to one the selected brand has connected.
+      platform: resolveBrandPlatform(brand, search.platform),
+    };
+  },
+  loaderDeps: ({ search }) => ({ brand: search.brand }),
+  loader: ({ context, deps }) =>
+    context.queryClient.ensureQueryData(allAnalysisQueryOptions(deps.brand)),
   head: () => ({
     meta: [
       { title: "AdMate — Platform-aware marketing analyst" },
       {
         name: "description",
         content:
-          "AdMate judges every campaign on the metric its objective was bought against, across Meta, TikTok and Google.",
+          "AdMate judges every campaign on the metric its objective was bought against, across each brand's connected platforms.",
       },
     ],
   }),
@@ -35,18 +51,32 @@ export const Route = createFileRoute("/home")({
 });
 
 function Dashboard() {
-  const { view, platform } = Route.useSearch();
+  const { view, brand, platform } = Route.useSearch();
   const navigate = useNavigate();
-  const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions());
+  const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions(brand));
 
-  const go = (next: Partial<{ view: ViewKey; platform: Platform }>) =>
-    navigate({ to: "/home", search: { view, platform, ...next } });
+  const go = (next: Partial<HomeSearch>) => {
+    const nextBrand = next.brand ?? brand;
+    // Switching brand (or platform) always re-clamps to a platform this brand
+    // has connected, so platform selection can never leave the brand.
+    const nextPlatform = resolveBrandPlatform(nextBrand, next.platform ?? platform);
+    navigate({
+      to: "/home",
+      search: { view, ...next, brand: nextBrand, platform: nextPlatform },
+    });
+  };
 
   return (
-    <AppShell active={view} platform={platform}>
+    <AppShell
+      active={view}
+      brand={brand}
+      platform={platform}
+      onSelectBrand={(b) => go({ brand: b })}
+    >
       {view === "overview" ? (
         <OverviewView
           analyses={analyses}
+          brand={brand}
           onOpenCampaigns={(p) => go({ view: "campaigns", platform: p })}
           onOpenBriefings={() => go({ view: "briefings" })}
         />
@@ -54,14 +84,16 @@ function Dashboard() {
       {view === "campaigns" ? (
         <CampaignsView
           analyses={analyses}
+          brand={brand}
           platform={platform}
+          platforms={brandPlatforms(brand)}
           onSelectPlatform={(p) => go({ platform: p })}
         />
       ) : null}
       {view === "alerts" ? (
         <AlertsView analyses={analyses} onOpenCampaigns={(p) => go({ view: "campaigns", platform: p })} />
       ) : null}
-      {view === "briefings" ? <BriefingsView /> : null}
+      {view === "briefings" ? <BriefingsView brand={brand} /> : null}
       {view === "reports" ? <ReportsView analyses={analyses} /> : null}
     </AppShell>
   );

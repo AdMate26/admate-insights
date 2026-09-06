@@ -1,3 +1,4 @@
+import type { Brand } from "../brands";
 import type { Platform } from "../platforms";
 import type { CampaignInput, DailyMetric, CampaignTarget } from "./engine";
 
@@ -430,6 +431,110 @@ const BY_PLATFORM: Record<Platform, Spec[]> = {
   google_search: GOOGLE,
 };
 
+/**
+ * Platform-level pool (every synthetic campaign for a platform, brand-agnostic).
+ * Kept stable so platform-only callers and the engine regression suite continue
+ * to see the exact same campaign ids (m_*, t_*, g_*) and verdicts.
+ */
 export function getDemoCampaigns(platform: Platform): CampaignInput[] {
   return BY_PLATFORM[platform].map(build);
+}
+
+/* ============================== BRANDS ================================== */
+/**
+ * Brand scoping is an ORGANISATIONAL layer only: each brand connects a subset of
+ * platforms and, per connected platform, runs a subset of that platform's
+ * campaign structures as its own accounts. We reuse the *same* tuned specs (so
+ * the platform-specific analysis rules are untouched) and simply clone them with
+ * a brand-scoped id. Verdicts are still derived per platform by the existing
+ * analyzer — a brand never blends metrics across Meta / TikTok / Google.
+ */
+
+const SPEC_BY_ID: Record<Platform, Record<string, Spec>> = {
+  meta: Object.fromEntries(META.map((s) => [s.id, s])),
+  tiktok: Object.fromEntries(TIKTOK.map((s) => [s.id, s])),
+  google_search: Object.fromEntries(GOOGLE.map((s) => [s.id, s])),
+};
+
+/**
+ * Which of each platform's campaign structures each brand actually runs. Every
+ * id references an existing, already-tested spec — no new analysis rules are
+ * introduced, only a realistic account/campaign selection per brand.
+ */
+const BRAND_ACCOUNTS: Record<Brand, Partial<Record<Platform, string[]>>> = {
+  northlane: {
+    meta: [
+      "m_sales_aplus",
+      "m_sales_abo",
+      "m_sales_retarget",
+      "m_leads_wholesale",
+      "m_awareness_reach",
+      "m_sales_cbo_learn",
+      "m_sales_catalogue_track",
+      "m_traffic_guide",
+    ],
+    tiktok: [
+      "t_video_trend",
+      "t_sales_spark",
+      "t_sales_smartplus_zero",
+      "t_sales_quality",
+      "t_sales_vsa_new",
+      "t_leads_form",
+      "t_awareness_reach",
+    ],
+    google_search: [
+      "g_search_nonbrand",
+      "g_pmax_all",
+      "g_shopping_learn",
+      "g_search_brand",
+      "g_search_category",
+      "g_demandgen_yt",
+    ],
+  },
+  olive: {
+    meta: [
+      "m_sales_aplus",
+      "m_sales_abo",
+      "m_leads_wholesale",
+      "m_awareness_reach",
+      "m_sales_cbo_learn",
+    ],
+    google_search: ["g_search_brand", "g_search_nonbrand", "g_shopping_learn", "g_demandgen_yt"],
+  },
+  kite: {
+    tiktok: [
+      "t_sales_spark",
+      "t_video_trend",
+      "t_sales_quality",
+      "t_sales_smartplus_zero",
+      "t_awareness_reach",
+    ],
+    meta: ["m_sales_aplus", "m_sales_retarget", "m_sales_abo", "m_traffic_guide"],
+  },
+};
+
+/**
+ * Clone a platform spec into a brand-scoped campaign. The id is namespaced by
+ * brand (so two brands running the same structure never collide and are never
+ * confused for one another), while the verdict-driving `base`/`recent` shape is
+ * preserved verbatim — the analyzer therefore reaches the same conclusion it
+ * would for that structure. Deterministic per-campaign jitter (seeded on the
+ * new id) gives each brand realistic, but reproducible, day-to-day numbers.
+ */
+function cloneForBrand(brand: Brand, spec: Spec): Spec {
+  return { ...spec, id: `${brand}__${spec.id}` };
+}
+
+/**
+ * A single brand's campaigns for ONE connected platform. Returns an empty list
+ * if the brand hasn't connected that platform — callers should only ask for a
+ * brand's connected platforms.
+ */
+export function getDemoCampaignsForBrand(brand: Brand, platform: Platform): CampaignInput[] {
+  const ids = BRAND_ACCOUNTS[brand]?.[platform] ?? [];
+  const pool = SPEC_BY_ID[platform];
+  return ids
+    .map((id) => pool[id])
+    .filter((s): s is Spec => Boolean(s))
+    .map((s) => build(cloneForBrand(brand, s)));
 }

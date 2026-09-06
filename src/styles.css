@@ -1353,6 +1353,16 @@
 .scope-value { font-size: 0.85rem; font-weight: 600; color: var(--foreground); }
 .send-briefing { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: var(--radius-md); border: 0; background: var(--primary); color: var(--primary-foreground); font-size: 0.83rem; font-weight: 600; cursor: pointer; }
 .send-briefing:disabled { opacity: .6; }
+
+/* Brands / Connected accounts bar */
+.brand-bar { display: flex; gap: 10px; align-items: stretch; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--background); overflow-x: auto; }
+.brand-chip { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 150px; padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--card); cursor: pointer; text-align: left; transition: border-color .15s, box-shadow .15s; }
+.brand-chip:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.brand-chip.is-active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.brand-chip-name { font-size: 0.9rem; font-weight: 700; color: var(--foreground); }
+.brand-chip-conns { display: inline-flex; align-items: center; gap: 5px; }
+.brand-chip-count { font-size: 0.72rem; font-weight: 500; color: var(--muted-foreground); margin-left: 4px; }
+
 .shell-content { padding: 24px; max-width: 1240px; width: 100%; }
 
 .view-head { margin-bottom: 18px; }

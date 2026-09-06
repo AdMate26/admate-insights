@@ -2,8 +2,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
+import { brandMeta, type Brand } from "@/lib/brands";
 
-export function BriefingsView() {
+export function BriefingsView({ brand }: { brand: Brand }) {
   const [chatId, setChatId] = useState("");
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -12,7 +13,7 @@ export function BriefingsView() {
   async function loadPreview() {
     setLoading(true);
     try {
-      const res = await previewBriefing();
+      const res = await previewBriefing({ data: { brand } });
       setPreview(res.text);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not build preview");
@@ -23,7 +24,7 @@ export function BriefingsView() {
   async function send() {
     setSending(true);
     try {
-      const res = await sendTelegramBriefing({ data: { chatId } });
+      const res = await sendTelegramBriefing({ data: { chatId, brand } });
       if (res.ok) toast.success("Briefing sent to Telegram");
       else toast.error(res.error);
     } catch (e) {
@@ -40,8 +41,9 @@ export function BriefingsView() {
           Briefings, on your schedule
         </h1>
         <p className="view-sub">
-          AdMate writes a cross-platform summary from the same engine that powers the dashboard —
-          only campaigns rated Low, plus tracking problems — and sends it to Telegram.
+          AdMate writes a summary for {brandMeta(brand).label} across its connected platforms, from
+          the same engine that powers the dashboard — only campaigns rated Low, plus tracking
+          problems — and sends it to Telegram.
         </p>
       </div>
 
