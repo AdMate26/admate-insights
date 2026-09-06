@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutGrid, ListChecks, BellRing, Send, FileText, Circle } from "lucide-react";
+import { LayoutGrid, ListChecks, BellRing, Send, FileText, Circle, Store } from "lucide-react";
 import { toast } from "sonner";
 
 import { ThemeToggle } from "./ThemeToggle";
@@ -96,6 +96,25 @@ export function AppShell({
               {label}
             </Link>
           ))}
+
+          <div className="rail-divider" role="separator" />
+          <p className="rail-heading">Brands</p>
+          <div className="rail-brands" role="tablist" aria-label="Brands">
+            {BRANDS.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                role="tab"
+                aria-selected={b.id === brand}
+                className={`nav-item nav-brand${b.id === brand ? " is-active" : ""}`}
+                onClick={() => onSelectBrand(b.id)}
+                title={b.blurb}
+              >
+                <Store size={16} aria-hidden="true" />
+                {b.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="rail-foot">
           <span className="live-status">
@@ -132,28 +151,6 @@ export function AppShell({
               Sign out
             </button>
           ) : null}
-        </div>
-
-        <div className="brand-bar" role="tablist" aria-label="Brands">
-          {BRANDS.map((b) => (
-            <button
-              key={b.id}
-              type="button"
-              role="tab"
-              aria-selected={b.id === brand}
-              className={`brand-chip${b.id === brand ? " is-active" : ""}`}
-              onClick={() => onSelectBrand(b.id)}
-              title={b.blurb}
-            >
-              <span className="brand-chip-name">{b.label}</span>
-              <span className="brand-chip-conns">
-                {b.platforms.map((p) => (
-                  <span key={p} className={`dot dot--${p}`} aria-hidden="true" title={platformMeta(p).label} />
-                ))}
-                <span className="brand-chip-count">{b.platforms.length} connected</span>
-              </span>
-            </button>
-          ))}
         </div>
 
         <main className="shell-content">{children}</main>
