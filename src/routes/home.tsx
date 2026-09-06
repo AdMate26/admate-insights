@@ -71,7 +71,7 @@ function Dashboard() {
       active={view}
       brand={brand}
       platform={platform}
-      onSelectBrand={(b) => go({ brand: b })}
+      onSelectBrand={(b) => go({ view: "campaigns", brand: b })}
     >
       {view === "overview" ? (
         <OverviewView
