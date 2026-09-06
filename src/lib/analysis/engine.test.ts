@@ -125,6 +125,32 @@ test("budget-at-risk only for lower-funnel with a comparison; upper-funnel uses 
   expect(M.get("m_awareness_reach")!.exposure.kind).toBe("spend_exposure");
 });
 
+/* -------- Reference-layout support (objective-specific tables) -------- */
+test("supporting columns differ by objective (objective-specific tables)", () => {
+  const cols = (id: string, r: typeof meta) =>
+    r.findings.find((f) => f.campaignId === id)!.supportingColumns.map((c) => c.label);
+  expect(cols("m_sales_aplus", meta)).toEqual(["Purchases", "ROAS", "CPA"]);
+  expect(cols("m_leads_wholesale", meta)).toEqual(["Leads", "CPL", "Click→lead"]);
+  expect(cols("m_awareness_reach", meta)).toEqual(["Reach", "CPM", "Frequency"]);
+  expect(cols("m_traffic_guide", meta)).toEqual(["LPVs", "Cost/LPV", "LPV rate"]);
+  expect(cols("t_video_trend", tiktok)).toEqual([
+    "Focused views",
+    "Cost / focused view",
+    "Focused view rate",
+  ]);
+});
+
+test("every finding carries a trend series and an objective explanation", () => {
+  for (const r of [meta, tiktok, google]) {
+    for (const f of r.findings) {
+      expect(Array.isArray(f.trend)).toBe(true);
+      expect(typeof f.objectiveExplanation).toBe("string");
+      expect(f.objectiveExplanation.length).toBeGreaterThan(10);
+      expect(f.supportingColumns.length).toBe(3);
+    }
+  }
+});
+
 /* -------- Synthetic edge cases -------- */
 function days(n: number, per: Partial<DailyMetric>): DailyMetric[] {
   const out: DailyMetric[] = [];

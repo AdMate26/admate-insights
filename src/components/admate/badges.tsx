@@ -36,6 +36,19 @@ export function PerformanceBadge({
   );
 }
 
+const PILL_CLASS: Record<Performance, string> = {
+  High: "status--high",
+  Moderate: "status--moderate",
+  Low: "status--low",
+  "In Review": "status--review",
+  Error: "status--error",
+};
+
+/** Compact performance pill for dense tables. No numeric score. */
+export function StatusPill({ performance }: { performance: Performance }) {
+  return <span className={cn("status-pill", PILL_CLASS[performance])}>{performance}</span>;
+}
+
 /** The analytical condition (e.g. "Creative fatigue"), never a bare metric. */
 export function SignalBadge({ signal, className }: { signal: string; className?: string }) {
   return (

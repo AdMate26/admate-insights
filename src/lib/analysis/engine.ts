@@ -162,6 +162,11 @@ export type CampaignFinding = {
   priorityTier: PriorityTier;
   exposure: Exposure;
 
+  /** Short plain-English reason this objective is judged the way it is. */
+  objectiveExplanation: string;
+  /** Daily primary-KPI values across the window, for a sparkline (no numbers shown). */
+  trend: number[];
+
   spend: number;
   timing: CampaignTiming;
 
@@ -334,6 +339,42 @@ export const FAMILY_LABEL: Record<ObjectiveFamily, string> = {
   app: "App promotion",
 };
 
+/** Order objective sections are shown in (lower funnel first). */
+export const FAMILY_ORDER: ObjectiveFamily[] = [
+  "sales",
+  "leads",
+  "traffic_lpv",
+  "traffic_clicks",
+  "engagement",
+  "video",
+  "awareness",
+  "app",
+];
+
+export const PERFORMANCE_ORDER: Performance[] = ["High", "Moderate", "Low", "In Review", "Error"];
+
+/** Short explanation of WHY this objective is judged on its KPI (from normalization). */
+export function objectiveExplanation(family: ObjectiveFamily, optimizationGoal?: string | null): string {
+  switch (family) {
+    case "sales":
+      return "Evaluated on conversion efficiency or conversion value according to the campaign's actual optimization goal — not a blended number.";
+    case "leads":
+      return "Evaluated on cost per lead and how efficiently clicks become leads. The revenue lands later, so ROAS says nothing useful here yet.";
+    case "traffic_lpv":
+      return "Evaluated on how efficiently the campaign gets real visitors to the landing page. Purchases are a downstream signal, not the primary judgment.";
+    case "traffic_clicks":
+      return "Evaluated on the cost and rate of clicks. Whether that traffic converts is a landing-page question, not a campaign one.";
+    case "engagement":
+      return "Evaluated on the cost of the engagement it was bought for, not on downstream sales.";
+    case "video":
+      return "Evaluated on focused-view efficiency and attention because this campaign is optimized for video consumption rather than direct sales.";
+    case "awareness":
+      return "Evaluated on the cost to reach people (CPM), with frequency as the guard rail — reach, not conversions, is what it was bought for.";
+    case "app":
+      return "Evaluated on cost per install / in-app action, the result this campaign is optimized to drive.";
+  }
+}
+
 function lc(s?: string | null): string {
   return (s ?? "").toLowerCase();
 }
@@ -454,12 +495,14 @@ function supportingColumns(
         { label: "CPC", value: money(m.cpc) },
         { label: "CTR", value: pct(m.ctr) },
       ];
-    case "video":
+    case "video": {
+      const focused = m.focusedViews > 0;
       return [
-        { label: "Views", value: int(m.focusedViews > 0 ? m.focusedViews : m.videoViews) },
-        { label: "Cost/view", value: money3(m.cpv) },
-        { label: "View rate", value: pct(m.viewRate) },
+        { label: focused ? "Focused views" : "Views", value: int(focused ? m.focusedViews : m.videoViews) },
+        { label: focused ? "Cost / focused view" : "Cost / view", value: money3(m.cpv) },
+        { label: focused ? "Focused view rate" : "View rate", value: pct(m.viewRate) },
       ];
+    }
     case "awareness":
       return [
         { label: "Reach", value: int(m.reachAvgDaily) },
@@ -758,6 +801,12 @@ function analyzeCampaign(c: CampaignInput, todayIso: string): CampaignFinding {
   const primary = resolvePrimary(family, cur);
   const prevPrimary = resolvePrimary(family, prev);
 
+  // Daily primary-KPI series (last 14 complete days) for the sparkline.
+  const trend = sorted
+    .slice(-WINDOW_DAYS * 2)
+    .map((day) => (aggregate([day]) as unknown as Record<string, number>)[primary.key])
+    .filter((v) => Number.isFinite(v)) as number[];
+
   const timing = computeTiming(c.startDate ?? null, c.endDate ?? null, todayIso);
   const cols = supportingColumns(family, cur);
 
@@ -868,6 +917,8 @@ function analyzeCampaign(c: CampaignInput, todayIso: string): CampaignFinding {
     priority,
     priorityTier,
     exposure,
+    objectiveExplanation: objectiveExplanation(family, c.optimizationGoal),
+    trend,
     spend: Number(cur.spend.toFixed(2)),
     timing,
   };
