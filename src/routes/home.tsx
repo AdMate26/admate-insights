@@ -1,8 +1,14 @@
+import { ArrowUpRight, CalendarDays, Info, Layers3 } from "lucide-react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { AdMateHeader } from "@/components/admate/AdMateHeader";
-import { ConfidenceBadge, PerformanceBadge, SeverityBadge, SignalBadge } from "@/components/admate/badges";
+import {
+  ConfidenceBadge,
+  PerformanceBadge,
+  SeverityBadge,
+  SignalBadge,
+} from "@/components/admate/badges";
 import { analysisQueryOptions } from "@/lib/analysis-query";
 import { needsAttentionCount } from "@/lib/attention";
 import { DEFAULT_PLATFORM, isPlatform, type Platform } from "@/lib/platforms";
@@ -33,106 +39,160 @@ export const Route = createFileRoute("/home")({
   component: CampaignList,
 });
 
-
 function CampaignList() {
   const { platform } = Route.useSearch();
   const { data } = useSuspenseQuery(analysisQueryOptions(platform));
-  // Count comes ONLY from Performance Rating = Needs Attention (single source of
-  // truth) — never from priority/severity/Check Data/Early Data/Fair/Good.
   const attention = needsAttentionCount(data.findings);
+  // Overview only aggregates existing scores; no performance rules are recomputed.
+  const scores = data.findings
+    .filter((f) => f.performanceLabel !== "Check Data" && f.performanceLabel !== "Early Data")
+    .map((f) => f.performanceScore)
+    .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+  const averageScore = scores.length
+    ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+    : null;
+  const money = (value: number) =>
+    value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
   return (
     <div className="min-h-screen bg-background">
       <AdMateHeader platform={platform} />
-
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
+      <main className="admate-container campaign-page">
+        <div className="page-heading">
           <div>
-            <h2 className="text-base font-semibold text-foreground">Campaigns</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Latest 7 complete days ({data.currentWindow.start} → {data.currentWindow.end}) compared
-              with {data.previousWindow.start} → {data.previousWindow.end}.
+            <p className="eyebrow">Campaign intelligence</p>
+            <h1>
+              See the signal.
+              <br className="mobile-break" /> Know your next move.
+            </h1>
+            <p className="page-description">
+              A clear read on performance, with the evidence behind every judgment.
             </p>
           </div>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{attention}</span> of{" "}
-            {data.findings.length} need attention
-          </p>
+          <div className="date-window">
+            <CalendarDays size={16} aria-hidden="true" />
+            <div>
+              <span>Last 7 complete days</span>
+              <strong>
+                {data.currentWindow.start} — {data.currentWindow.end}
+              </strong>
+              <small>
+                vs {data.previousWindow.start} — {data.previousWindow.end}
+              </small>
+            </div>
+          </div>
         </div>
-
+        <dl className="overview-grid" aria-label="Performance overview">
+          <div>
+            <dt>Total Campaigns</dt>
+            <dd>{data.findings.length.toString().padStart(2, "0")}</dd>
+            <span>In this platform</span>
+          </div>
+          <div>
+            <dt>Needs Attention</dt>
+            <dd className="overview-attention">{attention.toString().padStart(2, "0")}</dd>
+            <span>Based on performance rating</span>
+          </div>
+          <div>
+            <dt>Spend (Last 7 Days)</dt>
+            <dd>{money(data.totalSpend)}</dd>
+            <span>Across all campaigns</span>
+          </div>
+          <div>
+            <dt>Average Performance Score</dt>
+            <dd>
+              {averageScore ?? "—"}
+              <small> / 100</small>
+            </dd>
+            <span>{scores.length} scored campaigns · no-score cases excluded</span>
+          </div>
+        </dl>
         {data.aiStatus === "failed" ? (
-          <p className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            AI narratives unavailable: {data.aiError}. Deterministic findings, evidence and
-            confidence below are unaffected.
-          </p>
+          <div className="narrative-notice" role="status">
+            <Info size={16} aria-hidden="true" />
+            <div>
+              <strong>AI explanations are currently unavailable.</strong> Performance, signals and
+              evidence are still available.
+              <details>
+                <summary>View details</summary>
+                <p>{data.aiError}</p>
+              </details>
+            </div>
+          </div>
         ) : null}
-
-        <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-4 py-3 text-left font-medium">Campaign</th>
-                <th className="px-4 py-3 text-left font-medium">Performance</th>
-                <th className="px-4 py-3 text-right font-medium">Score</th>
-                <th className="px-4 py-3 text-left font-medium">Signal</th>
-                <th className="px-4 py-3 text-left font-medium">Confidence</th>
-                <th className="px-4 py-3 text-right font-medium">Spend (7d)</th>
-                <th className="px-4 py-3 text-left font-medium">Timing</th>
-                <th className="px-4 py-3 text-left font-medium">Reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.findings.map((f) => (
-                <tr key={f.campaignId} className="border-b border-border/60 last:border-0 hover:bg-muted/50">
-                  <td className="px-4 py-3">
-                    <Link
-                      to="/campaigns/$campaignId"
-                      params={{ campaignId: f.campaignId }}
-                      search={{ platform }}
-                      className="block font-medium text-foreground underline-offset-4 hover:underline"
-                    >
-                      {f.campaignName}
-                    </Link>
-                    <span className="mt-1 block">
+        <section aria-labelledby="campaign-list-title">
+          <div className="list-heading">
+            <h2 id="campaign-list-title">
+              Campaigns <span>{data.findings.length}</span>
+            </h2>
+            <p>
+              <Layers3 size={14} aria-hidden="true" /> Ordered by priority
+            </p>
+          </div>
+          <div className="campaign-columns" aria-hidden="true">
+            <span>Campaign</span>
+            <span>Performance</span>
+            <span>Score</span>
+            <span>Signal</span>
+            <span>Confidence</span>
+            <span>Spend (7d)</span>
+            <span>Timing</span>
+          </div>
+          <ul className="campaign-list">
+            {data.findings.map((f) => (
+              <li key={f.campaignId}>
+                <Link
+                  to="/campaigns/$campaignId"
+                  params={{ campaignId: f.campaignId }}
+                  search={{ platform }}
+                  className="campaign-row"
+                  aria-label={`View ${f.campaignName}`}
+                >
+                  <div className="campaign-row-grid">
+                    <div className="campaign-name-cell">
+                      <h3>
+                        {f.campaignName}
+                        <ArrowUpRight size={16} aria-hidden="true" />
+                      </h3>
                       <SeverityBadge severity={f.severity} />
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <PerformanceBadge rating={f.performanceRating} label={f.performanceLabel} />
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-foreground">
-                    {f.performanceScore ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <SignalBadge signal={f.signal} label={f.signalLabel} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <ConfidenceBadge confidence={f.confidence} />
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-foreground">
-                    {f.snapshot.spend.toLocaleString("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                      maximumFractionDigits: 0,
-                    })}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
-                    {f.timing.label}
-                  </td>
-                  <td className="max-w-xs px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+                    </div>
+                    <div className="campaign-cell performance-cell">
+                      <span className="cell-label">Performance</span>
+                      <PerformanceBadge rating={f.performanceRating} label={f.performanceLabel} />
+                    </div>
+                    <div className="campaign-cell score-cell">
+                      <span className="cell-label">Score</span>
+                      <span className="score-value">{f.performanceScore ?? "—"}</span>
+                    </div>
+                    <div className="campaign-cell signal-cell">
+                      <span className="cell-label">Signal</span>
+                      <SignalBadge signal={f.signal} label={f.signalLabel} />
+                    </div>
+                    <div className="campaign-cell confidence-cell">
+                      <span className="cell-label">Confidence</span>
+                      <ConfidenceBadge confidence={f.confidence} />
+                    </div>
+                    <div className="campaign-cell spend-cell">
+                      <span className="cell-label">Spend (7d)</span>
+                      <span className="metric-value">{money(f.snapshot.spend)}</span>
+                    </div>
+                    <div className="campaign-cell timing-cell">
+                      <span className="cell-label">Timing</span>
+                      <span>{f.timing.label}</span>
+                    </div>
+                  </div>
+                  <p className="campaign-reason">
+                    <span>Why this judgment</span>
                     {f.statusReason}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <p className="mt-4 text-xs text-muted-foreground">
-          Performance score, signal, priority and confidence are all derived by the deterministic rule
-          engine from the normalized metrics — no labels are hard-coded per campaign, and spend never
-          moves the score. AI writes only the possible explanation and recommended action shown inside
-          each campaign analysis.
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <p className="method-note">
+          Performance, signals, priority and confidence are computed from your metrics. Spend never
+          moves the score. AI adds explanations and recommended actions.
         </p>
       </main>
     </div>

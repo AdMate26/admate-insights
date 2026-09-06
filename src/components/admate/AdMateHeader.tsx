@@ -2,6 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { ArrowLeft, ArrowUpRight, ChevronDown } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
+
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_PLATFORM, PLATFORMS, platformMeta, type Platform } from "@/lib/platforms";
 
@@ -41,66 +44,77 @@ export function AdMateHeader({ back, platform = DEFAULT_PLATFORM }: Props) {
   const mode = platformMeta(platform).modeLabel;
 
   return (
-    <header className="border-b border-border bg-card">
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 px-6 py-6 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          {back ? (
-            <Link
-              to="/home"
-              search={{ platform }}
-              className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              ← {back.label}
-            </Link>
-          ) : null}
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">AdMate</h1>
-          <p className="mt-1 text-sm text-muted-foreground">AI Marketing Analyst Platform</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <dl className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
-              <dt className="uppercase tracking-wide text-muted-foreground">Platform</dt>
-              <dd>
-                <label className="sr-only" htmlFor="platform-select">
-                  Demo platform
-                </label>
-                <select
-                  id="platform-select"
-                  value={platform}
-                  onChange={(e) => handlePlatformChange(e.target.value as Platform)}
-                  className="cursor-pointer rounded-sm bg-background font-medium text-foreground outline-none focus:ring-2 focus:ring-ring"
-                >
-                  {PLATFORMS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </dd>
-            </div>
-            <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5">
-              <dt className="uppercase tracking-wide text-muted-foreground">Mode</dt>
-              <dd className="font-medium text-foreground">{mode}</dd>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link
-                to="/connect"
-                className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
+    <header className="admate-header">
+      <div className="admate-container header-content">
+        <Link
+          to="/home"
+          search={{ platform }}
+          className="brand-lockup"
+          aria-label="AdMate campaigns"
+        >
+          <img
+            src="/brand/mark-light-bg.svg"
+            alt=""
+            className="brand-mark brand-mark-light"
+            width="36"
+            height="36"
+          />
+          <img
+            src="/brand/mark-violet.svg"
+            alt=""
+            className="brand-mark brand-mark-dark"
+            width="36"
+            height="36"
+          />
+          <span className="brand-wordmark">
+            Ad<strong>Mate</strong>
+          </span>
+        </Link>
+        <div className="header-controls">
+          <div className="platform-control">
+            <label htmlFor="platform-select" className="eyebrow">
+              Platform
+            </label>
+            <div className="platform-select-wrap">
+              <select
+                id="platform-select"
+                aria-label="Demo platform"
+                value={platform}
+                onChange={(e) => handlePlatformChange(e.target.value as Platform)}
               >
-                Connect TikTok Ads
-              </Link>
+                {PLATFORMS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
             </div>
-          </dl>
+          </div>
+          <Link to="/connect" className="button-secondary connect-action">
+            Connect Ads <ArrowUpRight size={15} aria-hidden="true" />
+          </Link>
+          <ThemeToggle />
           {signedIn ? (
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="rounded-md border border-border bg-background px-3 py-1.5 font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
+            <button type="button" onClick={handleSignOut} className="button-quiet">
               Sign out
             </button>
           ) : null}
         </div>
+      </div>
+      <div className="header-context admate-container">
+        {back ? (
+          <Link to="/home" search={{ platform }} className="back-link">
+            <ArrowLeft size={14} aria-hidden="true" />
+            {back.label}
+          </Link>
+        ) : (
+          <span className="eyebrow">Your marketing, understood.</span>
+        )}
+        <span className="demo-label">
+          <span aria-hidden="true" className="demo-dot" />
+          {mode}
+        </span>
       </div>
     </header>
   );

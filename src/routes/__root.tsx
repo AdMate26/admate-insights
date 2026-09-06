@@ -100,7 +100,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/brand/favicon-32.png", type: "image/png" },
     ],
   }),
   shellComponent: RootShell,
@@ -111,8 +111,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => { let t; try { t = localStorage.getItem("admate-theme"); } catch {} document.documentElement.classList.toggle("dark", t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches)); })();`,
+          }}
+        />
         <HeadContent />
       </head>
       <body>
