@@ -10,7 +10,8 @@ import {
   type CampaignFinding,
   type Performance,
 } from "@/lib/analysis/engine";
-import { PLATFORMS, platformMeta, type Platform } from "@/lib/platforms";
+import { brandMeta, type Brand } from "@/lib/brands";
+import { platformMeta, type Platform } from "@/lib/platforms";
 
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -32,11 +33,16 @@ const SPARK_CLASS: Record<Performance, string> = {
 
 export function CampaignsView({
   analyses,
+  brand,
   platform,
+  platforms,
   onSelectPlatform,
 }: {
   analyses: AdMateAnalysis[];
+  brand: Brand;
   platform: Platform;
+  /** The selected brand's connected platforms (tabs are scoped to these). */
+  platforms: readonly Platform[];
   onSelectPlatform: (p: Platform) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -63,26 +69,27 @@ export function CampaignsView({
           Which campaigns are earning their budget
         </h1>
         <p className="view-sub">
-          Last 7 complete days. Every campaign is graded on the metric its objective was actually
-          bought against — not one blended number. Click a row for the full signal, why and action.
+          {brandMeta(brand).label} · last 7 complete days. Every campaign is graded on the metric its
+          objective was actually bought against — not one blended number. Click a row for the full
+          signal, why and action.
         </p>
       </div>
 
-      <div className="tabs" role="tablist">
-        {PLATFORMS.map((p) => {
-          const a = byPlatform.get(p.id);
+      <div className="tabs" role="tablist" aria-label={`${brandMeta(brand).label} connected platforms`}>
+        {platforms.map((p) => {
+          const a = byPlatform.get(p);
           const n = a?.findings.length ?? 0;
           const low = lowOf(a);
           return (
             <button
-              key={p.id}
+              key={p}
               role="tab"
-              aria-selected={p.id === platform}
-              className={`tab${p.id === platform ? " is-active" : ""}`}
-              onClick={() => onSelectPlatform(p.id)}
+              aria-selected={p === platform}
+              className={`tab${p === platform ? " is-active" : ""}`}
+              onClick={() => onSelectPlatform(p)}
             >
-              <span className={`dot dot--${p.id}`} aria-hidden="true" />
-              {p.label}
+              <span className={`dot dot--${p}`} aria-hidden="true" />
+              {platformMeta(p).label}
               <span className="tab-count">
                 {n}
                 {low ? ` · ${low} need attention` : ""}

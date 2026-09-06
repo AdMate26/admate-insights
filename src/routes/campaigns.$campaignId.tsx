@@ -12,16 +12,18 @@ import {
 } from "@/components/admate/badges";
 import { previewBriefing, sendTelegramBriefing } from "@/lib/admate.functions";
 import { analysisQueryOptions } from "@/lib/analysis-query";
+import { DEFAULT_BRAND, isBrand, resolveBrandPlatform, type Brand } from "@/lib/brands";
 import type { CampaignTiming, EvidenceRow } from "@/lib/analysis/engine";
-import { DEFAULT_PLATFORM, isPlatform, platformMeta, type Platform } from "@/lib/platforms";
+import { platformMeta, type Platform } from "@/lib/platforms";
 
 export const Route = createFileRoute("/campaigns/$campaignId")({
-  validateSearch: (search: Record<string, unknown>): { platform: Platform } => ({
-    platform: isPlatform(search.platform) ? search.platform : DEFAULT_PLATFORM,
-  }),
-  loaderDeps: ({ search }) => ({ platform: search.platform }),
+  validateSearch: (search: Record<string, unknown>): { brand: Brand; platform: Platform } => {
+    const brand = isBrand(search.brand) ? search.brand : DEFAULT_BRAND;
+    return { brand, platform: resolveBrandPlatform(brand, search.platform) };
+  },
+  loaderDeps: ({ search }) => ({ brand: search.brand, platform: search.platform }),
   loader: async ({ context, deps }) => {
-    await context.queryClient.ensureQueryData(analysisQueryOptions(deps.platform));
+    await context.queryClient.ensureQueryData(analysisQueryOptions(deps.brand, deps.platform));
   },
   head: () => ({
     meta: [
@@ -93,8 +95,8 @@ function CampaignTimingCard({ timing }: { timing: CampaignTiming }) {
 
 function CampaignAnalysis() {
   const { campaignId } = Route.useParams();
-  const { platform } = Route.useSearch();
-  const { data } = useSuspenseQuery(analysisQueryOptions(platform));
+  const { brand, platform } = Route.useSearch();
+  const { data } = useSuspenseQuery(analysisQueryOptions(brand, platform));
   const finding = data.findings.find((f) => f.campaignId === campaignId);
   if (!finding) throw notFound();
 
@@ -106,7 +108,7 @@ function CampaignAnalysis() {
   async function loadPreview() {
     setLoadingPreview(true);
     try {
-      const result = await previewBriefing();
+      const result = await previewBriefing({ data: { brand } });
       setPreview(result.text);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not build preview");
@@ -118,7 +120,7 @@ function CampaignAnalysis() {
   async function send() {
     setSending(true);
     try {
-      const result = await sendTelegramBriefing({ data: { chatId } });
+      const result = await sendTelegramBriefing({ data: { chatId, brand } });
       if (result.ok) toast.success("Briefing sent to Telegram");
       else toast.error(result.error);
     } catch (error) {
