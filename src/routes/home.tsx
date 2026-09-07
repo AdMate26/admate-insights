@@ -28,7 +28,10 @@ export const Route = createFileRoute("/home")({
   validateSearch: (search: Record<string, unknown>): HomeSearch => {
     const brand = isBrand(search.brand) ? search.brand : DEFAULT_BRAND;
     return {
-      view: isView(search.view) ? search.view : "overview",
+      // Default landing view is Campaigns for the default/first brand; an
+      // explicit ?view=overview (e.g. the "All accounts" nav) still resolves
+      // through here, so refresh and direct URLs keep whatever view is set.
+      view: isView(search.view) ? search.view : "campaigns",
       brand,
       // Platform is always clamped to one the selected brand has connected.
       platform: resolveBrandPlatform(brand, search.platform),
