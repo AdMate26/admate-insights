@@ -1396,10 +1396,33 @@
 .dark .dot--tiktok { background: #eee; }
 .dot--google_search { background: #e8a33d; }
 
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; flex-wrap: wrap; }
-.tab { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; background: none; border: 0; border-bottom: 2px solid transparent; font-size: 0.9rem; font-weight: 600; color: var(--muted-foreground); cursor: pointer; }
-.tab.is-active { color: var(--foreground); border-bottom-color: var(--primary); }
-.tab-count { font-size: 0.72rem; font-weight: 500; color: var(--muted-foreground); }
+.tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 16px; flex-wrap: wrap; }
+.tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 14px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  margin-bottom: -1px;
+  font-size: 0.9rem; font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.tab:hover { background: var(--card); color: var(--foreground); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
+.tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tab.is-active {
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-bottom-color: var(--primary);
+  font-weight: 700;
+}
+.tab-name { font-weight: inherit; }
+.tab-count { font-size: 0.72rem; font-weight: 600; color: var(--muted-foreground); background: color-mix(in srgb, var(--foreground) 8%, transparent); padding: 1px 7px; border-radius: 999px; }
+.tab.is-active .tab-count { background: color-mix(in srgb, var(--primary) 20%, transparent); color: var(--primary); }
+.tab-attn { font-size: 0.72rem; font-weight: 700; color: var(--ad-crit); background: var(--ad-crit-bg); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 
 .tally-row { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 16px; }
 .tally { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 14px; background: var(--card); min-width: 92px; }
@@ -1411,10 +1434,11 @@
 .tally--info b { color: var(--ad-info); }
 .tally--error b { color: var(--ad-error); }
 
-.status-pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.status-pill { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
 .status--high { color: var(--ad-good); background: var(--ad-good-bg); }
 .status--moderate { color: var(--ad-warn); background: var(--ad-warn-bg); }
-.status--low { color: var(--ad-crit); background: var(--ad-crit-bg); }
+/* Needs Attention: the most prominent verdict — filled tint + defined outline. */
+.status--low { color: var(--ad-crit); background: var(--ad-crit-bg); border-color: color-mix(in srgb, var(--ad-crit) 50%, transparent); }
 .status--review { color: var(--ad-info); background: var(--ad-info-bg); }
 .status--error { color: var(--ad-error); background: var(--ad-error-bg); }
 
@@ -1429,6 +1453,24 @@
 .spark--crit { color: var(--ad-crit); }
 .spark--info { color: var(--ad-info); }
 .spark--error { color: var(--ad-error); }
+
+/* Per-status row emphasis — a scanning aid only; the verdict itself is unchanged.
+   Needs Attention (Low) stands out most; Good/High stays the quietest. */
+.camp-row[data-perf="Low"] td { background: color-mix(in srgb, var(--ad-crit) 7%, var(--card)); }
+.camp-row[data-perf="Low"]:hover td { background: color-mix(in srgb, var(--ad-crit) 12%, var(--card)); }
+.camp-row[data-perf="Low"] td:first-child { box-shadow: inset 3px 0 0 var(--ad-crit); }
+
+/* Fair (Moderate): mild caution — a soft left accent, no fill. */
+.camp-row[data-perf="Moderate"] td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ad-warn) 65%, transparent); }
+
+/* Check Data / tracking issue (Error): muted grey fill — cannot be judged normally,
+   NOT poor performance. */
+.camp-row[data-perf="Error"] td { background: color-mix(in srgb, var(--ad-error) 12%, var(--card)); }
+.camp-row[data-perf="Error"]:hover td { background: color-mix(in srgb, var(--ad-error) 17%, var(--card)); }
+.camp-row[data-perf="Error"] td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ad-error) 55%, transparent); }
+
+/* Early Data (In Review): neutral and softer than Check Data — a faint accent, no fill. */
+.camp-row[data-perf="In Review"] td:first-child { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--ad-info) 45%, transparent); }
 
 .camp-detail td { background: var(--surface-subtle); }
 .detail-block { padding: 6px 4px 10px; }

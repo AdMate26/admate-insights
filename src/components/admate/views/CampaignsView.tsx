@@ -89,11 +89,9 @@ export function CampaignsView({
               onClick={() => onSelectPlatform(p)}
             >
               <span className={`dot dot--${p}`} aria-hidden="true" />
-              {platformMeta(p).label}
-              <span className="tab-count">
-                {n}
-                {low ? ` · ${low} need attention` : ""}
-              </span>
+              <span className="tab-name">{platformMeta(p).label}</span>
+              <span className="tab-count">{n}</span>
+              {low ? <span className="tab-attn">{low} need attention</span> : null}
             </button>
           );
         })}
@@ -212,7 +210,7 @@ function CampaignRows({
   const colCount = 4 + f.supportingColumns.length;
   return (
     <>
-      <tr className="camp-row" data-open={open} onClick={onToggle}>
+      <tr className="camp-row" data-open={open} data-perf={f.performance} onClick={onToggle}>
         <td>
           <span className="camp-name">
             <ChevronRight size={14} aria-hidden="true" className="camp-caret" />
