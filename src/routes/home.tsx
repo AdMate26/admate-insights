@@ -97,7 +97,7 @@ function Dashboard() {
         <AlertsView analyses={analyses} onOpenCampaigns={(p) => go({ view: "campaigns", platform: p })} />
       ) : null}
       {view === "briefings" ? <BriefingsView brand={brand} /> : null}
-      {view === "reports" ? <ReportsView analyses={analyses} /> : null}
+      {view === "reports" ? <ReportsView /> : null}
     </AppShell>
   );
 }
