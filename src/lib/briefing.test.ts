@@ -84,3 +84,16 @@ test("no internal jargon leaks into the message", () => {
   }
   expect(buildBriefing(inputs)).toContain("<b>AdMate Briefing</b>");
 });
+
+test("a briefing that includes LinkedIn builds without crashing and labels it", () => {
+  // Regression: LinkedIn was in PLATFORM_ORDER but missing from SHORT_LABEL, so
+  // any brand connecting LinkedIn crashed the briefing with
+  // "Cannot read properties of undefined (reading 'replace')".
+  const linkedin = analyzeCampaigns(getDemoCampaigns("linkedin"));
+  const withLi: BriefingInput[] = [...inputs, { ...linkedin, platform: "linkedin" }];
+  expect(() => buildBriefing(withLi)).not.toThrow();
+  const html = buildBriefing(withLi);
+  const lowLinkedIn = needsAttentionCount(linkedin.findings);
+  expect(html).toContain(`LinkedIn Ads: ${lowLinkedIn}`);
+  expect(briefingPlainText(withLi)).toContain("LinkedIn Ads");
+});
