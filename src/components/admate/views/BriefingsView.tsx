@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Send, Eye, CalendarClock } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Send, Eye, CalendarClock, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -29,6 +29,8 @@ export function BriefingsView({ brand }: { brand: Brand }) {
   const [time, setTime] = useState("09:00");
   const [weekday, setWeekday] = useState(3); // Wednesday
   const [dayOfMonth, setDayOfMonth] = useState(15);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const monthFieldRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
 
   const [schedule, setSchedule] = useState<StoredSchedule | null>(null);
@@ -57,6 +59,25 @@ export function BriefingsView({ brand }: { brand: Brand }) {
       cancelled = true;
     };
   }, [brand]);
+
+  // Close the month-day popover on outside click or Escape.
+  useEffect(() => {
+    if (!monthPickerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (monthFieldRef.current && !monthFieldRef.current.contains(e.target as Node)) {
+        setMonthPickerOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMonthPickerOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [monthPickerOpen]);
 
   async function loadPreview() {
     setLoadingPreview(true);
@@ -170,7 +191,7 @@ export function BriefingsView({ brand }: { brand: Brand }) {
               aria-expanded={mode != null}
             >
               <CalendarClock size={15} aria-hidden="true" />
-              Telegram Send &amp; Schedule
+              Telegram Schedule &amp; Send
             </button>
           </div>
 
@@ -209,19 +230,37 @@ export function BriefingsView({ brand }: { brand: Brand }) {
                   ) : null}
 
                   {mode === "monthly" ? (
-                    <label className="sched-field">
+                    <div className="sched-field sched-monthfield" ref={monthFieldRef}>
                       <span>Send every month on</span>
-                      <select
-                        value={dayOfMonth}
-                        onChange={(e) => setDayOfMonth(Number(e.target.value))}
+                      <button
+                        type="button"
+                        className="sched-day-field"
+                        aria-haspopup="dialog"
+                        aria-expanded={monthPickerOpen}
+                        onClick={() => setMonthPickerOpen((o) => !o)}
                       >
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                          <option key={d} value={d}>
-                            {d}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                        {dayOfMonth}
+                        <ChevronDown size={14} aria-hidden="true" />
+                      </button>
+                      {monthPickerOpen ? (
+                        <div className="sched-daygrid" role="dialog" aria-label="Select day of month">
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              className={`sched-day${d === dayOfMonth ? " is-active" : ""}`}
+                              aria-pressed={d === dayOfMonth}
+                              onClick={() => {
+                                setDayOfMonth(d);
+                                setMonthPickerOpen(false);
+                              }}
+                            >
+                              {d}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
 
                   <label className="sched-field">

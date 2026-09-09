@@ -16,7 +16,7 @@ const NAV: { key: ViewKey; label: string; icon: typeof LayoutGrid }[] = [
   { key: "overview", label: "All accounts", icon: LayoutGrid },
   { key: "campaigns", label: "Campaigns", icon: ListChecks },
   { key: "alerts", label: "Alerts", icon: BellRing },
-  { key: "briefings", label: "Briefings", icon: Send },
+  { key: "briefings", label: "Schedule & Send", icon: Send },
   { key: "reports", label: "Client reports", icon: FileText },
 ];
 
