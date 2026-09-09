@@ -22,7 +22,7 @@ function isView(v: unknown): v is ViewKey {
   return typeof v === "string" && (VIEWS as string[]).includes(v);
 }
 
-type HomeSearch = { view: ViewKey; brand: Brand; platform: Platform };
+type HomeSearch = { view: ViewKey; brand: Brand; platform: Platform; objective?: string };
 
 export const Route = createFileRoute("/home")({
   validateSearch: (search: Record<string, unknown>): HomeSearch => {
@@ -35,6 +35,7 @@ export const Route = createFileRoute("/home")({
       brand,
       // Platform is always clamped to one the selected brand has connected.
       platform: resolveBrandPlatform(brand, search.platform),
+      ...(typeof search["objective"] === "string" ? { objective: search["objective"] } : {}),
     };
   },
   loaderDeps: ({ search }) => ({ brand: search.brand }),
@@ -54,7 +55,7 @@ export const Route = createFileRoute("/home")({
 });
 
 function Dashboard() {
-  const { view, brand, platform } = Route.useSearch();
+  const { view, brand, platform, objective } = Route.useSearch();
   const navigate = useNavigate();
   const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions(brand));
 
@@ -63,6 +64,8 @@ function Dashboard() {
     // Switching brand (or platform) always re-clamps to a platform this brand
     // has connected, so platform selection can never leave the brand.
     const nextPlatform = resolveBrandPlatform(nextBrand, next.platform ?? platform);
+    // Objective is carried only by explicit filter changes. Brand/platform
+    // navigation omits it, predictably restoring All objectives.
     navigate({
       to: "/home",
       search: { view, ...next, brand: nextBrand, platform: nextPlatform },
@@ -90,6 +93,8 @@ function Dashboard() {
           brand={brand}
           platform={platform}
           platforms={brandPlatforms(brand)}
+          objective={objective}
+          onSelectObjective={(value) => go(value ? { objective: value } : {})}
           onSelectPlatform={(p) => go({ platform: p })}
         />
       ) : null}

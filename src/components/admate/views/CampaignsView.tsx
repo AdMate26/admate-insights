@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { PerformanceBadge, SignalBadge, StatusPill } from "@/components/admate/badges";
 import { Sparkline } from "@/components/admate/Sparkline";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/analysis/engine";
 import { brandMeta, type Brand } from "@/lib/brands";
 import { platformMeta, type Platform } from "@/lib/platforms";
+import { filterCampaignObjectives } from "@/lib/campaign-objective-filter";
 
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -37,6 +38,8 @@ export function CampaignsView({
   platform,
   platforms,
   onSelectPlatform,
+  objective,
+  onSelectObjective,
 }: {
   analyses: AdMateAnalysis[];
   brand: Brand;
@@ -44,11 +47,17 @@ export function CampaignsView({
   /** The selected brand's connected platforms (tabs are scoped to these). */
   platforms: readonly Platform[];
   onSelectPlatform: (p: Platform) => void;
+  objective: string | undefined;
+  onSelectObjective: (objective: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const byPlatform = new Map(analyses.map((a) => [a.platform, a]));
   const active = byPlatform.get(platform);
-  const findings = active?.findings ?? [];
+  const {
+    findings,
+    options,
+    objective: selectedObjective,
+  } = filterCampaignObjectives(active?.findings ?? [], objective);
   const lowOf = (a?: AdMateAnalysis) => (a?.findings ?? []).filter((f) => f.performance === "Low").length;
 
   const tally = PERFORMANCE_ORDER.map((p) => ({
@@ -57,8 +66,7 @@ export function CampaignsView({
   }));
   const spend = findings.reduce((s, f) => s + f.spend, 0);
 
-  // Budget / spend at risk = the SAME "needs attention" set as the platform tab
-  // and the performance labels: a campaign is at risk iff its verdict is Low.
+  // Budget / spend at risk uses the visible objective's Low findings.
   // The amount is the analyzer's objective-aware exposure — defensible budget-at-
   // risk (share of spend that missed a target, lower-funnel) or actual spend
   // exposure (upper-funnel / no target). No invented revenue. In Review, Error,
@@ -101,6 +109,28 @@ export function CampaignsView({
             </button>
           );
         })}
+      </div>
+
+      <div className="campaign-objective-filter">
+        <label htmlFor="campaign-objective">Campaign Objective</label>
+        <div className="platform-select-wrap">
+          <select
+            id="campaign-objective"
+            value={selectedObjective ?? ""}
+            onChange={(event) => {
+              setOpenId(null);
+              onSelectObjective(event.target.value);
+            }}
+          >
+            <option value="">All objectives</option>
+            {options.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} aria-hidden="true" />
+        </div>
       </div>
 
       <div className="tally-row">
@@ -163,8 +193,7 @@ export function CampaignsView({
           {findings.length === 0 ? (
             <div className="panel">
               <div className="empty">
-                <strong>No {platformMeta(platform).label} campaigns in this view</strong>
-                Switch platform tab to see others.
+                <strong>No campaigns found for this objective.</strong>
               </div>
             </div>
           ) : null}

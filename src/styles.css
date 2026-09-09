@@ -1425,6 +1425,24 @@
 .tab.is-active .tab-count { background: color-mix(in srgb, var(--primary) 20%, transparent); color: var(--primary); }
 .tab-attn { font-size: 0.72rem; font-weight: 700; color: var(--ad-crit); background: var(--ad-crit-bg); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 
+.campaign-objective-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+.campaign-objective-filter label { font-size: 0.85rem; font-weight: 600; }
+.campaign-objective-filter .platform-select-wrap { width: 240px; max-width: 100%; }
+.campaign-objective-filter select { width: 100%; }
+.campaign-objective-filter select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .campaign-objective-filter { align-items: flex-start; flex-direction: column; }
+  .campaign-objective-filter .platform-select-wrap { max-width: 100%; }
+}
 .tally-row { display: flex; gap: 9px; flex-wrap: wrap; margin-bottom: 16px; }
 .tally { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 14px; background: var(--card); min-width: 92px; }
 .tally b { display: block; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; color: var(--foreground); }
