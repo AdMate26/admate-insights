@@ -425,10 +425,93 @@ const GOOGLE: Spec[] = [
   },
 ];
 
+/* ============================== LINKEDIN =============================== */
+/**
+ * LinkedIn Ads (Campaign Manager) objectives, judged the LinkedIn way: each
+ * campaign is graded on the metric its objective was actually bought against —
+ * awareness on CPM/reach, website visits on CPC/CTR, engagement on cost per
+ * engagement, video on cost per view, lead gen on CPL, website conversions on
+ * CPA (or ROAS only where a conversion value exists), job applicants on cost
+ * per applicant. LinkedIn CPMs/CPCs are intentionally high (B2B auction).
+ */
+const LINKEDIN: Spec[] = [
+  {
+    id: "li_leads_b2b",
+    name: "Lead Gen Form | Enterprise demo requests",
+    platform: "linkedin",
+    objective: "Lead Generation",
+    optimizationGoal: "Lead Gen Form completions",
+    conversionGoal: "Lead",
+    target: { type: "cpl", value: 95 },
+    base: { impr: 42000, ctr: 0.008, cpc: 9.5, leadRate: 0.13 }, // CPL ~$73 < target → High
+  },
+  {
+    id: "li_awareness_tl",
+    name: "Brand Awareness | Thought leadership",
+    platform: "linkedin",
+    objective: "Brand Awareness",
+    optimizationGoal: "Reach",
+    costModel: "cpm",
+    base: { impr: 130000, ctr: 0.006, cpc: 8, cpm: 32, freq: 2.2 },
+    recent: { cpm: 1.22 }, // CPM +22% vs own baseline → auction pressure
+  },
+  {
+    id: "li_video_brand",
+    name: "Video Views | Product story",
+    platform: "linkedin",
+    objective: "Video Views",
+    optimizationGoal: "Video views",
+    costModel: "cpm",
+    base: { impr: 95000, ctr: 0.005, cpc: 8, cpm: 38, viewRate: 0.24 },
+    recent: { viewRate: 0.72, cpm: 1.1 }, // view rate -28% → cost / view rises
+  },
+  {
+    id: "li_conv_value",
+    name: "Website Conversions | Value-tracked signups",
+    platform: "linkedin",
+    objective: "Website Conversions",
+    optimizationGoal: "Website conversions",
+    conversionGoal: "Sign-up",
+    bidStrategy: "Maximize conversion value",
+    target: { type: "tROAS", value: 2.0 },
+    // Conversion VALUE exists (aov) → judged on ROAS. Without a value the engine
+    // falls back to CPA and never invents ROAS (covered in engine.test.ts).
+    base: { impr: 50000, ctr: 0.008, cpc: 10, cvr: 0.04, aov: 650 }, // ROAS ~2.6 → High
+  },
+  {
+    id: "li_visits_content",
+    name: "Website Visits | Resources & blog",
+    platform: "linkedin",
+    objective: "Website Visits",
+    optimizationGoal: "Website clicks",
+    base: { impr: 60000, ctr: 0.009, cpc: 8 },
+    recent: { cpc: 1.16 }, // CPC drifting up vs baseline → mild caution
+  },
+  {
+    id: "li_engagement_follow",
+    name: "Engagement | Follower + reactions",
+    platform: "linkedin",
+    objective: "Engagement",
+    optimizationGoal: "Engagement",
+    base: { impr: 70000, ctr: 0.012, cpc: 6 }, // steady cost per engagement
+  },
+  {
+    id: "li_jobs_eng",
+    name: "Job Applicants | Engineering roles",
+    platform: "linkedin",
+    objective: "Job Applicants",
+    optimizationGoal: "Apply clicks",
+    conversionGoal: "Applicant",
+    target: { type: "cpl", value: 45 },
+    base: { impr: 30000, ctr: 0.01, cpc: 6, leadRate: 0.18 }, // cost/applicant ~$33 < target → High
+  },
+];
+
 const BY_PLATFORM: Record<Platform, Spec[]> = {
   meta: META,
   tiktok: TIKTOK,
   google_search: GOOGLE,
+  linkedin: LINKEDIN,
 };
 
 /**
@@ -454,6 +537,7 @@ const SPEC_BY_ID: Record<Platform, Record<string, Spec>> = {
   meta: Object.fromEntries(META.map((s) => [s.id, s])),
   tiktok: Object.fromEntries(TIKTOK.map((s) => [s.id, s])),
   google_search: Object.fromEntries(GOOGLE.map((s) => [s.id, s])),
+  linkedin: Object.fromEntries(LINKEDIN.map((s) => [s.id, s])),
 };
 
 /**
@@ -490,6 +574,7 @@ const BRAND_ACCOUNTS: Record<Brand, Partial<Record<Platform, string[]>>> = {
       "g_search_category",
       "g_demandgen_yt",
     ],
+    linkedin: ["li_leads_b2b", "li_awareness_tl", "li_video_brand", "li_conv_value"],
   },
   olive: {
     meta: [
@@ -510,6 +595,7 @@ const BRAND_ACCOUNTS: Record<Brand, Partial<Record<Platform, string[]>>> = {
       "t_awareness_reach",
     ],
     meta: ["m_sales_aplus", "m_sales_retarget", "m_sales_abo", "m_traffic_guide"],
+    linkedin: ["li_visits_content", "li_engagement_follow", "li_jobs_eng"],
   },
 };
 

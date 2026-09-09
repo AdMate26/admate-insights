@@ -12,10 +12,12 @@ import type { Platform } from "../platforms";
 const meta = analyzeCampaigns(getDemoCampaigns("meta"));
 const tiktok = analyzeCampaigns(getDemoCampaigns("tiktok"));
 const google = analyzeCampaigns(getDemoCampaigns("google_search"));
+const linkedin = analyzeCampaigns(getDemoCampaigns("linkedin"));
 const byId = (r: typeof meta) => new Map(r.findings.map((f) => [f.campaignId, f]));
 const M = byId(meta);
 const T = byId(tiktok);
 const G = byId(google);
+const L = byId(linkedin);
 
 const PERF: Performance[] = ["High", "Moderate", "Low", "In Review", "Error"];
 
@@ -89,6 +91,44 @@ test("Google: campaign-type-aware verdicts + signals", () => {
   const dg = G.get("g_demandgen_yt")!;
   expect(dg.primaryMetric).toBe("Cost / view");
   expect(PERF).toContain(dg.performance);
+});
+
+/* -------- LinkedIn scenario matrix (objective-aware) -------- */
+test("LinkedIn: each objective is judged on its own metric, not a blended one", () => {
+  // Lead Generation → cost per lead (strong CPL is High even though ROAS is absent).
+  expect(L.get("li_leads_b2b")!.objectiveFamily).toBe("leads");
+  expect(L.get("li_leads_b2b")!.primaryMetric).toBe("Cost per lead");
+  expect(L.get("li_leads_b2b")!.performance).toBe("High");
+
+  // Job Applicants → cost per applicant (its own family + labels), never ROAS.
+  expect(L.get("li_jobs_eng")!.objectiveFamily).toBe("job_applicants");
+  expect(L.get("li_jobs_eng")!.primaryMetric).toBe("Cost per applicant");
+  expect(L.get("li_jobs_eng")!.supportingColumns.map((c) => c.label)).toEqual([
+    "Applicants",
+    "Cost/applicant",
+    "Click→apply",
+  ]);
+  expect(L.get("li_jobs_eng")!.performance).toBe("High");
+
+  // Brand Awareness → CPM (reach, not conversions).
+  expect(L.get("li_awareness_tl")!.objectiveFamily).toBe("awareness");
+  expect(L.get("li_awareness_tl")!.primaryMetric).toBe("CPM");
+
+  // Video Views → cost per view, never sales ROAS.
+  expect(L.get("li_video_brand")!.objectiveFamily).toBe("video");
+  expect(L.get("li_video_brand")!.primaryMetric).toBe("Cost / view");
+
+  // Website Visits → clicks/CPC (traffic), never ROAS.
+  expect(L.get("li_visits_content")!.objectiveFamily).toBe("traffic_clicks");
+  expect(L.get("li_visits_content")!.primaryMetric).toBe("CPC");
+
+  // Engagement → cost per engagement, not CPA/ROAS.
+  expect(L.get("li_engagement_follow")!.objectiveFamily).toBe("engagement");
+  expect(L.get("li_engagement_follow")!.primaryMetric).toBe("Cost / engagement");
+
+  // Website Conversions WITH a conversion value → ROAS legitimately.
+  expect(L.get("li_conv_value")!.objectiveFamily).toBe("sales");
+  expect(L.get("li_conv_value")!.primaryMetric).toBe("ROAS");
 });
 
 /* -------- Cross-cutting guarantees -------- */
@@ -209,6 +249,22 @@ test("zero conversions with too little evidence → In Review", () => {
     tracking: { conversionTrackingActive: true },
   });
   expect(analyzeCampaigns([c]).findings[0].performance).toBe("In Review");
+});
+
+test("LinkedIn Website Conversions WITHOUT a conversion value → judged on CPA, never invented ROAS", () => {
+  const c = campaign({
+    campaignId: "li_conv_novalue",
+    platform: "linkedin" as Platform,
+    objective: "Website Conversions",
+    conversionGoal: "Sign-up",
+    target: { type: "tCPA", value: 120 },
+    // conversions present, revenue 0 (no value tracked) → engine must use CPA.
+    days: days(14, { spend: 260, impressions: 40000, clicks: 320, conversions: 12, revenue: 0 }),
+  });
+  const f = analyzeCampaigns([c]).findings[0];
+  expect(f.objectiveFamily).toBe("sales");
+  expect(f.primaryMetric).toBe("CPA");
+  expect(f.primaryMetric).not.toBe("ROAS");
 });
 
 test("missing optional metrics never crash and still yield a verdict", () => {

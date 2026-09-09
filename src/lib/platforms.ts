@@ -7,7 +7,7 @@
  * provider and its own analyzer.
  */
 
-export type Platform = "tiktok" | "meta" | "google_search";
+export type Platform = "tiktok" | "meta" | "google_search" | "linkedin";
 
 export type PlatformMeta = {
   id: Platform;
@@ -33,12 +33,19 @@ export const PLATFORMS: readonly PlatformMeta[] = [
     label: "Google Ads — Search",
     modeLabel: "Demo Mode — Synthetic Google Search Ads Data",
   },
+  {
+    id: "linkedin",
+    label: "LinkedIn Ads",
+    modeLabel: "Demo Mode — Synthetic LinkedIn Ads Data",
+  },
 ] as const;
 
 export const DEFAULT_PLATFORM: Platform = "tiktok";
 
 export function isPlatform(value: unknown): value is Platform {
-  return value === "tiktok" || value === "meta" || value === "google_search";
+  return (
+    value === "tiktok" || value === "meta" || value === "google_search" || value === "linkedin"
+  );
 }
 
 export function platformMeta(platform: Platform): PlatformMeta {

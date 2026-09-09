@@ -20,14 +20,16 @@ function analyze(brand: Brand, platform: Platform): CampaignFinding[] {
 
 /* -------- Brand → connected platforms is the organisational layer -------- */
 test("each brand connects exactly the specified platforms", () => {
-  expect(brandPlatforms("northlane")).toEqual(["meta", "tiktok", "google_search"]);
+  expect(brandPlatforms("northlane")).toEqual(["meta", "tiktok", "google_search", "linkedin"]);
   expect(brandPlatforms("olive")).toEqual(["meta", "google_search"]);
-  expect(brandPlatforms("kite")).toEqual(["tiktok", "meta"]);
+  expect(brandPlatforms("kite")).toEqual(["tiktok", "meta", "linkedin"]);
 
   // A brand is never graded on a platform it has not connected.
   expect(brandHasPlatform("olive", "tiktok")).toBe(false);
+  expect(brandHasPlatform("olive", "linkedin")).toBe(false);
   expect(brandHasPlatform("kite", "google_search")).toBe(false);
   expect(getDemoCampaignsForBrand("olive", "tiktok")).toEqual([]);
+  expect(getDemoCampaignsForBrand("olive", "linkedin")).toEqual([]);
   expect(getDemoCampaignsForBrand("kite", "google_search")).toEqual([]);
 });
 
@@ -75,6 +77,7 @@ test("needs-attention counts are correct per brand + platform", () => {
       meta: { total: 8, low: 4 },
       tiktok: { total: 7, low: 2 },
       google_search: { total: 6, low: 2 },
+      linkedin: { total: 4, low: 2 },
     },
     olive: {
       meta: { total: 5, low: 3 },
@@ -83,6 +86,7 @@ test("needs-attention counts are correct per brand + platform", () => {
     kite: {
       tiktok: { total: 5, low: 2 },
       meta: { total: 4, low: 2 },
+      linkedin: { total: 3, low: 0 },
     },
   };
 

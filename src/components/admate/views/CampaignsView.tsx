@@ -122,7 +122,7 @@ export function CampaignsView({
             return (
               <div className="panel" key={fam}>
                 <div className="panel-head">
-                  <h2 className="panel-title">{list[0].objectiveLabel}</h2>
+                  <h2 className="panel-title">Campaign Objective: {list[0].objectiveLabel}</h2>
                   <span className="panel-note">{money(famSpend)} · {list.length} campaigns</span>
                 </div>
                 <p className="fam-blurb">{list[0].objectiveExplanation}</p>

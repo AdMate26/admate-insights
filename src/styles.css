@@ -1395,6 +1395,7 @@
 .dot--tiktok { background: #111; }
 .dark .dot--tiktok { background: #eee; }
 .dot--google_search { background: #e8a33d; }
+.dot--linkedin { background: #0a66c2; }
 
 .tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 16px; flex-wrap: wrap; }
 .tab {
