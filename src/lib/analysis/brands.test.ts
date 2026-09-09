@@ -11,6 +11,7 @@ import {
 } from "../brands";
 import { needsAttentionCount } from "../attention";
 import { PLATFORMS, type Platform } from "../platforms";
+import { buildBriefing, briefingPlainText } from "../briefing";
 
 const BRAND_IDS = BRANDS.map((b) => b.id);
 
@@ -74,10 +75,10 @@ test("needs-attention counts are correct per brand + platform", () => {
   // is exactly Performance === "Low" (single source of truth in attention.ts).
   const expected: Record<Brand, Partial<Record<Platform, { total: number; low: number }>>> = {
     northlane: {
-      meta: { total: 8, low: 4 },
+      meta: { total: 8, low: 3 },
       tiktok: { total: 7, low: 2 },
       google_search: { total: 6, low: 2 },
-      linkedin: { total: 5, low: 3 },
+      linkedin: { total: 5, low: 1 },
     },
     olive: {
       meta: { total: 5, low: 3 },
@@ -99,6 +100,40 @@ test("needs-attention counts are correct per brand + platform", () => {
       expect(needsAttentionCount(findings)).toBe(exp.low);
       expect(findings.filter((f) => f.performance === "Low").length).toBe(exp.low);
     }
+  }
+});
+
+test("Northlane awareness/video adjustments derive Moderate and leave the Low risk set consistent", () => {
+  const cases = [
+    ["meta", "m_awareness_reach"],
+    ["linkedin", "li_awareness_tl"],
+    ["linkedin", "li_video_brand"],
+  ] as const;
+  for (const [platform, id] of cases) {
+    const findings = analyze("northlane", platform);
+    const adjusted = findings.find((f) => f.campaignId === `northlane__${id}`)!;
+    expect(adjusted.performance).toBe("Moderate");
+    const risky = findings.filter((f) => f.performance === "Low" && f.exposure.amount > 0);
+    expect(risky.length).toBe(needsAttentionCount(findings));
+    expect(risky).not.toContain(adjusted);
+    for (const f of risky) expect(f.exposure.amount).toBeLessThanOrEqual(f.spend);
+  }
+});
+
+test("Northlane preview and Telegram naturally include only eight Low campaign details", () => {
+  const inputs = brandPlatforms("northlane").map((platform) => ({
+    platform,
+    ...analyzeCampaigns(getDemoCampaignsForBrand("northlane", platform)),
+  }));
+  for (const message of [buildBriefing(inputs), briefingPlainText(inputs)]) {
+    expect(message).toContain("8 campaigns need attention");
+    expect(message.match(/WHAT'S GOING WRONG/g)).toHaveLength(8);
+    for (const name of [
+      "Reach | Spring launch",
+      "Brand Awareness | Thought leadership",
+      "Video Views | Product story",
+    ])
+      expect(message).not.toContain(name);
   }
 });
 

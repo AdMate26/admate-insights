@@ -569,7 +569,7 @@ export function getDemoCampaigns(platform: Platform): CampaignInput[] {
 /**
  * Brand scoping is an ORGANISATIONAL layer only: each brand connects a subset of
  * platforms and, per connected platform, runs a subset of that platform's
- * campaign structures as its own accounts. We reuse the *same* tuned specs (so
+ * campaign structures as its own accounts. We reuse tuned specs (so
  * the platform-specific analysis rules are untouched) and simply clone them with
  * a brand-scoped id. Verdicts are still derived per platform by the existing
  * analyzer — a brand never blends metrics across Meta / TikTok / Google.
@@ -644,12 +644,22 @@ const BRAND_ACCOUNTS: Record<Brand, Partial<Record<Platform, string[]>>> = {
 /**
  * Clone a platform spec into a brand-scoped campaign. The id is namespaced by
  * brand (so two brands running the same structure never collide and are never
- * confused for one another), while the verdict-driving `base`/`recent` shape is
- * preserved verbatim — the analyzer therefore reaches the same conclusion it
- * would for that structure. Deterministic per-campaign jitter (seeded on the
+ * confused for one another). Northlane has milder recent awareness/video moves;
+ * all verdicts are still derived by the analyzer. Deterministic jitter (seeded on the
  * new id) gives each brand realistic, but reproducible, day-to-day numbers.
  */
 function cloneForBrand(brand: Brand, spec: Spec): Spec {
+  if (brand === "northlane") {
+    const recentAdjustments: Record<string, Recent> = {
+      m_awareness_reach: { cpm: 1.05 },
+      li_awareness_tl: { cpm: 1.05 },
+      li_video_brand: { viewRate: 0.98, cpm: 1.02 },
+    };
+    const adjustment = recentAdjustments[spec.id];
+    if (adjustment) {
+      return { ...spec, id: `${brand}__${spec.id}`, recent: { ...spec.recent, ...adjustment } };
+    }
+  }
   return { ...spec, id: `${brand}__${spec.id}` };
 }
 
