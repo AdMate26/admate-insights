@@ -235,7 +235,7 @@ function CampaignAnalysis() {
           <section>
             <h2 className="eyebrow mb-4">Campaign setup</h2>
             <div className="summary-grid">
-              <Fact label="Objective" value={`${finding.objectiveLabel}`} />
+              <Fact label="Campaign Objective" value={`${finding.objectiveLabel}`} />
               <Fact label="Optimized for" value={finding.optimizationGoal ?? finding.objective} />
               <Fact
                 label={finding.campaignType ? "Campaign type" : "Bid strategy"}

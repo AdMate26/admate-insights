@@ -21,7 +21,7 @@ const SHORT_LABEL: Record<Platform, string> = {
   meta: "Meta Ads",
   google_search: "Google Search",
 };
-const PLATFORM_ORDER: Platform[] = ["tiktok", "meta", "google_search"];
+const PLATFORM_ORDER: Platform[] = ["tiktok", "meta", "google_search", "linkedin"];
 
 function escapeHtml(t: string): string {
   return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

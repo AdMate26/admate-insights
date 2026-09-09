@@ -36,7 +36,7 @@ export const BRANDS: readonly BrandMeta[] = [
     id: "northlane",
     label: "Northlane",
     blurb: "Outdoor apparel — full-funnel across every channel",
-    platforms: ["meta", "tiktok", "google_search"],
+    platforms: ["meta", "tiktok", "google_search", "linkedin"],
   },
   {
     id: "olive",
@@ -48,7 +48,7 @@ export const BRANDS: readonly BrandMeta[] = [
     id: "kite",
     label: "Kite",
     blurb: "Kids' toys — TikTok-led with Meta retargeting",
-    platforms: ["tiktok", "meta"],
+    platforms: ["tiktok", "meta", "linkedin"],
   },
 ] as const;
 

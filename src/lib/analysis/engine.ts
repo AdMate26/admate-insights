@@ -26,6 +26,7 @@ export type PriorityTier = "Critical" | "High" | "Medium" | "Low";
 export type ObjectiveFamily =
   | "sales"
   | "leads"
+  | "job_applicants"
   | "traffic_lpv"
   | "traffic_clicks"
   | "engagement"
@@ -331,6 +332,7 @@ function aggregate(days: DailyMetric[]): WindowMetrics {
 export const FAMILY_LABEL: Record<ObjectiveFamily, string> = {
   sales: "Sales",
   leads: "Lead generation",
+  job_applicants: "Job applicants",
   traffic_lpv: "Traffic — landing-page views",
   traffic_clicks: "Traffic — clicks",
   engagement: "Engagement",
@@ -343,6 +345,7 @@ export const FAMILY_LABEL: Record<ObjectiveFamily, string> = {
 export const FAMILY_ORDER: ObjectiveFamily[] = [
   "sales",
   "leads",
+  "job_applicants",
   "traffic_lpv",
   "traffic_clicks",
   "engagement",
@@ -360,6 +363,8 @@ export function objectiveExplanation(family: ObjectiveFamily, optimizationGoal?:
       return "Evaluated on conversion efficiency or conversion value according to the campaign's actual optimization goal — not a blended number.";
     case "leads":
       return "Evaluated on cost per lead and how efficiently clicks become leads. The revenue lands later, so ROAS says nothing useful here yet.";
+    case "job_applicants":
+      return "Evaluated on cost per applicant and how efficiently clicks become applications — the hiring result this campaign was bought for, not sales or ROAS.";
     case "traffic_lpv":
       return "Evaluated on how efficiently the campaign gets real visitors to the landing page. Purchases are a downstream signal, not the primary judgment.";
     case "traffic_clicks":
@@ -394,10 +399,14 @@ export function normalizeFamily(c: {
 
   if (/(reach|awareness|impression|brand)/.test(o) && !/video/.test(o)) return "awareness";
   if (/video/.test(o) || /video/.test(g) || t === "video") return "video";
+  // LinkedIn "Job applicants" — must precede the app/install check because
+  // "applicant" contains the substring "app".
+  if (/(applicant|job application|apply now)/.test(o) || /applicant/.test(cg)) return "job_applicants";
   if (/(lead)/.test(o) || /lead/.test(cg)) return "leads";
   if (/(app|install)/.test(o) || /install/.test(cg)) return "app";
   if (/(engagement|community|interaction)/.test(o)) return "engagement";
-  if (/traffic/.test(o)) {
+  // Traffic-like, incl. LinkedIn "Website visits".
+  if (/(traffic|website visit|site visit|landing page visit)/.test(o)) {
     if (/(landing|lpv|profile|view content)/.test(g)) return "traffic_lpv";
     return "traffic_clicks";
   }
@@ -435,6 +444,8 @@ function resolvePrimary(family: ObjectiveFamily, m: WindowMetrics): PrimaryKpi {
       return { key: "cpa", label: "CPA", better: "low", value: m.cpa, fmt: money, targetType: "tCPA" };
     case "leads":
       return { key: "cpl", label: "Cost per lead", better: "low", value: m.cpl, fmt: money, targetType: "cpl" };
+    case "job_applicants":
+      return { key: "cpl", label: "Cost per applicant", better: "low", value: m.cpl, fmt: money, targetType: "cpl" };
     case "traffic_lpv":
       return {
         key: "cpLpv",
@@ -481,6 +492,12 @@ function supportingColumns(
         { label: "Leads", value: int(m.leads) },
         { label: "CPL", value: money(m.cpl) },
         { label: "Click→lead", value: pct(m.leadRate) },
+      ];
+    case "job_applicants":
+      return [
+        { label: "Applicants", value: int(m.leads) },
+        { label: "Cost/applicant", value: money(m.cpl) },
+        { label: "Click→apply", value: pct(m.leadRate) },
       ];
     case "traffic_lpv":
       return [
@@ -580,6 +597,7 @@ function resultVolume(family: ObjectiveFamily, m: WindowMetrics): number {
     case "sales":
       return m.conversions;
     case "leads":
+    case "job_applicants":
       return m.leads;
     case "traffic_lpv":
       return m.landingPageViews;
@@ -598,6 +616,7 @@ function resultVolume(family: ObjectiveFamily, m: WindowMetrics): number {
 const MIN_RESULTS: Record<ObjectiveFamily, number> = {
   sales: 15,
   leads: 15,
+  job_applicants: 15,
   traffic_lpv: 150,
   traffic_clicks: 200,
   engagement: 150,
@@ -647,7 +666,11 @@ function diagnose(
   // Downstream conversion rate depends on the objective: leads use click→lead,
   // LPV traffic uses LPV rate, everything else uses CVR.
   const downRate =
-    family === "leads" ? d.dLeadRate : family === "traffic_lpv" ? d.dLpvRate : d.dCvr;
+    family === "leads" || family === "job_applicants"
+      ? d.dLeadRate
+      : family === "traffic_lpv"
+        ? d.dLpvRate
+        : d.dCvr;
   const ctrFalling = (d.dCtr ?? 0) <= -8;
   const ctrStable = Math.abs(d.dCtr ?? 0) < 8;
   const ctrRising = (d.dCtr ?? 0) >= 8;
@@ -694,14 +717,16 @@ function diagnose(
       const label =
         family === "leads"
           ? "Lead-form drop-off"
-          : family === "traffic_lpv"
-            ? "Landing-page drop-off"
-            : "Post-click drop-off";
+          : family === "job_applicants"
+            ? "Application drop-off"
+            : family === "traffic_lpv"
+              ? "Landing-page drop-off"
+              : "Post-click drop-off";
       return {
         signal: label,
         why: `People are still clicking (CTR ${d.dCtr === null ? "stable" : fmtPctChange(d.dCtr)}) but far fewer complete — conversion rate fell ${fmtPctChange(downRate)}. The weakness is after the click: landing page, offer or checkout.`,
         action:
-          family === "leads"
+          family === "leads" || family === "job_applicants"
             ? "Shorten the form and match the landing page to the ad promise before adding budget — more spend will not fix a weak form."
             : "Audit the landing page, offer and checkout for the clicked audience; fix the post-click experience before scaling.",
       };
@@ -776,6 +801,7 @@ const OBJECTIVE_WEIGHT: Record<ObjectiveFamily, number> = {
   sales: 1,
   app: 0.95,
   leads: 0.9,
+  job_applicants: 0.9,
   traffic_lpv: 0.65,
   traffic_clicks: 0.55,
   engagement: 0.5,
@@ -974,6 +1000,12 @@ function buildEvidence(
     leads: [
       row("Leads", cur.leads, prev.leads, int),
       row("Click→lead", cur.leadRate, prev.leadRate, pct, (u) => (u ? "more clicks become leads" : "fewer clicks become leads")),
+      row("CTR", cur.ctr, prev.ctr, pct),
+      row("CPC", cur.cpc, prev.cpc, money),
+    ],
+    job_applicants: [
+      row("Applicants", cur.leads, prev.leads, int),
+      row("Click→apply", cur.leadRate, prev.leadRate, pct, (u) => (u ? "more clicks become applicants" : "fewer clicks become applicants")),
       row("CTR", cur.ctr, prev.ctr, pct),
       row("CPC", cur.cpc, prev.cpc, money),
     ],

@@ -137,7 +137,7 @@ export function OverviewView({
                     <StatusPill performance={f.performance} />
                   </div>
                   <p className="attn-sig">
-                    {platformMeta(f.platform).label} · {f.objectiveLabel} — {f.signal}
+                    {platformMeta(f.platform).label} · Campaign Objective: {f.objectiveLabel} — {f.signal}
                   </p>
                   <p className="attn-act">{f.aiRecommendedAction ?? f.action}</p>
                 </button>

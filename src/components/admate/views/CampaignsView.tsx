@@ -57,8 +57,14 @@ export function CampaignsView({
   }));
   const spend = findings.reduce((s, f) => s + f.spend, 0);
 
+  // Budget / spend at risk = the SAME "needs attention" set as the platform tab
+  // and the performance labels: a campaign is at risk iff its verdict is Low.
+  // The amount is the analyzer's objective-aware exposure — defensible budget-at-
+  // risk (share of spend that missed a target, lower-funnel) or actual spend
+  // exposure (upper-funnel / no target). No invented revenue. In Review, Error,
+  // Moderate and High are never counted.
   const risky = findings
-    .filter((f) => f.exposure.kind === "budget_at_risk" && f.exposure.amount > 0)
+    .filter((f) => f.performance === "Low" && f.exposure.amount > 0)
     .sort((a, b) => b.exposure.amount - a.exposure.amount);
   const riskTotal = risky.reduce((s, f) => s + f.exposure.amount, 0);
 
@@ -122,7 +128,7 @@ export function CampaignsView({
             return (
               <div className="panel" key={fam}>
                 <div className="panel-head">
-                  <h2 className="panel-title">{list[0].objectiveLabel}</h2>
+                  <h2 className="panel-title">Campaign Objective: {list[0].objectiveLabel}</h2>
                   <span className="panel-note">{money(famSpend)} · {list.length} campaigns</span>
                 </div>
                 <p className="fam-blurb">{list[0].objectiveExplanation}</p>
@@ -167,7 +173,11 @@ export function CampaignsView({
         <aside className="panel risk-panel" aria-label="Budget at risk">
           <div className="panel-head">
             <h2 className="panel-title">Budget at risk</h2>
-            <span className="panel-note">{riskTotal > 0 ? `${money(riskTotal)} below target` : ""}</span>
+            <span className="panel-note">
+              {risky.length
+                ? `${money(riskTotal)} · ${risky.length} campaign${risky.length === 1 ? "" : "s"}`
+                : ""}
+            </span>
           </div>
           {risky.length ? (
             <div>
@@ -178,6 +188,9 @@ export function CampaignsView({
                     <span className="risk-w">{money(f.exposure.amount)}</span>
                   </div>
                   <p className="risk-m">
+                    {/* Objective-aware: defensible target-miss (lower funnel) vs actual spend
+                        exposure (upper funnel / no target) — never invented revenue. */}
+                    {f.exposure.kind === "budget_at_risk" ? "Budget at risk" : "Spend at risk"} ·{" "}
                     {f.objectiveLabel.toLowerCase()} — {f.primaryMetric} {f.primaryMetricValue}
                     {f.targetOrBaseline ? ` against ${f.targetOrBaseline}` : ""}, {money(f.spend)} spent
                   </p>
@@ -188,8 +201,8 @@ export function CampaignsView({
           ) : (
             <div className="empty">
               <strong>Nothing below target</strong>
-              Every graded campaign with a defensible dollar target is hitting it. Upper-funnel
-              campaigns are tracked by spend exposure, not invented dollar loss.
+              No campaign here is rated Low. Lower-funnel misses show as defensible budget at risk;
+              upper-funnel Low campaigns show their actual spend exposure — never invented dollar loss.
             </div>
           )}
         </aside>

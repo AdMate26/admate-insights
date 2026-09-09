@@ -38,7 +38,7 @@ export function AlertsView({
                 <div>
                   <p className="alert-name">{f.campaignName}</p>
                   <p className="alert-meta">
-                    {platformMeta(f.platform).label} · {f.objectiveLabel}
+                    {platformMeta(f.platform).label} · Campaign Objective: {f.objectiveLabel}
                     {f.campaignType ? ` · ${f.campaignType}` : ""} · {money(f.spend)} spent
                   </p>
                 </div>

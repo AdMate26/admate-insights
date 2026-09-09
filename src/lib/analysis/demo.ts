@@ -425,10 +425,135 @@ const GOOGLE: Spec[] = [
   },
 ];
 
+/* ============================== LINKEDIN =============================== */
+/**
+ * LinkedIn Ads (Campaign Manager) objectives, judged the LinkedIn way: each
+ * campaign is graded on the metric its objective was actually bought against —
+ * awareness on CPM/reach, website visits on CPC/CTR, engagement on cost per
+ * engagement, video on cost per view, lead gen on CPL, website conversions on
+ * CPA (or ROAS only where a conversion value exists), job applicants on cost
+ * per applicant. LinkedIn CPMs/CPCs are intentionally high (B2B auction).
+ */
+const LINKEDIN: Spec[] = [
+  {
+    id: "li_leads_b2b",
+    name: "Lead Gen Form | Enterprise demo requests",
+    platform: "linkedin",
+    objective: "Lead Generation",
+    optimizationGoal: "Lead Gen Form completions",
+    conversionGoal: "Lead",
+    target: { type: "cpl", value: 60 },
+    // Lead-form drop-off: fewer clicks become leads + CPC up → CPL blows past
+    // target → Low. Lower-funnel with a target → defensible BUDGET AT RISK.
+    base: { impr: 42000, ctr: 0.008, cpc: 9, leadRate: 0.12 },
+    recent: { leadRate: 0.6, cpc: 1.18 },
+  },
+  {
+    id: "li_awareness_tl",
+    name: "Brand Awareness | Thought leadership",
+    platform: "linkedin",
+    objective: "Brand Awareness",
+    optimizationGoal: "Reach",
+    costModel: "cpm",
+    base: { impr: 130000, ctr: 0.006, cpc: 8, cpm: 32, freq: 2.2 },
+    recent: { cpm: 1.25 }, // CPM +25% vs own baseline → auction pressure → Low → SPEND EXPOSURE
+  },
+  {
+    id: "li_video_brand",
+    name: "Video Views | Product story",
+    platform: "linkedin",
+    objective: "Video Views",
+    optimizationGoal: "Video views",
+    costModel: "cpm",
+    base: { impr: 95000, ctr: 0.005, cpc: 8, cpm: 38, viewRate: 0.24 },
+    recent: { viewRate: 0.7, cpm: 1.12 }, // view rate down → cost/view rises → Low → SPEND EXPOSURE
+  },
+  {
+    id: "li_conv_value",
+    name: "Website Conversions | Value-tracked signups",
+    platform: "linkedin",
+    objective: "Website Conversions",
+    optimizationGoal: "Website conversions",
+    conversionGoal: "Sign-up",
+    bidStrategy: "Maximize conversion value",
+    target: { type: "tROAS", value: 2.0 },
+    // Conversion VALUE exists (aov) → judged on ROAS; comfortably beats target → High.
+    base: { impr: 50000, ctr: 0.008, cpc: 10, cvr: 0.04, aov: 650 }, // ROAS ~2.6 → High
+  },
+  {
+    id: "li_leads_learn",
+    name: "Lead Gen Form | New ABM push",
+    platform: "linkedin",
+    objective: "Lead Generation",
+    optimizationGoal: "Lead Gen Form completions",
+    conversionGoal: "Lead",
+    learningStatus: "learning",
+    startOffset: 5,
+    historyDays: 6, // too new/little history → In Review → NOT monetary risk
+    target: { type: "cpl", value: 70 },
+    base: { impr: 18000, ctr: 0.008, cpc: 9, leadRate: 0.11 },
+  },
+  {
+    id: "li_visits_content",
+    name: "Website Visits | Resources & blog",
+    platform: "linkedin",
+    objective: "Website Visits",
+    optimizationGoal: "Website clicks",
+    // CPC up + CTR down materially vs baseline → traffic efficiency deteriorates →
+    // Low. Upper-funnel / no dollar target → ACTUAL SPEND EXPOSURE (no invented loss).
+    base: { impr: 60000, ctr: 0.009, cpc: 8 },
+    recent: { cpc: 1.38, ctr: 0.7 },
+  },
+  {
+    id: "li_conv_kite",
+    name: "Website Conversions | Trial signups",
+    platform: "linkedin",
+    objective: "Website Conversions",
+    optimizationGoal: "Website conversions",
+    conversionGoal: "Sign-up",
+    bidStrategy: "Maximize conversion value",
+    target: { type: "tROAS", value: 2.5 },
+    // Value tracked but ROAS falls well below target → Low. Lower-funnel with a
+    // target → defensible BUDGET AT RISK (share of spend that missed target).
+    base: { impr: 45000, ctr: 0.008, cpc: 10, cvr: 0.035, aov: 400 },
+    recent: { cvr: 0.68, rev: 0.9 },
+  },
+  {
+    id: "li_conv_track",
+    name: "Website Conversions | Catalogue signups",
+    platform: "linkedin",
+    objective: "Website Conversions",
+    optimizationGoal: "Website conversions",
+    conversionGoal: "Sign-up",
+    tracking: { measurementError: true }, // real tracking problem → Error, NOT budget risk
+    target: { type: "tROAS", value: 2.5 },
+    base: { impr: 40000, ctr: 0.008, cpc: 10, cvr: 0.03, aov: 400 },
+  },
+  {
+    id: "li_engagement_follow",
+    name: "Engagement | Follower + reactions",
+    platform: "linkedin",
+    objective: "Engagement",
+    optimizationGoal: "Engagement",
+    base: { impr: 70000, ctr: 0.012, cpc: 6 }, // steady cost per engagement → not Low
+  },
+  {
+    id: "li_jobs_eng",
+    name: "Job Applicants | Engineering roles",
+    platform: "linkedin",
+    objective: "Job Applicants",
+    optimizationGoal: "Apply clicks",
+    conversionGoal: "Applicant",
+    target: { type: "cpl", value: 45 },
+    base: { impr: 30000, ctr: 0.01, cpc: 6, leadRate: 0.18 }, // cost/applicant ~$33 < target → High
+  },
+];
+
 const BY_PLATFORM: Record<Platform, Spec[]> = {
   meta: META,
   tiktok: TIKTOK,
   google_search: GOOGLE,
+  linkedin: LINKEDIN,
 };
 
 /**
@@ -454,6 +579,7 @@ const SPEC_BY_ID: Record<Platform, Record<string, Spec>> = {
   meta: Object.fromEntries(META.map((s) => [s.id, s])),
   tiktok: Object.fromEntries(TIKTOK.map((s) => [s.id, s])),
   google_search: Object.fromEntries(GOOGLE.map((s) => [s.id, s])),
+  linkedin: Object.fromEntries(LINKEDIN.map((s) => [s.id, s])),
 };
 
 /**
@@ -490,6 +616,7 @@ const BRAND_ACCOUNTS: Record<Brand, Partial<Record<Platform, string[]>>> = {
       "g_search_category",
       "g_demandgen_yt",
     ],
+    linkedin: ["li_leads_b2b", "li_awareness_tl", "li_video_brand", "li_conv_value", "li_leads_learn"],
   },
   olive: {
     meta: [
@@ -510,6 +637,7 @@ const BRAND_ACCOUNTS: Record<Brand, Partial<Record<Platform, string[]>>> = {
       "t_awareness_reach",
     ],
     meta: ["m_sales_aplus", "m_sales_retarget", "m_sales_abo", "m_traffic_guide"],
+    linkedin: ["li_visits_content", "li_conv_kite", "li_conv_track", "li_jobs_eng", "li_engagement_follow"],
   },
 };
 
