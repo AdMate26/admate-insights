@@ -1,29 +1,34 @@
 /**
- * Vercel Cron endpoint — "run due Telegram schedules".
+ * "Run due Telegram schedules" endpoint (Vercel Function, Hobby-friendly).
  *
- * Configured in vercel.json to run on an interval. Vercel automatically sends
- * `Authorization: Bearer <CRON_SECRET>` when the CRON_SECRET env var is set, so
- * we require it here — the endpoint is server-side only and never trusts an
- * unauthenticated caller. Delivery reuses the shared dispatcher + schedule store
+ * Triggered by SUPABASE CRON (pg_cron + pg_net), NOT Vercel Cron — the Vercel
+ * Hobby plan cannot run a frequent cron, so the periodic trigger lives in
+ * Supabase and calls this endpoint every few minutes (see
+ * supabase/migrations/*_telegram_cron.sql and docs/telegram-scheduling.md).
+ *
+ * The caller must send `Authorization: Bearer <CRON_SECRET>`; unauthenticated
+ * calls are rejected. Delivery reuses the shared dispatcher + schedule store
  * (same briefing content as Preview and Send Now). Telegram/Supabase secrets
- * stay server-side.
+ * stay server-side. Accepts GET or POST so either net.http_get or net.http_post
+ * works from Postgres.
  *
- * This lives in /api (a Vercel platform Function) rather than in the app router
- * so it is a stable, cron-callable URL independent of the framework build.
+ * This lives in /api (a Vercel platform Function) so it is a stable, callable
+ * URL on the Hobby plan, independent of the framework build.
  */
 
 import { runDueSchedules } from "../../src/lib/telegram/schedules.server";
 
-export async function GET(request: Request): Promise<Response> {
+function authorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
   const auth = request.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
-    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
-      status: 401,
-      headers: { "content-type": "application/json" },
-    });
-  }
+  return auth === `Bearer ${secret}`;
+}
 
+async function handle(request: Request): Promise<Response> {
+  if (!authorized(request)) {
+    return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
   try {
     const summary = await runDueSchedules(new Date());
     return Response.json({ ok: true, ranAt: new Date().toISOString(), ...summary });
@@ -33,5 +38,12 @@ export async function GET(request: Request): Promise<Response> {
   }
 }
 
-// Allow Vercel Cron (and manual GET) only.
+export async function GET(request: Request): Promise<Response> {
+  return handle(request);
+}
+
+export async function POST(request: Request): Promise<Response> {
+  return handle(request);
+}
+
 export const config = { runtime: "nodejs" };

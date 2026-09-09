@@ -271,7 +271,7 @@ export function BriefingsView({ brand }: { brand: Brand }) {
 
           <p className="fam-blurb">
             {scheduleConfigured
-              ? "Scheduled briefings run server-side (Vercel Cron) — they keep sending even when this browser is closed. Preview works with or without Telegram connected."
+              ? "Scheduled briefings run server-side (Supabase Cron) — they keep sending even when this browser is closed. Preview works with or without Telegram connected."
               : "Schedule storage isn’t configured in this environment, so saving a schedule is disabled here — but Preview Message and Send Now still work."}
           </p>
           {preview ? <pre className="briefing-preview">{preview}</pre> : null}
