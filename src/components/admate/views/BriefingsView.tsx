@@ -34,7 +34,6 @@ export function BriefingsView({ brand }: { brand: Brand }) {
   const [saving, setSaving] = useState(false);
 
   const [schedule, setSchedule] = useState<StoredSchedule | null>(null);
-  const [scheduleConfigured, setScheduleConfigured] = useState(true);
 
   // Load any existing schedule for this brand (best-effort; preview still works
   // even if storage/Telegram is unavailable).
@@ -44,7 +43,6 @@ export function BriefingsView({ brand }: { brand: Brand }) {
     getTelegramSchedule({ data: { brand } })
       .then((res) => {
         if (cancelled) return;
-        setScheduleConfigured(res.configured);
         setSchedule(res.schedule);
         if (res.schedule) {
           setTime(res.schedule.time);
@@ -53,7 +51,7 @@ export function BriefingsView({ brand }: { brand: Brand }) {
         }
       })
       .catch(() => {
-        if (!cancelled) setScheduleConfigured(false);
+        /* schedule storage unavailable — Preview and Send Now still work */
       });
     return () => {
       cancelled = true;
@@ -159,8 +157,7 @@ export function BriefingsView({ brand }: { brand: Brand }) {
         <p className="view-sub">
           AdMate writes a summary for {brandMeta(brand).label} across its connected platforms, from
           the same engine that powers the dashboard — only campaigns rated Low, plus tracking
-          problems. Preview it any time, send it now, or schedule it. Times use your browser
-          timezone ({browserTimezone()}).
+          problems. Preview it any time, send it now, or schedule it.
         </p>
       </div>
 
@@ -309,9 +306,8 @@ export function BriefingsView({ brand }: { brand: Brand }) {
           ) : null}
 
           <p className="fam-blurb">
-            {scheduleConfigured
-              ? "Scheduled briefings run server-side (Supabase Cron) — they keep sending even when this browser is closed. Preview works with or without Telegram connected."
-              : "Schedule storage isn’t configured in this environment, so saving a schedule is disabled here — but Preview Message and Send Now still work."}
+            Telegram Schedule &amp; Send is not connected in the demo — use Preview to see the exact
+            message.
           </p>
           {preview ? <pre className="briefing-preview">{preview}</pre> : null}
         </div>

@@ -54,14 +54,29 @@ export async function computeBrandAnalyses(brand: Brand): Promise<AdMateAnalysis
   return Promise.all(brandPlatforms(brand).map((platform) => computeAnalysis(brand, platform)));
 }
 
+/**
+ * Deterministic briefing inputs — the SAME engine result the dashboard shows, but
+ * WITHOUT the AI-narrative call. The briefing renderer already falls back to the
+ * engine's own why/action, so this needs no gateway. This keeps Preview and Send
+ * fast and reliable (the AI call can exceed a serverless timeout, e.g. Vercel
+ * Hobby's 10s, and blocked Preview from ever returning) and guarantees Preview
+ * shows byte-for-byte what Send delivers.
+ */
+function briefingInputs(brand: Brand) {
+  return brandPlatforms(brand).map((platform) => ({
+    ...analyzeCampaigns(getDemoCampaignsForBrand(brand, platform)),
+    platform,
+  }));
+}
+
 /** Plain-text briefing (preview) — the exact content, no Telegram markup. */
 export async function renderBriefingText(brand: Brand): Promise<string> {
-  return briefingPlainText(await computeBrandAnalyses(brand));
+  return briefingPlainText(briefingInputs(brand));
 }
 
 /** HTML briefing (what Telegram receives). */
 export async function renderBriefingHtml(brand: Brand): Promise<string> {
-  return buildBriefing(await computeBrandAnalyses(brand));
+  return buildBriefing(briefingInputs(brand));
 }
 
 export type SendResult = { ok: true } | { ok: false; error: string };
