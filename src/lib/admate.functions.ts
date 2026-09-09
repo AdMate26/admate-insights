@@ -1,17 +1,30 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { analyzeCampaigns, type AnalysisResult } from "./analysis/engine";
-import { getDemoCampaignsForBrand } from "./analysis/demo";
+import { type AnalysisResult } from "./analysis/engine";
 import {
-  brandMeta,
   brandPlatforms,
   DEFAULT_BRAND,
   isBrand,
   resolveBrandPlatform,
   type Brand,
 } from "./brands";
-import { buildBriefing, briefingPlainText } from "./briefing";
-import { isPlatform, platformMeta, type Platform } from "./platforms";
+import { isPlatform, type Platform } from "./platforms";
+import {
+  computeAnalysis,
+  renderBriefingText,
+  sendBrandBriefing,
+} from "./telegram/dispatch.server";
+import {
+  getScheduleForBrand,
+  setScheduleEnabled,
+  upsertSchedule,
+  type StoredSchedule,
+} from "./telegram/schedules.server";
+import {
+  browserTimezone,
+  validateSchedule,
+  type DeliveryType,
+} from "./telegram/schedule-model";
 
 /**
  * MVP keeps everything in-memory: the demo campaigns are deterministic, so the
@@ -40,43 +53,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { at: number; value: AdMateAnalysis }>();
 const cacheKey = (brand: Brand, platform: Platform) => `${brand}:${platform}`;
 
-async function computeAnalysis(brand: Brand, platform: Platform): Promise<AdMateAnalysis> {
-  // 1 + 2. This brand's campaigns for THIS platform -> the ONE analysis engine.
-  //        The same result powers Campaigns, Overview, Needs Attention, Telegram
-  //        & reports. The engine only ever sees a single platform's campaigns
-  //        here, so platform-specific rules never mix.
-  const result = analyzeCampaigns(getDemoCampaignsForBrand(brand, platform));
-
-  // 3. AI layer only REPHRASES the deterministic diagnosis (explanation + action).
-  let aiStatus: "ok" | "failed" = "ok";
-  let aiError: string | null = null;
-  try {
-    const { explainFindings } = await import("./ai/explain.server");
-    const narratives = await explainFindings(result.findings);
-    for (const finding of result.findings) {
-      const narrative = narratives.find((n) => n.campaignId === finding.campaignId);
-      if (!narrative) continue;
-      finding.aiExplanation = narrative.possibleExplanation;
-      finding.aiRecommendedAction = narrative.recommendedAction;
-    }
-  } catch (error) {
-    aiStatus = "failed";
-    aiError = error instanceof Error ? error.message : String(error);
-    console.error("AI explanation layer failed", error);
-  }
-
-  return {
-    ...result,
-    brand,
-    brandLabel: brandMeta(brand).label,
-    platform,
-    provider: `${brand}-${platform}-demo`,
-    providerLabel: `${brandMeta(brand).label} · ${platformMeta(platform).label} (synthetic demo)`,
-    modeLabel: platformMeta(platform).modeLabel,
-    aiStatus,
-    aiError,
-  };
-}
+// Analysis generation now lives in ./telegram/dispatch.server (the single source
+// of truth shared by the UI, preview, Send Now and the cron runner). This module
+// only adds the per-(brand,platform) cache used by the interactive UI.
 
 function coerceBrand(input: unknown): Brand {
   const value =
@@ -133,42 +112,99 @@ export const getAllAnalyses = createServerFn({ method: "GET" })
  * preview). The briefing spans the brand's connected platforms and counts only
  * Performance = Low.
  */
+/**
+ * Preview the EXACT briefing that would be sent — reuses the one dispatcher, so
+ * it works with no Telegram credentials and never requires a successful send.
+ */
 export const previewBriefing = createServerFn({ method: "GET" })
   .validator((input: { brand?: Brand } | undefined) => ({ brand: coerceBrand(input) }))
   .handler(async ({ data }) => {
-    const analyses = await gatherBrandAnalyses(data.brand);
-    return { text: briefingPlainText(analyses) };
+    return { text: await renderBriefingText(data.brand) };
   });
 
+/** Send Now — preserves the working Telegram behaviour via the shared sender. */
 export const sendTelegramBriefing = createServerFn({ method: "POST" })
   .validator((input: { chatId?: string; brand?: Brand } | undefined) => ({
     chatId: input?.chatId?.trim() || undefined,
     brand: coerceBrand(input),
   }))
   .handler(async ({ data }) => {
-    const token = process.env["TELEGRAM_BOT_TOKEN"];
-    if (!token) {
-      return { ok: false as const, error: "Telegram bot token is not configured yet." };
-    }
-    const chatId = data.chatId ?? process.env["TELEGRAM_CHAT_ID"];
-    if (!chatId) {
-      return { ok: false as const, error: "Enter the Telegram chat ID to send the briefing." };
-    }
+    const result = await sendBrandBriefing(data.brand, data.chatId);
+    return result.ok ? { ok: true as const } : { ok: false as const, error: result.error };
+  });
 
-    const analyses = await gatherBrandAnalyses(data.brand);
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: buildBriefing(analyses),
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    });
-    const body = (await response.json()) as { ok?: boolean; description?: string };
-    if (!response.ok || !body.ok) {
-      return { ok: false as const, error: body.description ?? `Telegram error ${response.status}` };
+/* -------------------------------------------------------------------------- */
+/* Telegram schedules (persisted; executed server-side by the Vercel cron)     */
+/* -------------------------------------------------------------------------- */
+
+function coerceScheduleInput(input: unknown): {
+  brand: Brand;
+  deliveryType: DeliveryType;
+  time: string;
+  timezone: string;
+  weekday: number | null;
+  dayOfMonth: number | null;
+} {
+  const o = (input ?? {}) as Record<string, unknown>;
+  const deliveryType = (["daily", "weekly", "monthly"].includes(String(o.deliveryType))
+    ? o.deliveryType
+    : "daily") as DeliveryType;
+  return {
+    brand: coerceBrand(input),
+    deliveryType,
+    time: typeof o.time === "string" ? o.time : "09:00",
+    timezone: typeof o.timezone === "string" && o.timezone ? o.timezone : browserTimezone(),
+    weekday: typeof o.weekday === "number" ? o.weekday : null,
+    dayOfMonth: typeof o.dayOfMonth === "number" ? o.dayOfMonth : null,
+  };
+}
+
+/** Current saved schedule for a brand. `configured:false` when storage is unavailable. */
+export const getTelegramSchedule = createServerFn({ method: "GET" })
+  .validator((input: { brand?: Brand } | undefined) => ({ brand: coerceBrand(input) }))
+  .handler(async ({ data }): Promise<{ configured: boolean; schedule: StoredSchedule | null }> => {
+    try {
+      const schedule = await getScheduleForBrand(data.brand);
+      return { configured: true, schedule };
+    } catch (error) {
+      console.error("getTelegramSchedule failed", error);
+      return { configured: false, schedule: null };
     }
-    return { ok: true as const };
+  });
+
+/** Create/replace a brand's schedule. Persisted; the cron runner executes it. */
+export const saveTelegramSchedule = createServerFn({ method: "POST" })
+  .validator(coerceScheduleInput)
+  .handler(async ({ data }): Promise<{ ok: true; schedule: StoredSchedule } | { ok: false; error: string }> => {
+    const invalid = validateSchedule(data);
+    if (invalid) return { ok: false, error: invalid };
+    try {
+      const schedule = await upsertSchedule(data.brand, {
+        deliveryType: data.deliveryType,
+        time: data.time,
+        timezone: data.timezone,
+        weekday: data.weekday,
+        dayOfMonth: data.dayOfMonth,
+      });
+      return { ok: true, schedule };
+    } catch (error) {
+      console.error("saveTelegramSchedule failed", error);
+      return { ok: false, error: "Unable to save schedule." };
+    }
+  });
+
+/** Enable or disable an existing schedule without deleting it. */
+export const setTelegramScheduleEnabled = createServerFn({ method: "POST" })
+  .validator((input: { brand?: Brand; enabled?: boolean } | undefined) => ({
+    brand: coerceBrand(input),
+    enabled: Boolean((input as { enabled?: boolean } | undefined)?.enabled),
+  }))
+  .handler(async ({ data }): Promise<{ ok: true; schedule: StoredSchedule | null } | { ok: false; error: string }> => {
+    try {
+      const schedule = await setScheduleEnabled(data.brand, data.enabled);
+      return { ok: true, schedule };
+    } catch (error) {
+      console.error("setTelegramScheduleEnabled failed", error);
+      return { ok: false, error: "Unable to update schedule." };
+    }
   });
