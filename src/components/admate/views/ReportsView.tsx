@@ -1,11 +1,4 @@
-import type { AdMateAnalysis } from "@/lib/admate.functions";
-import { PERFORMANCE_ORDER } from "@/lib/analysis/engine";
-import { platformMeta } from "@/lib/platforms";
-
-const money = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-
-export function ReportsView({ analyses }: { analyses: AdMateAnalysis[] }) {
+export function ReportsView() {
   return (
     <section aria-labelledby="rp-title">
       <div className="view-head">
@@ -18,36 +11,13 @@ export function ReportsView({ analyses }: { analyses: AdMateAnalysis[] }) {
         </p>
       </div>
 
-      <div className="report-grid">
-        {analyses.map((a) => {
-          const counts = PERFORMANCE_ORDER.map((p) => ({
-            p,
-            n: a.findings.filter((f) => f.performance === p).length,
-          }));
-          const low = a.findings.filter((f) => f.performance === "Low");
-          return (
-            <div className="panel" key={a.platform}>
-              <div className="panel-head">
-                <h2 className="panel-title">{platformMeta(a.platform).label}</h2>
-                <span className="panel-note">{money(a.totalSpend)} · 7 days</span>
-              </div>
-              <div className="report-tally">
-                {counts.map((c) => (
-                  <span key={c.p}>
-                    <b>{c.n}</b> {c.p}
-                  </span>
-                ))}
-              </div>
-              <p className="fam-blurb">
-                {low.length === 0
-                  ? "No campaign is materially underperforming this week."
-                  : `${low.length} campaign${low.length === 1 ? "" : "s"} need attention: ${low
-                      .map((f) => `${f.campaignName} (${f.signal})`)
-                      .join("; ")}.`}
-              </p>
-            </div>
-          );
-        })}
+      <div className="panel">
+        <div className="empty">
+          <strong>Report templates are coming soon</strong>
+          There isn&rsquo;t an official client-report template yet. The analysis that will drive it
+          already powers Overview, Alerts and Briefings — polished, exportable reports arrive in the
+          next phase.
+        </div>
       </div>
     </section>
   );
