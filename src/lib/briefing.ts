@@ -1,6 +1,6 @@
 import type { AnalysisResult, CampaignFinding } from "./analysis/engine";
 import { isError, isInReview, isNeedsAttention } from "./attention";
-import { type Platform } from "./platforms";
+import { platformMeta, type Platform } from "./platforms";
 
 /**
  * Pure Telegram briefing builder (no runtime imports) so it is unit testable.
@@ -16,12 +16,18 @@ export type BriefingInput = Pick<
   "currentWindow" | "previousWindow" | "totalSpend" | "findings"
 > & { platform: Platform };
 
-const SHORT_LABEL: Record<Platform, string> = {
+const SHORT_LABEL: Partial<Record<Platform, string>> = {
   tiktok: "TikTok Ads",
   meta: "Meta Ads",
   google_search: "Google Search",
+  linkedin: "LinkedIn Ads",
 };
 const PLATFORM_ORDER: Platform[] = ["tiktok", "meta", "google_search", "linkedin"];
+
+// Never crash on an unmapped platform: fall back to the platform registry label.
+function shortLabel(p: Platform): string {
+  return SHORT_LABEL[p] ?? platformMeta(p).label;
+}
 
 function escapeHtml(t: string): string {
   return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -48,7 +54,7 @@ function detailBlock(platform: Platform, f: CampaignFinding): string[] {
   return [
     "",
     "──────────",
-    `🔴 <b>${escapeHtml(SHORT_LABEL[platform])} — ${escapeHtml(f.campaignName)}</b>`,
+    `🔴 <b>${escapeHtml(shortLabel(platform))} — ${escapeHtml(f.campaignName)}</b>`,
     `${f.performance} · ${escapeHtml(f.objectiveLabel)}`,
     "",
     "<b>WHAT'S GOING WRONG</b>",
@@ -88,7 +94,7 @@ export function buildBriefing(platforms: BriefingInput[]): string {
     `🔴 <b>${totalLow} ${totalLow === 1 ? "campaign needs" : "campaigns need"} attention</b>`,
   ];
   for (const p of ordered) {
-    lines.push(`${SHORT_LABEL[p.platform]}: ${lowByPlatform.get(p.platform)!.length}`);
+    lines.push(`${shortLabel(p.platform)}: ${lowByPlatform.get(p.platform)!.length}`);
   }
 
   // Full details for Low campaigns only (most urgent first, already priority-sorted).
@@ -100,7 +106,7 @@ export function buildBriefing(platforms: BriefingInput[]): string {
   if (errors.length > 0) {
     lines.push("", "──────────", "🛑 <b>Data / tracking to fix</b>");
     for (const { platform, f } of errors) {
-      lines.push(`${escapeHtml(SHORT_LABEL[platform])} — ${escapeHtml(f.campaignName)}: ${escapeHtml(f.signal)}`);
+      lines.push(`${escapeHtml(shortLabel(platform))} — ${escapeHtml(f.campaignName)}: ${escapeHtml(f.signal)}`);
     }
   }
 
