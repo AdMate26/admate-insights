@@ -77,7 +77,7 @@ test("needs-attention counts are correct per brand + platform", () => {
       meta: { total: 8, low: 4 },
       tiktok: { total: 7, low: 2 },
       google_search: { total: 6, low: 2 },
-      linkedin: { total: 4, low: 2 },
+      linkedin: { total: 5, low: 3 },
     },
     olive: {
       meta: { total: 5, low: 3 },
@@ -86,7 +86,7 @@ test("needs-attention counts are correct per brand + platform", () => {
     kite: {
       tiktok: { total: 5, low: 2 },
       meta: { total: 4, low: 2 },
-      linkedin: { total: 3, low: 0 },
+      linkedin: { total: 5, low: 2 },
     },
   };
 

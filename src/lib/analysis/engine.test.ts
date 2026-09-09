@@ -6,7 +6,7 @@ import {
   type DailyMetric,
   type Performance,
 } from "./engine";
-import { getDemoCampaigns } from "./demo";
+import { getDemoCampaigns, getDemoCampaignsForBrand } from "./demo";
 import type { Platform } from "../platforms";
 
 const meta = analyzeCampaigns(getDemoCampaigns("meta"));
@@ -95,10 +95,11 @@ test("Google: campaign-type-aware verdicts + signals", () => {
 
 /* -------- LinkedIn scenario matrix (objective-aware) -------- */
 test("LinkedIn: each objective is judged on its own metric, not a blended one", () => {
-  // Lead Generation → cost per lead (strong CPL is High even though ROAS is absent).
+  // Lead Generation → cost per lead (no ROAS). This one deteriorated (lead-form
+  // drop-off + CPC up) → Low, judged on CPL not sales metrics.
   expect(L.get("li_leads_b2b")!.objectiveFamily).toBe("leads");
   expect(L.get("li_leads_b2b")!.primaryMetric).toBe("Cost per lead");
-  expect(L.get("li_leads_b2b")!.performance).toBe("High");
+  expect(L.get("li_leads_b2b")!.performance).toBe("Low");
 
   // Job Applicants → cost per applicant (its own family + labels), never ROAS.
   expect(L.get("li_jobs_eng")!.objectiveFamily).toBe("job_applicants");
@@ -129,6 +130,61 @@ test("LinkedIn: each objective is judged on its own metric, not a blended one", 
   // Website Conversions WITH a conversion value → ROAS legitimately.
   expect(L.get("li_conv_value")!.objectiveFamily).toBe("sales");
   expect(L.get("li_conv_value")!.primaryMetric).toBe("ROAS");
+});
+
+/* -------- LinkedIn Budget at Risk (objective-aware, spend-based, no invented revenue) -------- */
+// This is the exact rule the Budget-at-Risk card uses: a campaign is at risk iff
+// its verdict is Low; the amount is the analyzer's objective-aware exposure.
+const atRisk = (fs: ReturnType<typeof analyzeCampaigns>["findings"]) =>
+  fs.filter((f) => f.performance === "Low" && f.exposure.amount > 0);
+
+test("LinkedIn Budget at Risk: Low campaigns contribute real spend; others are excluded", () => {
+  const L2 = byId(linkedin);
+
+  // 1. Lead Generation Low → defensible budget at risk (lower-funnel with target).
+  expect(L2.get("li_leads_b2b")!.performance).toBe("Low");
+  expect(L2.get("li_leads_b2b")!.exposure.kind).toBe("budget_at_risk");
+  expect(L2.get("li_leads_b2b")!.exposure.amount).toBeGreaterThan(0);
+
+  // 2. Website Conversions Low (value tracked) → budget at risk (sales, ratio<target).
+  expect(L2.get("li_conv_kite")!.performance).toBe("Low");
+  expect(L2.get("li_conv_kite")!.exposure.kind).toBe("budget_at_risk");
+
+  // 3 & 4. Website Visits / Brand Awareness Low → ACTUAL SPEND exposure, not fake loss.
+  for (const id of ["li_visits_content", "li_awareness_tl", "li_video_brand"]) {
+    const f = L2.get(id)!;
+    expect(f.performance).toBe("Low");
+    expect(f.exposure.kind).toBe("spend_exposure");
+    // Spend exposure is the real spend — never an invented revenue number.
+    expect(f.exposure.amount).toBeCloseTo(f.spend, 2);
+  }
+
+  // 5. High → excluded. 6. In Review → excluded. 7. Error → excluded (data issue, not risk).
+  expect(L2.get("li_conv_value")!.performance).toBe("High");
+  expect(L2.get("li_leads_learn")!.performance).toBe("In Review");
+  expect(L2.get("li_conv_track")!.performance).toBe("Error");
+  for (const id of ["li_conv_value", "li_leads_learn", "li_conv_track", "li_jobs_eng"]) {
+    expect(atRisk(linkedin.findings).some((f) => f.campaignId === id)).toBe(false);
+  }
+
+  // Budget at risk never exceeds actual spend (no invented money).
+  for (const f of atRisk(linkedin.findings)) {
+    expect(f.exposure.amount).toBeLessThanOrEqual(f.spend + 1e-6);
+  }
+});
+
+test("LinkedIn Budget at Risk agrees with the platform-tab 'need attention' count, per brand", () => {
+  for (const brand of ["northlane", "kite"] as const) {
+    const fs = analyzeCampaigns(getDemoCampaignsForBrand(brand, "linkedin")).findings;
+    const lowCount = fs.filter((f) => f.performance === "Low").length;
+    const risky = atRisk(fs);
+    const total = risky.reduce((s, f) => s + f.exposure.amount, 0);
+
+    // 9. Multiple Low campaigns → the card lists exactly the Low set with a summed amount.
+    expect(risky.length).toBe(lowCount);
+    expect(lowCount).toBeGreaterThan(0); // both brands have a meaningful example
+    expect(total).toBeGreaterThan(0);
+  }
 });
 
 /* -------- Cross-cutting guarantees -------- */
