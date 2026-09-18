@@ -39,16 +39,17 @@ function escapeHtml(t: string): string {
 }
 
 /**
- * "Sales (2) · Lead Generation (1)" — the objectives of the Low campaigns on a
- * platform, counted and ordered by frequency (then alphabetically).
+ * One bullet per affected objective on this platform's Low campaigns, counted
+ * and ordered by frequency (then alphabetically):
+ *   • Sales (2)
+ *   • Lead generation (1)
  */
-function objectivesLine(low: CampaignFinding[]): string {
+function objectiveBullets(low: CampaignFinding[]): string[] {
   const counts = new Map<string, number>();
   for (const f of low) counts.set(f.objectiveLabel, (counts.get(f.objectiveLabel) ?? 0) + 1);
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([label, n]) => `${escapeHtml(label)} (${n})`)
-    .join(" · ");
+    .map(([label, n]) => `• ${escapeHtml(label)} (${n})`);
 }
 
 export type BriefingOptions = { appUrl?: string };
@@ -82,7 +83,7 @@ export function buildBriefing(platforms: BriefingInput[], opts: BriefingOptions 
   for (const { platform, low } of attention) {
     lines.push("");
     lines.push(`<b>${escapeHtml(shortLabel(platform))}: ${low.length}</b>`);
-    lines.push(objectivesLine(low));
+    for (const bullet of objectiveBullets(low)) lines.push(bullet);
   }
 
   // Data issues (Error) and In Review — kept SEPARATE, never in the attention
