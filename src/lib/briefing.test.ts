@@ -1,7 +1,14 @@
 import { expect, test } from "bun:test";
 
 import { buildBriefing, briefingPlainText, type BriefingInput } from "./briefing";
-import { needsAttentionCount, isError, isInReview } from "./attention";
+import {
+  needsAttentionCount,
+  highPerformanceCount,
+  isError,
+  isInReview,
+  isNeedsAttention,
+  isHighPerformance,
+} from "./attention";
 import { analyzeCampaigns } from "./analysis/engine";
 import { getDemoCampaigns } from "./analysis/demo";
 
@@ -27,13 +34,63 @@ const lowByPlat = {
   "LinkedIn Ads": needsAttentionCount(linkedin.findings),
 } as const;
 const totalLow = Object.values(lowByPlat).reduce((s, n) => s + n, 0);
+
+const highByPlat = {
+  "Meta Ads": highPerformanceCount(meta.findings),
+  "TikTok Ads": highPerformanceCount(tiktok.findings),
+  "Google Search": highPerformanceCount(google.findings),
+  "LinkedIn Ads": highPerformanceCount(linkedin.findings),
+} as const;
+const totalHigh = Object.values(highByPlat).reduce((s, n) => s + n, 0);
 const totalErrors = all.filter(isError).length;
 const totalReview = all.filter(isInReview).length;
 
-test("header shows the total Needs Attention count (Low only)", () => {
+test("header shows both performance summary counts (Low + High), from the rating only", () => {
   expect(text.split("\n")[0]).toBe("AdMate Briefing");
-  const plural = totalLow === 1 ? "campaign needs" : "campaigns need";
-  expect(text).toContain(`🔴 ${totalLow} ${plural} attention`);
+  const lowPlural = totalLow === 1 ? "campaign needs" : "campaigns need";
+  expect(text).toContain(`🔴 ${totalLow} ${lowPlural} attention`);
+  const highPlural = totalHigh === 1 ? "campaign" : "campaigns";
+  expect(text).toContain(`🟢 ${totalHigh} ${highPlural} performing strongly`);
+});
+
+test("each platform WITH High is listed with its count + objectives; zero-High platforms are omitted", () => {
+  const perPlatform: [string, ReturnType<typeof analyzeCampaigns>][] = [
+    ["Meta Ads", meta],
+    ["TikTok Ads", tiktok],
+    ["Google Search", google],
+    ["LinkedIn Ads", linkedin],
+  ];
+  // The 🟢 section is everything from the 🟢 header onward (before the trailer).
+  const highSection = text.slice(text.indexOf("🟢"));
+  for (const [label, r] of perPlatform) {
+    const high = r.findings.filter(isHighPerformance);
+    if (high.length > 0) {
+      expect(highSection).toContain(`${label}: ${high.length}`);
+      const counts = new Map<string, number>();
+      for (const f of high) counts.set(f.objectiveLabel, (counts.get(f.objectiveLabel) ?? 0) + 1);
+      for (const [obj, n] of counts) expect(highSection).toContain(`${obj} (${n})`);
+    } else {
+      expect(highSection).not.toContain(`${label}: 0`);
+    }
+  }
+});
+
+test("platform counts add up to the section totals", () => {
+  expect(Object.values(lowByPlat).reduce((s, n) => s + n, 0)).toBe(
+    all.filter((f) => f.performance === "Low").length,
+  );
+  expect(Object.values(highByPlat).reduce((s, n) => s + n, 0)).toBe(
+    all.filter((f) => f.performance === "High").length,
+  );
+});
+
+test("Moderate (Good/Fair) is never alerted in either section", () => {
+  const moderates = all.filter((f) => f.performance === "Moderate");
+  expect(moderates.length).toBeGreaterThan(0);
+  for (const f of moderates) {
+    expect(isNeedsAttention(f)).toBe(false);
+    expect(isHighPerformance(f)).toBe(false);
+  }
 });
 
 test("each platform WITH Low is listed with its count + affected objectives; zero-Low platforms are omitted", () => {
@@ -57,16 +114,18 @@ test("each platform WITH Low is listed with its count + affected objectives; zer
   }
 });
 
-test("a platform with zero Low campaigns is not listed at all", () => {
-  // Google, but with every Low removed → its header line must not appear.
+test("a platform with zero Low campaigns is not listed in the 🔴 section", () => {
+  // Google, but with every Low removed → it must not appear in the 🔴 section
+  // (it may still appear under 🟢 if it has High campaigns).
   const noLowGoogle: BriefingInput = {
     ...google,
     platform: "google_search",
     findings: google.findings.filter((f) => f.performance !== "Low"),
   };
   const out = briefingPlainText([noLowGoogle]);
-  expect(out).not.toContain("Google Search:");
   expect(out).toContain("🔴 0 campaigns need attention");
+  const lowSection = out.slice(out.indexOf("🔴"), out.indexOf("🟢"));
+  expect(lowSection).not.toContain("Google Search:");
 });
 
 test("data issues and In Review are separate lines, never in the attention count", () => {

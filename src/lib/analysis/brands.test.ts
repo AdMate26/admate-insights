@@ -120,11 +120,13 @@ test("Northlane awareness/video adjustments derive Moderate and leave the Low ri
   }
 });
 
-test("Northlane briefing is a concise per-platform alert (8 Low), not per-campaign detail", () => {
+test("Northlane briefing is a concise Low + High alert (8 Low), not per-campaign detail", () => {
   const inputs = brandPlatforms("northlane").map((platform) => ({
     platform,
     ...analyzeCampaigns(getDemoCampaignsForBrand("northlane", platform)),
   }));
+  const all = inputs.flatMap((i) => i.findings);
+  const totalHigh = all.filter((f) => f.performance === "High").length;
   for (const message of [buildBriefing(inputs), briefingPlainText(inputs)]) {
     expect(message).toContain("8 campaigns need attention");
     // Per-platform counts (Meta 3 · TikTok 2 · Google 2 · LinkedIn 1) + objectives.
@@ -133,6 +135,8 @@ test("Northlane briefing is a concise per-platform alert (8 Low), not per-campai
     expect(message).toContain("Google Search: 2");
     expect(message).toContain("LinkedIn Ads: 1");
     expect(message).toContain("Sales (2)"); // Meta's Low objectives, counted
+    // 🟢 High summary count matches the engine's highest-state count.
+    expect(message).toContain(`${totalHigh} campaigns performing strongly`);
     expect(message).toContain("View details in AdMate");
     // Concise: no per-campaign detail blocks or campaign names.
     expect(message).not.toContain("WHAT'S GOING WRONG");

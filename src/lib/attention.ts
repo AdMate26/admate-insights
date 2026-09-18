@@ -10,6 +10,13 @@ import type { CampaignFinding } from "./analysis/engine";
  */
 export const isNeedsAttention = (f: CampaignFinding): boolean => f.performance === "Low";
 
+/**
+ * The single HIGHEST performance state ("High" — surfaced as "Very Good"): a
+ * campaign performing exceptionally against its objective KPI. This reads the
+ * verdict the engine already assigned; "Moderate" (Good/Fair) never counts here.
+ */
+export const isHighPerformance = (f: CampaignFinding): boolean => f.performance === "High";
+
 /** Data/tracking problems that block analysis — surfaced separately, never counted. */
 export const isError = (f: CampaignFinding): boolean => f.performance === "Error";
 
@@ -18,3 +25,6 @@ export const isInReview = (f: CampaignFinding): boolean => f.performance === "In
 
 export const needsAttentionCount = (findings: CampaignFinding[]): number =>
   findings.filter(isNeedsAttention).length;
+
+export const highPerformanceCount = (findings: CampaignFinding[]): number =>
+  findings.filter(isHighPerformance).length;
