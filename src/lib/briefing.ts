@@ -6,15 +6,20 @@ import { platformMeta, type Platform } from "./platforms";
  * Pure Telegram briefing builder (no runtime imports) so it is unit testable.
  * Delivery lives in admate.functions and is unchanged — this only builds text.
  *
- * The briefing is CROSS-PLATFORM and powered by the SAME engine result as the
- * dashboard: it counts only Performance = "Low" as "needs attention", expands
- * full details for those, lists Error/tracking problems separately, shows an
- * In-Review count, and omits High/Moderate. No new facts are invented.
+ * The briefing is a CONCISE cross-platform ALERT: a per-platform count of
+ * campaigns that need attention (Performance = "Low") with the affected
+ * objectives, then a separate one-line count of data issues (Error) and
+ * In-Review campaigns, and a link back to AdMate for the detail. It deliberately
+ * omits per-campaign evidence, explanations, recommendations and confidence —
+ * those live in the app. No new facts are invented.
  */
 export type BriefingInput = Pick<
   AnalysisResult,
   "currentWindow" | "previousWindow" | "totalSpend" | "findings"
 > & { platform: Platform };
+
+/** Where "View details in AdMate" points. Override per-call via opts.appUrl. */
+const DEFAULT_APP_URL = "https://admate-insights.vercel.app";
 
 const SHORT_LABEL: Partial<Record<Platform, string>> = {
   tiktok: "TikTok Ads",
@@ -33,59 +38,39 @@ function escapeHtml(t: string): string {
   return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Up to 3 plain-English evidence lines: the primary KPI, then supporting moves. */
-function keyEvidence(f: CampaignFinding): string[] {
-  const lines: string[] = [];
-  const cmp = f.targetOrBaseline ?? f.comparisonLabel;
-  lines.push(`${f.primaryMetric} ${f.primaryMetricValue}${cmp ? ` vs ${cmp}` : ""}`);
-  const supporting = f.evidence
-    .filter((e) => e.label !== "Spend" && e.meaning && e.changePct !== null && Math.abs(e.changePct) >= 1)
-    .sort((a, b) => Math.abs(b.changePct!) - Math.abs(a.changePct!))
-    .slice(0, 2);
-  for (const e of supporting) {
-    const up = e.changePct! > 0;
-    lines.push(`${e.label} ${up ? "↑" : "↓"}${Math.round(Math.abs(e.changePct!))}% — ${e.meaning}`);
-  }
-  return lines;
+/**
+ * "Sales (2) · Lead Generation (1)" — the objectives of the Low campaigns on a
+ * platform, counted and ordered by frequency (then alphabetically).
+ */
+function objectivesLine(low: CampaignFinding[]): string {
+  const counts = new Map<string, number>();
+  for (const f of low) counts.set(f.objectiveLabel, (counts.get(f.objectiveLabel) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label, n]) => `${escapeHtml(label)} (${n})`)
+    .join(" · ");
 }
 
-function detailBlock(platform: Platform, f: CampaignFinding): string[] {
-  const action = f.aiRecommendedAction ?? f.action;
-  return [
-    "",
-    "──────────",
-    `🔴 <b>${escapeHtml(shortLabel(platform))} — ${escapeHtml(f.campaignName)}</b>`,
-    `${f.performance} · ${escapeHtml(f.objectiveLabel)}`,
-    "",
-    "<b>WHAT'S GOING WRONG</b>",
-    escapeHtml(f.signal),
-    "",
-    "<b>KEY EVIDENCE</b>",
-    ...keyEvidence(f).map(escapeHtml),
-    "",
-    "<b>WHAT TO DO NOW</b>",
-    escapeHtml(action),
-    "",
-    `Confidence: ${f.diagnosticConfidence}`,
-  ];
-}
+export type BriefingOptions = { appUrl?: string };
 
-export function buildBriefing(platforms: BriefingInput[]): string {
+export function buildBriefing(platforms: BriefingInput[], opts: BriefingOptions = {}): string {
+  const appUrl = opts.appUrl ?? DEFAULT_APP_URL;
   const ordered = [...platforms].sort(
     (a, b) => PLATFORM_ORDER.indexOf(a.platform) - PLATFORM_ORDER.indexOf(b.platform),
   );
 
-  const lowByPlatform = new Map<Platform, CampaignFinding[]>();
-  const errors: { platform: Platform; f: CampaignFinding }[] = [];
   let totalLow = 0;
+  let dataIssues = 0;
   let inReview = 0;
+  const attention: { platform: Platform; low: CampaignFinding[] }[] = [];
 
   for (const p of ordered) {
     const low = p.findings.filter(isNeedsAttention);
-    lowByPlatform.set(p.platform, low);
     totalLow += low.length;
+    dataIssues += p.findings.filter(isError).length;
     inReview += p.findings.filter(isInReview).length;
-    for (const f of p.findings.filter(isError)) errors.push({ platform: p.platform, f });
+    // Only platforms with at least one Needs Attention campaign are listed.
+    if (low.length > 0) attention.push({ platform: p.platform, low });
   }
 
   const lines: string[] = [
@@ -93,37 +78,32 @@ export function buildBriefing(platforms: BriefingInput[]): string {
     "",
     `🔴 <b>${totalLow} ${totalLow === 1 ? "campaign needs" : "campaigns need"} attention</b>`,
   ];
-  for (const p of ordered) {
-    lines.push(`${shortLabel(p.platform)}: ${lowByPlatform.get(p.platform)!.length}`);
+
+  for (const { platform, low } of attention) {
+    lines.push("");
+    lines.push(`<b>${escapeHtml(shortLabel(platform))}: ${low.length}</b>`);
+    lines.push(objectivesLine(low));
   }
 
-  // Full details for Low campaigns only (most urgent first, already priority-sorted).
-  for (const p of ordered) {
-    for (const f of lowByPlatform.get(p.platform)!) lines.push(...detailBlock(p.platform, f));
+  // Data issues (Error) and In Review — kept SEPARATE, never in the attention
+  // count. Surfaced only when present, to keep the alert scannable.
+  if (dataIssues > 0 || inReview > 0) {
+    lines.push("");
+    if (dataIssues > 0)
+      lines.push(`🛑 ${dataIssues} data issue${dataIssues === 1 ? "" : "s"} detected`);
+    if (inReview > 0)
+      lines.push(`⏳ ${inReview} campaign${inReview === 1 ? "" : "s"} in review`);
   }
 
-  // Errors / tracking problems — surfaced separately, never counted as attention.
-  if (errors.length > 0) {
-    lines.push("", "──────────", "🛑 <b>Data / tracking to fix</b>");
-    for (const { platform, f } of errors) {
-      lines.push(`${escapeHtml(shortLabel(platform))} — ${escapeHtml(f.campaignName)}: ${escapeHtml(f.signal)}`);
-    }
-  }
-
-  // In Review — compact count only.
-  if (inReview > 0) {
-    lines.push("", `⏳ ${inReview} campaign${inReview === 1 ? "" : "s"} in review (too early or unstable to judge).`);
-  }
-
-  if (totalLow === 0 && errors.length === 0) {
-    lines.push("", "✅ Nothing needs attention this week — all judged campaigns are on track.");
-  }
+  lines.push("");
+  lines.push(`👉 <a href="${appUrl}">View details in AdMate</a>`);
 
   return lines.join("\n");
 }
 
-export function briefingPlainText(platforms: BriefingInput[]): string {
-  return buildBriefing(platforms)
+export function briefingPlainText(platforms: BriefingInput[], opts: BriefingOptions = {}): string {
+  return buildBriefing(platforms, opts)
+    .replace(/<a href="([^"]*)">([^<]*)<\/a>/g, "$2: $1")
     .replace(/<\/?(b|i)>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
