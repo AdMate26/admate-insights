@@ -120,14 +120,23 @@ test("Northlane awareness/video adjustments derive Moderate and leave the Low ri
   }
 });
 
-test("Northlane preview and Telegram naturally include only eight Low campaign details", () => {
+test("Northlane briefing is a concise per-platform alert (8 Low), not per-campaign detail", () => {
   const inputs = brandPlatforms("northlane").map((platform) => ({
     platform,
     ...analyzeCampaigns(getDemoCampaignsForBrand("northlane", platform)),
   }));
   for (const message of [buildBriefing(inputs), briefingPlainText(inputs)]) {
     expect(message).toContain("8 campaigns need attention");
-    expect(message.match(/WHAT'S GOING WRONG/g)).toHaveLength(8);
+    // Per-platform counts (Meta 3 · TikTok 2 · Google 2 · LinkedIn 1) + objectives.
+    expect(message).toContain("Meta Ads: 3");
+    expect(message).toContain("TikTok Ads: 2");
+    expect(message).toContain("Google Search: 2");
+    expect(message).toContain("LinkedIn Ads: 1");
+    expect(message).toContain("Sales (2)"); // Meta's Low objectives, counted
+    expect(message).toContain("View details in AdMate");
+    // Concise: no per-campaign detail blocks or campaign names.
+    expect(message).not.toContain("WHAT'S GOING WRONG");
+    expect(message).not.toContain("Confidence:");
     for (const name of [
       "Reach | Spring launch",
       "Brand Awareness | Thought leadership",

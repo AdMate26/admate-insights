@@ -1,99 +1,129 @@
 import { expect, test } from "bun:test";
 
 import { buildBriefing, briefingPlainText, type BriefingInput } from "./briefing";
-import { needsAttentionCount, isError } from "./attention";
+import { needsAttentionCount, isError, isInReview } from "./attention";
 import { analyzeCampaigns } from "./analysis/engine";
 import { getDemoCampaigns } from "./analysis/demo";
 
 const meta = analyzeCampaigns(getDemoCampaigns("meta"));
 const tiktok = analyzeCampaigns(getDemoCampaigns("tiktok"));
 const google = analyzeCampaigns(getDemoCampaigns("google_search"));
-
-// Simulate the approved AI recommendation the AI layer adds at runtime.
-for (const r of [meta, tiktok, google]) {
-  for (const f of r.findings) if (!f.aiRecommendedAction) f.aiRecommendedAction = f.action;
-}
+const linkedin = analyzeCampaigns(getDemoCampaigns("linkedin"));
 
 const inputs: BriefingInput[] = [
   { ...meta, platform: "meta" },
   { ...tiktok, platform: "tiktok" },
   { ...google, platform: "google_search" },
+  { ...linkedin, platform: "linkedin" },
 ];
+const all = [...meta.findings, ...tiktok.findings, ...google.findings, ...linkedin.findings];
+const html = buildBriefing(inputs);
 const text = briefingPlainText(inputs);
 
-const lowMeta = needsAttentionCount(meta.findings);
-const lowTikTok = needsAttentionCount(tiktok.findings);
-const lowGoogle = needsAttentionCount(google.findings);
-const totalLow = lowMeta + lowTikTok + lowGoogle;
+const lowByPlat = {
+  "Meta Ads": needsAttentionCount(meta.findings),
+  "TikTok Ads": needsAttentionCount(tiktok.findings),
+  "Google Search": needsAttentionCount(google.findings),
+  "LinkedIn Ads": needsAttentionCount(linkedin.findings),
+} as const;
+const totalLow = Object.values(lowByPlat).reduce((s, n) => s + n, 0);
+const totalErrors = all.filter(isError).length;
+const totalReview = all.filter(isInReview).length;
 
-test("summary counts only Performance = Low, per platform, matching the dashboard", () => {
+test("header shows the total Needs Attention count (Low only)", () => {
   expect(text.split("\n")[0]).toBe("AdMate Briefing");
-  expect(text).toContain(`🔴 ${totalLow} campaigns need attention`);
-  expect(text).toContain(`Meta Ads: ${lowMeta}`);
-  expect(text).toContain(`TikTok Ads: ${lowTikTok}`);
-  expect(text).toContain(`Google Search: ${lowGoogle}`);
+  const plural = totalLow === 1 ? "campaign needs" : "campaigns need";
+  expect(text).toContain(`🔴 ${totalLow} ${plural} attention`);
 });
 
-test("full details appear only for Low campaigns", () => {
-  const lowNames = [...meta.findings, ...tiktok.findings, ...google.findings]
-    .filter((f) => f.performance === "Low")
-    .map((f) => f.campaignName);
-  for (const name of lowNames) expect(text).toContain(name);
-
-  // High / Moderate campaigns are omitted from the briefing entirely.
-  const omit = [...meta.findings, ...tiktok.findings, ...google.findings].filter(
-    (f) => f.performance === "High" || f.performance === "Moderate",
-  );
-  for (const f of omit) expect(text).not.toContain(f.campaignName);
-});
-
-test("Error/tracking campaigns are listed separately, never counted as attention", () => {
-  const errors = [...meta.findings, ...tiktok.findings, ...google.findings].filter(isError);
-  expect(errors.length).toBeGreaterThan(0);
-  expect(text).toContain("Data / tracking to fix");
-  for (const f of errors) {
-    expect(text).toContain(f.campaignName);
-    expect(f.performance).not.toBe("Low"); // not double-counted
+test("each platform WITH Low is listed with its count + affected objectives; zero-Low platforms are omitted", () => {
+  const perPlatform: [string, ReturnType<typeof analyzeCampaigns>][] = [
+    ["Meta Ads", meta],
+    ["TikTok Ads", tiktok],
+    ["Google Search", google],
+    ["LinkedIn Ads", linkedin],
+  ];
+  for (const [label, r] of perPlatform) {
+    const low = r.findings.filter((f) => f.performance === "Low");
+    if (low.length > 0) {
+      expect(text).toContain(`${label}: ${low.length}`);
+      // Objectives of the Low campaigns, counted: "Sales (2)" etc.
+      const counts = new Map<string, number>();
+      for (const f of low) counts.set(f.objectiveLabel, (counts.get(f.objectiveLabel) ?? 0) + 1);
+      for (const [obj, n] of counts) expect(text).toContain(`${obj} (${n})`);
+    } else {
+      expect(text).not.toContain(`${label}: 0`);
+    }
   }
 });
 
-test("In Review is shown as a compact count, not full details", () => {
-  const reviewing = [...meta.findings, ...tiktok.findings, ...google.findings].filter(
-    (f) => f.performance === "In Review",
-  );
-  expect(reviewing.length).toBeGreaterThan(0);
-  expect(text).toMatch(/⏳ \d+ campaigns? in review/);
+test("a platform with zero Low campaigns is not listed at all", () => {
+  // Google, but with every Low removed → its header line must not appear.
+  const noLowGoogle: BriefingInput = {
+    ...google,
+    platform: "google_search",
+    findings: google.findings.filter((f) => f.performance !== "Low"),
+  };
+  const out = briefingPlainText([noLowGoogle]);
+  expect(out).not.toContain("Google Search:");
+  expect(out).toContain("🔴 0 campaigns need attention");
 });
 
-test("each Low detail block has the four sections and confidence", () => {
-  const blocks = text.split("──────────").slice(1).map((b) => b.trim());
-  const detailBlocks = blocks.filter((b) => b.includes("WHAT'S GOING WRONG"));
-  expect(detailBlocks.length).toBe(totalLow);
-  for (const b of detailBlocks) {
-    expect(b).toContain("WHAT'S GOING WRONG");
-    expect(b).toContain("KEY EVIDENCE");
-    expect(b).toContain("WHAT TO DO NOW");
-    expect(b).toMatch(/Confidence: (High|Medium|Low)/);
+test("data issues and In Review are separate lines, never in the attention count", () => {
+  if (totalErrors > 0) {
+    expect(text).toContain(`🛑 ${totalErrors} data issue${totalErrors === 1 ? "" : "s"} detected`);
+  }
+  if (totalReview > 0) {
+    expect(text).toContain(`⏳ ${totalReview} campaign${totalReview === 1 ? "" : "s"} in review`);
+  }
+  // Attention count is Low-only: Error/In Review campaigns are never Low.
+  for (const f of all.filter((x) => isError(x) || isInReview(x))) {
+    expect(f.performance).not.toBe("Low");
+  }
+  expect(totalLow).toBe(all.filter((f) => f.performance === "Low").length);
+});
+
+test("no full detail leaks into the concise alert", () => {
+  for (const banned of [
+    "WHAT'S GOING WRONG",
+    "KEY EVIDENCE",
+    "WHAT TO DO NOW",
+    "Confidence:",
+    "──────────",
+    "vs Target",
+    "Baseline",
+  ]) {
+    expect(text).not.toContain(banned);
+  }
+  // Campaign names are not included any more (objectives only).
+  for (const name of all.map((f) => f.campaignName)) {
+    expect(text).not.toContain(name);
+  }
+});
+
+test("includes a clickable 'View details in AdMate' link to the app", () => {
+  expect(html).toContain(
+    '👉 <a href="https://admate-insights.vercel.app">View details in AdMate</a>',
+  );
+  expect(text).toContain("View details in AdMate: https://admate-insights.vercel.app");
+  // The link target is overridable.
+  expect(buildBriefing(inputs, { appUrl: "https://example.test" })).toContain(
+    'href="https://example.test"',
+  );
+});
+
+test("a briefing that includes LinkedIn builds without crashing and labels it", () => {
+  // Regression: LinkedIn must have a SHORT_LABEL entry.
+  expect(() => buildBriefing(inputs)).not.toThrow();
+  if (lowByPlat["LinkedIn Ads"] > 0) {
+    expect(html).toContain(`LinkedIn Ads: ${lowByPlat["LinkedIn Ads"]}`);
   }
 });
 
 test("no internal jargon leaks into the message", () => {
-  const lower = briefingPlainText(inputs).toLowerCase();
+  const lower = text.toLowerCase();
   for (const banned of ["deterministic", "priority score", "severity", "objectivefamily", "cmp:"]) {
     expect(lower).not.toContain(banned);
   }
-  expect(buildBriefing(inputs)).toContain("<b>AdMate Briefing</b>");
-});
-
-test("a briefing that includes LinkedIn builds without crashing and labels it", () => {
-  // Regression: LinkedIn was in PLATFORM_ORDER but missing from SHORT_LABEL, so
-  // any brand connecting LinkedIn crashed the briefing with
-  // "Cannot read properties of undefined (reading 'replace')".
-  const linkedin = analyzeCampaigns(getDemoCampaigns("linkedin"));
-  const withLi: BriefingInput[] = [...inputs, { ...linkedin, platform: "linkedin" }];
-  expect(() => buildBriefing(withLi)).not.toThrow();
-  const html = buildBriefing(withLi);
-  const lowLinkedIn = needsAttentionCount(linkedin.findings);
-  expect(html).toContain(`LinkedIn Ads: ${lowLinkedIn}`);
-  expect(briefingPlainText(withLi)).toContain("LinkedIn Ads");
+  expect(html).toContain("<b>AdMate Briefing</b>");
 });
