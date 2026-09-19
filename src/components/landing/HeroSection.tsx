@@ -35,7 +35,7 @@ function BriefingPreview() {
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-semibold text-foreground">Northlane</p>
+          <p className="text-sm font-semibold text-foreground">Brand Name</p>
           <p className="text-xs text-muted-foreground">Today's briefing</p>
         </div>
         <span className="rounded-full border border-border bg-secondary px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
@@ -123,6 +123,13 @@ export function HeroSection() {
               <Link to="/demo">View Demo</Link>
             </Button>
           </div>
+
+          <p className="mt-4 text-sm text-muted-foreground">
+            Already have an AdMate account?{" "}
+            <Link to="/login" className="font-medium text-primary hover:underline">
+              Log in
+            </Link>
+          </p>
 
           <div className="mt-10">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
