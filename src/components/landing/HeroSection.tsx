@@ -124,12 +124,20 @@ export function HeroSection() {
             </Button>
           </div>
 
-          <p className="mt-4 text-sm text-muted-foreground">
-            Already have an AdMate account?{" "}
-            <Link to="/login" className="font-medium text-primary hover:underline">
-              Log in
-            </Link>
-          </p>
+          <div className="mt-4 space-y-1 text-sm text-muted-foreground">
+            <p>
+              Already have an account?{" "}
+              <Link to="/login" className="font-medium text-primary hover:underline">
+                Log in
+              </Link>
+            </p>
+            <p>
+              New to AdMate?{" "}
+              <Link to="/signup" className="font-medium text-primary hover:underline">
+                Start Early Access
+              </Link>
+            </p>
+          </div>
 
           <div className="mt-10">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
