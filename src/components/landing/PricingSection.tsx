@@ -35,7 +35,7 @@ export function PricingSection() {
                 "Meta / TikTok / Google",
                 "AI campaign recommendations",
                 "High & low performance alerts",
-                "Telegram briefing",
+                "Telegram briefings",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-2">
                   <Check size={16} className="mt-0.5 shrink-0 text-positive" />
@@ -45,7 +45,7 @@ export function PricingSection() {
             </ul>
 
             <Button asChild className="mt-6 w-full">
-              <Link to="/signup">Join Early Access — $5</Link>
+              <Link to="/login">Create account</Link>
             </Button>
           </div>
 

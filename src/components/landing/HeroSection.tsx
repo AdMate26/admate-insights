@@ -114,30 +114,17 @@ export function HeroSection() {
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg">
-              <Link to="/signup">
-                Start Early Access
+              <Link to="/login">
+                Login / Sign up
                 <ArrowRight size={16} />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link to="/demo">View Demo</Link>
+              <Link to="/demo">Try AdMate</Link>
             </Button>
           </div>
 
-          <div className="mt-4 space-y-1 text-sm text-muted-foreground">
-            <p>
-              Already have an account?{" "}
-              <Link to="/login" className="font-medium text-primary hover:underline">
-                Log in
-              </Link>
-            </p>
-            <p>
-              New to AdMate?{" "}
-              <Link to="/signup" className="font-medium text-primary hover:underline">
-                Start Early Access
-              </Link>
-            </p>
-          </div>
+          <p className="mt-3 text-xs text-muted-foreground">No login required · Demo data</p>
 
           <div className="mt-10">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">

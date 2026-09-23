@@ -32,8 +32,8 @@ function Wordmark() {
 
 /**
  * Public marketing header. "How it works" and "Pricing" smooth-scroll to their
- * sections; "Login" and "Start Early Access" route to the auth placeholders.
- * Collapses to a toggle menu on mobile.
+ * sections; one primary "Login / Sign up" button routes to the combined
+ * login/signup placeholder. Collapses to a toggle menu on mobile.
  */
 export function LandingHeader() {
   const [open, setOpen] = useState(false);
@@ -59,15 +59,9 @@ export function LandingHeader() {
               {l.label}
             </a>
           ))}
-          <Link
-            to="/login"
-            className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Login
-          </Link>
           <ThemeToggle />
           <Button asChild size="sm" className="ml-1">
-            <Link to="/signup">Start Early Access</Link>
+            <Link to="/login">Login / Sign up</Link>
           </Button>
         </nav>
 
@@ -103,16 +97,9 @@ export function LandingHeader() {
                 {l.label}
               </a>
             ))}
-            <Link
-              to="/login"
-              onClick={() => setOpen(false)}
-              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              Login
-            </Link>
             <Button asChild className="mt-2 w-full">
-              <Link to="/signup" onClick={() => setOpen(false)}>
-                Start Early Access
+              <Link to="/login" onClick={() => setOpen(false)}>
+                Login / Sign up
               </Link>
             </Button>
           </div>
