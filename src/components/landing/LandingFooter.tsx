@@ -37,13 +37,10 @@ export function LandingFooter() {
             Pricing
           </a>
           <Link to="/demo" className="text-muted-foreground hover:text-foreground">
-            Demo
+            Try AdMate
           </Link>
           <Link to="/login" className="text-muted-foreground hover:text-foreground">
-            Login
-          </Link>
-          <Link to="/signup" className="text-muted-foreground hover:text-foreground">
-            Start Early Access
+            Login / Sign up
           </Link>
         </nav>
       </div>

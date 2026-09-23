@@ -9,12 +9,12 @@ const STEPS = [
   {
     icon: LineChart,
     title: "Analyze",
-    body: "AdMate evaluates campaigns using metrics appropriate to their objectives.",
+    body: "AdMate evaluates each campaign based on the metrics relevant to its objective.",
   },
   {
     icon: Rocket,
     title: "Act",
-    body: "See what is performing strongly, what needs attention, and the recommended next action.",
+    body: "See what is performing strongly, what needs attention, and what action to take next.",
   },
 ];
 
