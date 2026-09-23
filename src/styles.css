@@ -321,6 +321,7 @@
   color: var(--muted-foreground);
   font-size: 12px;
   padding: 10px;
+  white-space: nowrap;
 }
 .header-context {
   display: flex;
@@ -1419,6 +1420,20 @@
 .live-dot {
   color: var(--ad-good);
   fill: var(--ad-good);
+}
+.demo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .shell-main {

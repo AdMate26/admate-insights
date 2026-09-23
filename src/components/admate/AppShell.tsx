@@ -78,8 +78,20 @@ export function AppShell({
           className="rail-brand"
           aria-label="AdMate"
         >
-          <img src="/brand/mark-light-bg.svg" alt="" className="brand-mark brand-mark-light" width="30" height="30" />
-          <img src="/brand/mark-violet.svg" alt="" className="brand-mark brand-mark-dark" width="30" height="30" />
+          <img
+            src="/brand/mark-light-bg.svg"
+            alt=""
+            className="brand-mark brand-mark-light"
+            width="30"
+            height="30"
+          />
+          <img
+            src="/brand/mark-violet.svg"
+            alt=""
+            className="brand-mark brand-mark-dark"
+            width="30"
+            height="30"
+          />
           <span className="brand-wordmark">
             Ad<strong>Mate</strong>
           </span>
@@ -126,6 +138,9 @@ export function AppShell({
 
       <div className="shell-main">
         <div className="topbar">
+          <span className="demo-badge" title="You are exploring AdMate with synthetic demo data">
+            <Circle size={7} className="live-dot" aria-hidden="true" /> Demo Mode
+          </span>
           <div className="scope">
             <span className="scope-label">Brand</span>
             <span className="scope-value">{activeBrand.label}</span>
@@ -150,7 +165,11 @@ export function AppShell({
             <button type="button" onClick={handleSignOut} className="button-quiet">
               Sign out
             </button>
-          ) : null}
+          ) : (
+            <Link to="/login" className="button-quiet">
+              Login / Sign up
+            </Link>
+          )}
         </div>
 
         <main className="shell-content">{children}</main>

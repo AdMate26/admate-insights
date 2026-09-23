@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +62,20 @@ function GoogleMark() {
 
 function LoginPage() {
   // Phase 1 placeholder: combined log in / sign up entry. UI only — no real
-  // authentication, Google OAuth, or account creation is wired up yet.
+  // authentication, Google OAuth, or account creation is wired up yet. The two
+  // handlers below acknowledge the click without pretending auth succeeded; when
+  // Supabase is added, replace their bodies (e.g. supabase.auth.signInWithOAuth
+  // for Google) without changing the page layout.
+  function handleEmailContinue(e: React.FormEvent) {
+    e.preventDefault();
+    toast("Authentication will be connected in the next setup step.");
+  }
+
+  function handleGoogle() {
+    // Future: supabase.auth.signInWithOAuth({ provider: "google" }) → callback.
+    toast("Google sign-in will be available once authentication is connected.");
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-surface-subtle">
       <div className="mx-auto flex w-full max-w-6xl items-center px-5 py-5">
@@ -77,7 +91,7 @@ function LoginPage() {
             Continue with your email to access AdMate.
           </p>
 
-          <form className="mt-6 space-y-4" onSubmit={(e) => e.preventDefault()}>
+          <form className="mt-6 space-y-4" onSubmit={handleEmailContinue}>
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" autoComplete="email" placeholder="you@company.com" />
@@ -93,10 +107,16 @@ function LoginPage() {
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <Button type="button" variant="outline" className="w-full">
+          <Button type="button" variant="outline" className="w-full" onClick={handleGoogle}>
             <GoogleMark />
             Continue with Google
           </Button>
+
+          <p className="mt-6 text-center text-sm">
+            <Link to="/" className="text-muted-foreground hover:text-foreground">
+              ← Back to AdMate
+            </Link>
+          </p>
         </div>
       </div>
     </div>
