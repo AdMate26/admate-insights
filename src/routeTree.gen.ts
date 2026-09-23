@@ -12,8 +12,11 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ConnectRouteImport } from './routes/connect'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as HomeRouteImport } from './routes/home'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StartRouteImport } from './routes/start'
 import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$campaignId'
 
@@ -32,14 +35,29 @@ const ConnectRoute = ConnectRouteImport.update({
   path: '/connect',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HomeRoute = HomeRouteImport.update({
   id: '/home',
   path: '/home',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StartRoute = StartRouteImport.update({
@@ -57,8 +75,11 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
+  '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
+  '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/signup': typeof SignupRoute
   '/start': typeof StartRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
@@ -66,8 +87,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
+  '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
+  '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/signup': typeof SignupRoute
   '/start': typeof StartRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
@@ -76,8 +100,11 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/connect': typeof ConnectRoute
+  '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
+  '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/signup': typeof SignupRoute
   '/start': typeof StartRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
@@ -87,8 +114,11 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/connect'
+    | '/demo'
     | '/home'
+    | '/login'
     | '/reset-password'
+    | '/signup'
     | '/start'
     | '/campaigns/$campaignId'
   fileRoutesByTo: FileRoutesByTo
@@ -96,8 +126,11 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/connect'
+    | '/demo'
     | '/home'
+    | '/login'
     | '/reset-password'
+    | '/signup'
     | '/start'
     | '/campaigns/$campaignId'
   id:
@@ -105,8 +138,11 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/connect'
+    | '/demo'
     | '/home'
+    | '/login'
     | '/reset-password'
+    | '/signup'
     | '/start'
     | '/campaigns/$campaignId'
   fileRoutesById: FileRoutesById
@@ -115,8 +151,11 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   ConnectRoute: typeof ConnectRoute
+  DemoRoute: typeof DemoRoute
   HomeRoute: typeof HomeRoute
+  LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SignupRoute: typeof SignupRoute
   StartRoute: typeof StartRoute
   CampaignsCampaignIdRoute: typeof CampaignsCampaignIdRoute
 }
@@ -144,6 +183,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/home': {
       id: '/home'
       path: '/home'
@@ -151,11 +197,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HomeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/start': {
@@ -179,8 +239,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   ConnectRoute: ConnectRoute,
+  DemoRoute: DemoRoute,
   HomeRoute: HomeRoute,
+  LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SignupRoute: SignupRoute,
   StartRoute: StartRoute,
   CampaignsCampaignIdRoute: CampaignsCampaignIdRoute,
 }
