@@ -15,9 +15,11 @@ import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StartRouteImport } from './routes/start'
+import { Route as AuthCallbackRouteImport } from './routes/auth_.callback'
 import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$campaignId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -50,6 +52,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -65,6 +72,11 @@ const StartRoute = StartRouteImport.update({
   path: '/start',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth_/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CampaignsCampaignIdRoute = CampaignsCampaignIdRouteImport.update({
   id: '/campaigns/$campaignId',
   path: '/campaigns/$campaignId',
@@ -78,9 +90,11 @@ export interface FileRoutesByFullPath {
   '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
+  '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/start': typeof StartRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
 export interface FileRoutesByTo {
@@ -90,9 +104,11 @@ export interface FileRoutesByTo {
   '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
+  '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/start': typeof StartRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
 export interface FileRoutesById {
@@ -103,9 +119,11 @@ export interface FileRoutesById {
   '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
+  '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/start': typeof StartRoute
+  '/auth_/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
 export interface FileRouteTypes {
@@ -117,9 +135,11 @@ export interface FileRouteTypes {
     | '/demo'
     | '/home'
     | '/login'
+    | '/onboarding'
     | '/reset-password'
     | '/signup'
     | '/start'
+    | '/auth/callback'
     | '/campaigns/$campaignId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -129,9 +149,11 @@ export interface FileRouteTypes {
     | '/demo'
     | '/home'
     | '/login'
+    | '/onboarding'
     | '/reset-password'
     | '/signup'
     | '/start'
+    | '/auth/callback'
     | '/campaigns/$campaignId'
   id:
     | '__root__'
@@ -141,9 +163,11 @@ export interface FileRouteTypes {
     | '/demo'
     | '/home'
     | '/login'
+    | '/onboarding'
     | '/reset-password'
     | '/signup'
     | '/start'
+    | '/auth_/callback'
     | '/campaigns/$campaignId'
   fileRoutesById: FileRoutesById
 }
@@ -154,9 +178,11 @@ export interface RootRouteChildren {
   DemoRoute: typeof DemoRoute
   HomeRoute: typeof HomeRoute
   LoginRoute: typeof LoginRoute
+  OnboardingRoute: typeof OnboardingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   StartRoute: typeof StartRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsCampaignIdRoute: typeof CampaignsCampaignIdRoute
 }
 
@@ -204,6 +230,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
@@ -225,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StartRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth_/callback': {
+      id: '/auth_/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/campaigns/$campaignId': {
       id: '/campaigns/$campaignId'
       path: '/campaigns/$campaignId'
@@ -242,9 +282,11 @@ const rootRouteChildren: RootRouteChildren = {
   DemoRoute: DemoRoute,
   HomeRoute: HomeRoute,
   LoginRoute: LoginRoute,
+  OnboardingRoute: OnboardingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   StartRoute: StartRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   CampaignsCampaignIdRoute: CampaignsCampaignIdRoute,
 }
 export const routeTree = rootRouteImport

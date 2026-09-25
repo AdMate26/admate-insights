@@ -49,7 +49,7 @@ function ConnectPage() {
             synthetic dataset.
           </p>
           <Link
-            to="/home"
+            to="/demo"
             className="mt-5 inline-flex rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
           >
             Explore demo instead

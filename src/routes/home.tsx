@@ -1,49 +1,35 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 
-import { AppShell, type ViewKey } from "@/components/admate/AppShell";
-import { OverviewView } from "@/components/admate/views/OverviewView";
-import { CampaignsView } from "@/components/admate/views/CampaignsView";
-import { AlertsView } from "@/components/admate/views/AlertsView";
-import { BriefingsView } from "@/components/admate/views/BriefingsView";
-import { ReportsView } from "@/components/admate/views/ReportsView";
+import { DashboardScreen } from "@/components/admate/DashboardScreen";
+import { AccountErrorState } from "@/components/auth/AccountErrorState";
+import { AuthPending } from "@/components/auth/AuthLayout";
 import { allAnalysisQueryOptions } from "@/lib/analysis-query";
-import {
-  DEFAULT_BRAND,
-  isBrand,
-  resolveBrandPlatform,
-  brandPlatforms,
-  type Brand,
-} from "@/lib/brands";
-import { type Platform } from "@/lib/platforms";
+import { isOnboardingComplete, profileQueryOptions } from "@/lib/auth/profile";
+import { requireSession } from "@/lib/auth/session";
+import { validateDashboardSearch } from "@/lib/dashboard-search";
 
-const VIEWS: ViewKey[] = ["overview", "campaigns", "alerts", "briefings", "reports"];
-function isView(v: unknown): v is ViewKey {
-  return typeof v === "string" && (VIEWS as string[]).includes(v);
-}
-
-type HomeSearch = { view: ViewKey; brand: Brand; platform: Platform; objective?: string };
-
+/**
+ * /home — the signed-in AdMate workspace. Logged-out visitors go to /login;
+ * signed-in users who haven't finished onboarding go to /onboarding. Resolved
+ * on the client so nothing private renders before the session is checked.
+ * Until ad accounts can be connected, it shows clearly labelled sample data.
+ */
 export const Route = createFileRoute("/home")({
-  validateSearch: (search: Record<string, unknown>): HomeSearch => {
-    const brand = isBrand(search.brand) ? search.brand : DEFAULT_BRAND;
-    return {
-      // Default landing view is Campaigns for the default/first brand; an
-      // explicit ?view=overview (e.g. the "All accounts" nav) still resolves
-      // through here, so refresh and direct URLs keep whatever view is set.
-      view: isView(search.view) ? search.view : "campaigns",
-      brand,
-      // Platform is always clamped to one the selected brand has connected.
-      platform: resolveBrandPlatform(brand, search.platform),
-      ...(typeof search["objective"] === "string" ? { objective: search["objective"] } : {}),
-    };
+  ssr: false,
+  validateSearch: validateDashboardSearch,
+  beforeLoad: async ({ context }) => {
+    const session = await requireSession();
+    const profile = await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
+    if (!isOnboardingComplete(profile.onboarding_status)) {
+      throw redirect({ to: "/onboarding", replace: true });
+    }
   },
   loaderDeps: ({ search }) => ({ brand: search.brand }),
   loader: ({ context, deps }) =>
     context.queryClient.ensureQueryData(allAnalysisQueryOptions(deps.brand)),
   head: () => ({
     meta: [
-      { title: "AdMate — Platform-aware marketing analyst" },
+      { title: "AdMate — Workspace" },
       {
         name: "description",
         content:
@@ -51,58 +37,19 @@ export const Route = createFileRoute("/home")({
       },
     ],
   }),
-  component: Dashboard,
+  pendingComponent: () => <AuthPending />,
+  errorComponent: ({ error, reset }) => <AccountErrorState error={error} reset={reset} />,
+  component: WorkspaceDashboard,
 });
 
-function Dashboard() {
-  const { view, brand, platform, objective } = Route.useSearch();
+function WorkspaceDashboard() {
+  const search = Route.useSearch();
   const navigate = useNavigate();
-  const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions(brand));
-
-  const go = (next: Partial<HomeSearch>) => {
-    const nextBrand = next.brand ?? brand;
-    // Switching brand (or platform) always re-clamps to a platform this brand
-    // has connected, so platform selection can never leave the brand.
-    const nextPlatform = resolveBrandPlatform(nextBrand, next.platform ?? platform);
-    // Objective is carried only by explicit filter changes. Brand/platform
-    // navigation omits it, predictably restoring All objectives.
-    navigate({
-      to: "/home",
-      search: { view, ...next, brand: nextBrand, platform: nextPlatform },
-    });
-  };
-
   return (
-    <AppShell
-      active={view}
-      brand={brand}
-      platform={platform}
-      onSelectBrand={(b) => go({ view: "campaigns", brand: b })}
-    >
-      {view === "overview" ? (
-        <OverviewView
-          analyses={analyses}
-          brand={brand}
-          onOpenCampaigns={(p) => go({ view: "campaigns", platform: p })}
-          onOpenBriefings={() => go({ view: "briefings" })}
-        />
-      ) : null}
-      {view === "campaigns" ? (
-        <CampaignsView
-          analyses={analyses}
-          brand={brand}
-          platform={platform}
-          platforms={brandPlatforms(brand)}
-          objective={objective}
-          onSelectObjective={(value) => go(value ? { objective: value } : {})}
-          onSelectPlatform={(p) => go({ platform: p })}
-        />
-      ) : null}
-      {view === "alerts" ? (
-        <AlertsView analyses={analyses} onOpenCampaigns={(p) => go({ view: "campaigns", platform: p })} />
-      ) : null}
-      {view === "briefings" ? <BriefingsView brand={brand} /> : null}
-      {view === "reports" ? <ReportsView /> : null}
-    </AppShell>
+    <DashboardScreen
+      mode="workspace"
+      search={search}
+      onNavigate={(next) => navigate({ to: "/home", search: next })}
+    />
   );
 }
