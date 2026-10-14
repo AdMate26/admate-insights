@@ -1,16 +1,19 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { LayoutGrid, ListChecks, BellRing, Send, FileText, Circle, Store } from "lucide-react";
 import { toast } from "sonner";
 
+import { AccountMenu } from "./AccountMenu";
 import { ThemeToggle } from "./ThemeToggle";
 import { sendTelegramBriefing } from "@/lib/admate.functions";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuthSession } from "@/lib/auth/session";
 import { BRANDS, brandMeta, type Brand } from "@/lib/brands";
 import { platformMeta, type Platform } from "@/lib/platforms";
 
 export type ViewKey = "overview" | "campaigns" | "alerts" | "briefings" | "reports";
+
+/** "demo" = public /demo; "workspace" = signed-in /home. */
+export type ShellMode = "demo" | "workspace";
 
 const NAV: { key: ViewKey; label: string; icon: typeof LayoutGrid }[] = [
   { key: "overview", label: "All accounts", icon: LayoutGrid },
@@ -21,6 +24,7 @@ const NAV: { key: ViewKey; label: string; icon: typeof LayoutGrid }[] = [
 ];
 
 export function AppShell({
+  mode,
   active,
   brand,
   platform,
@@ -28,6 +32,7 @@ export function AppShell({
   railNote,
   children,
 }: {
+  mode: ShellMode;
   active: ViewKey;
   brand: Brand;
   platform: Platform;
@@ -35,26 +40,12 @@ export function AppShell({
   railNote?: string;
   children: React.ReactNode;
 }) {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [signedIn, setSignedIn] = useState(false);
+  const auth = useAuthSession();
   const [sending, setSending] = useState(false);
   const activeBrand = brandMeta(brand);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSignedIn(Boolean(data.session)));
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) =>
-      setSignedIn(Boolean(session)),
-    );
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  async function handleSignOut() {
-    await queryClient.cancelQueries();
-    queryClient.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/", replace: true });
-  }
+  // Navigation stays inside the current surface: the demo never links into the
+  // protected workspace, and the workspace never drops back into the demo.
+  const basePath = mode === "demo" ? "/demo" : "/home";
 
   async function sendNow() {
     setSending(true);
@@ -73,7 +64,7 @@ export function AppShell({
     <div className="app-shell">
       <nav className="rail" aria-label="Primary">
         <Link
-          to="/home"
+          to={basePath}
           search={{ view: "overview", brand, platform }}
           className="rail-brand"
           aria-label="AdMate"
@@ -100,7 +91,7 @@ export function AppShell({
           {NAV.map(({ key, label, icon: Icon }) => (
             <Link
               key={key}
-              to="/home"
+              to={basePath}
               search={{ view: key, brand, platform }}
               className={`nav-item${active === key ? " is-active" : ""}`}
             >
@@ -138,9 +129,18 @@ export function AppShell({
 
       <div className="shell-main">
         <div className="topbar">
-          <span className="demo-badge" title="You are exploring AdMate with synthetic demo data">
-            <Circle size={7} className="live-dot" aria-hidden="true" /> Demo Mode
-          </span>
+          {mode === "demo" ? (
+            <span className="demo-badge" title="You are exploring AdMate with synthetic demo data">
+              <Circle size={7} className="live-dot" aria-hidden="true" /> Demo Mode
+            </span>
+          ) : (
+            <span
+              className="demo-badge"
+              title="Showing sample data until you connect your ad accounts"
+            >
+              Sample data
+            </span>
+          )}
           <div className="scope">
             <span className="scope-label">Brand</span>
             <span className="scope-value">{activeBrand.label}</span>
@@ -161,15 +161,15 @@ export function AppShell({
             <Send size={14} aria-hidden="true" />
             {sending ? "Sending…" : "Send briefing now"}
           </button>
-          {signedIn ? (
-            <button type="button" onClick={handleSignOut} className="button-quiet">
-              Sign out
-            </button>
-          ) : (
+          {/* Nothing until the session is known, so logged-in users never see a
+              login prompt flash (and vice versa). */}
+          {auth.status === "authenticated" && auth.user ? (
+            <AccountMenu email={auth.user.email ?? "Account"} mode={mode} />
+          ) : auth.status === "unauthenticated" ? (
             <Link to="/login" className="button-quiet">
               Login / Sign up
             </Link>
-          )}
+          ) : null}
         </div>
 
         <main className="shell-content">{children}</main>

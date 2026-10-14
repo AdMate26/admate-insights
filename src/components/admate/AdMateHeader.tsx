@@ -38,7 +38,7 @@ export function AdMateHeader({ back, platform = DEFAULT_PLATFORM }: Props) {
   // Switching platform returns to the campaign list for that platform. The demo
   // analysis screen is unchanged — only the data source behind it changes.
   function handlePlatformChange(next: Platform) {
-    navigate({ to: "/home", search: { platform: next } });
+    navigate({ to: "/demo", search: { platform: next } });
   }
 
   const mode = platformMeta(platform).modeLabel;
@@ -47,7 +47,7 @@ export function AdMateHeader({ back, platform = DEFAULT_PLATFORM }: Props) {
     <header className="admate-header">
       <div className="admate-container header-content">
         <Link
-          to="/home"
+          to="/demo"
           search={{ platform }}
           className="brand-lockup"
           aria-label="AdMate campaigns"
@@ -104,7 +104,7 @@ export function AdMateHeader({ back, platform = DEFAULT_PLATFORM }: Props) {
       </div>
       <div className="header-context admate-container">
         {back ? (
-          <Link to="/home" search={{ platform }} className="back-link">
+          <Link to="/demo" search={{ platform }} className="back-link">
             <ArrowLeft size={14} aria-hidden="true" />
             {back.label}
           </Link>
