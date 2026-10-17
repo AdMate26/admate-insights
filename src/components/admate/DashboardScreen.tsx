@@ -11,6 +11,7 @@ import { allAnalysisQueryOptions, workspaceAccessQueryOptions } from "@/lib/anal
 import { useAuthSession } from "@/lib/auth/session";
 import { LIVE_BRANDS, isBrand, resolveBrandPlatform, brandPlatforms } from "@/lib/brands";
 import type { DashboardSearch } from "@/lib/dashboard-search";
+import { canOfferTelegramControls } from "@/lib/telegram/controls-access";
 
 /**
  * The AdMate dashboard, shared by the public demo (/demo) and the signed-in
@@ -41,8 +42,7 @@ export function DashboardScreen({
   // Telegram controls are shown only to the server-verified owner (the same
   // answer that unlocks My Account). The Telegram server functions enforce this
   // on their own; this just avoids offering buttons that would be refused.
-  const canManageTelegram =
-    mode === "workspace" && Boolean(access.data?.liveBrands.includes("my_account"));
+  const canManageTelegram = canOfferTelegramControls(mode, access.data?.liveBrands);
   const liveConnection = analyses.find((a) => a.source === "meta_live")?.live ?? null;
 
   const go = (next: Partial<DashboardSearch>) => {
@@ -63,6 +63,7 @@ export function DashboardScreen({
       platform={platform}
       onSelectBrand={(b) => go({ view: "campaigns", brand: b })}
       liveBrands={liveBrands}
+      canSendBriefing={canManageTelegram}
     >
       {liveConnection ? <LiveConnectionPanel connection={liveConnection} /> : null}
       {view === "overview" ? (
