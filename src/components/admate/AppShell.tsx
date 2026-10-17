@@ -36,6 +36,7 @@ export function AppShell({
   platform,
   onSelectBrand,
   liveBrands = [],
+  canSendBriefing = false,
   railNote,
   children,
 }: {
@@ -46,6 +47,12 @@ export function AppShell({
   onSelectBrand: (brand: WorkspaceBrand) => void;
   /** Live brands the verified owner may open (workspace only; empty otherwise). */
   liveBrands?: readonly WorkspaceBrandMeta[];
+  /**
+   * True only once the server has verified this session as the owner. It only
+   * decides whether "Send briefing now" is offered: sendTelegramBriefing
+   * re-checks the owner on the server and refuses everyone else regardless.
+   */
+  canSendBriefing?: boolean;
   railNote?: string;
   children: React.ReactNode;
 }) {
@@ -194,9 +201,10 @@ export function AppShell({
           </div>
           <div className="topbar-spacer" />
           <ThemeToggle />
-          {/* Telegram briefings cover the demo brands only for now; a live
-              brand must never trigger a (demo) briefing from its own screen. */}
-          {activeBrand.live ? null : (
+          {/* Offered to the verified owner only. Telegram briefings cover the
+              demo brands only for now; a live brand must never trigger a
+              (demo) briefing from its own screen. */}
+          {!canSendBriefing || activeBrand.live || !isBrand(brand) ? null : (
             <button type="button" className="send-briefing" onClick={sendNow} disabled={sending}>
               <Send size={14} aria-hidden="true" />
               {sending ? "Sending…" : "Send briefing now"}
