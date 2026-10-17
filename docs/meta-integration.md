@@ -29,15 +29,36 @@ connection with an empty result. No sample data is ever shown for My Account.
   redirected to a demo brand and never see My Account in the sidebar.
 - Northlane, Olive and Kite are unchanged and keep using synthetic data.
 
+### How the session reaches the server
+
+Every browser → server-function call goes through the global
+`attachSupabaseAuth` function middleware (registered in `src/start.ts`). It
+reads the current Supabase session (refreshing it if needed) and sends
+`Authorization: Bearer <access token>` as a request **header** — never in the
+URL or payload. `verifyOwnerAccess()` reads that header, asks the Supabase
+Auth server who it belongs to, and compares the user id with
+`META_OWNER_USER_ID`. The token is not logged or echoed in errors; refusals
+return the generic "This workspace isn't available."
+
+### Onboarding
+
+`/home` normally requires a completed `onboarding_status`, and the onboarding
+flow is still a placeholder. The owner is the one exception: when the server
+verifies the session as `META_OWNER_USER_ID`, sign-in goes straight to
+`/home?brand=my_account`, and `/onboarding` shows **Open My Account** instead
+of the placeholder. Nothing is written to `profiles`; every other account
+without a completed onboarding still goes to `/onboarding`. This is routing
+only — the server re-checks the owner on every live-data request.
+
 ## Environment variables (server-only, set in Vercel)
 
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `META_ACCESS_TOKEN` | yes | Token with `ads_read`. Store as a secret. |
-| `META_AD_ACCOUNT_ID` | yes | Numeric id, with or without `act_`. |
-| `META_OWNER_USER_ID` | yes | Supabase user id allowed to see live data. |
-| `META_APP_SECRET` | no | Adds `appsecret_proof` to every request. |
-| `META_API_VERSION` | no | Graph API version, e.g. `v24.0` (the default). |
+| Variable             | Required | Notes                                          |
+| -------------------- | -------- | ---------------------------------------------- |
+| `META_ACCESS_TOKEN`  | yes      | Token with `ads_read`. Store as a secret.      |
+| `META_AD_ACCOUNT_ID` | yes      | Numeric id, with or without `act_`.            |
+| `META_OWNER_USER_ID` | yes      | Supabase user id allowed to see live data.     |
+| `META_APP_SECRET`    | no       | Adds `appsecret_proof` to every request.       |
+| `META_API_VERSION`   | no       | Graph API version, e.g. `v24.0` (the default). |
 
 The server-side owner check uses the public `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_PUBLISHABLE_KEY` (the same project the browser signs in to).
@@ -49,14 +70,14 @@ None of these values are hard-coded, and none are sent to the browser.
 Meta failures are shown on the My Account screen as fixed, human-readable
 messages; Meta's raw error text and the token are never displayed or logged.
 
-| Kind | Typical cause |
-| --- | --- |
-| `not_configured` | A required variable is missing or malformed. |
-| `token_invalid` | Token expired, revoked or invalid (Graph code 190). Replace `META_ACCESS_TOKEN`. |
-| `permission` | Token lacks `ads_read` or access to the account. |
-| `not_found` | The ad account id doesn't exist or isn't visible. |
-| `rate_limited` | Meta throttling. Retry later. |
-| `unavailable` | Network/timeout or a Meta outage. |
+| Kind             | Typical cause                                                                    |
+| ---------------- | -------------------------------------------------------------------------------- |
+| `not_configured` | A required variable is missing or malformed.                                     |
+| `token_invalid`  | Token expired, revoked or invalid (Graph code 190). Replace `META_ACCESS_TOKEN`. |
+| `permission`     | Token lacks `ads_read` or access to the account.                                 |
+| `not_found`      | The ad account id doesn't exist or isn't visible.                                |
+| `rate_limited`   | Meta throttling. Retry later.                                                    |
+| `unavailable`    | Network/timeout or a Meta outage.                                                |
 
 Server logs record only the kind, HTTP status, Graph code/subcode and trace id.
 

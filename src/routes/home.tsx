@@ -3,16 +3,19 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { DashboardScreen } from "@/components/admate/DashboardScreen";
 import { AccountErrorState } from "@/components/auth/AccountErrorState";
 import { AuthPending } from "@/components/auth/AuthLayout";
-import { allAnalysisQueryOptions, workspaceAccessQueryOptions } from "@/lib/analysis-query";
+import { allAnalysisQueryOptions, fetchWorkspaceAccess } from "@/lib/analysis-query";
 import { isOnboardingComplete, profileQueryOptions } from "@/lib/auth/profile";
 import { requireSession } from "@/lib/auth/session";
-import { DEFAULT_BRAND, isLiveBrand } from "@/lib/brands";
+import { decideWorkspaceGate, needsWorkspaceAccessCheck } from "@/lib/auth/workspace-gate";
+import { DEFAULT_BRAND } from "@/lib/brands";
 import { validateWorkspaceSearch } from "@/lib/dashboard-search";
 
 /**
  * /home — the signed-in AdMate workspace. Logged-out visitors go to /login;
- * signed-in users who haven't finished onboarding go to /onboarding. Resolved
- * on the client so nothing private renders before the session is checked.
+ * signed-in users who haven't finished onboarding go to /onboarding, except the
+ * server-verified owner, whose setup (the Meta connection) lives on the server.
+ * Resolved on the client so nothing private renders before the session is
+ * checked.
  * Demo brands show clearly labelled sample data; the live "My Account" brand
  * shows the owner's real Meta data and is only reachable by the verified owner
  * (also enforced on the server, which never returns live data to anyone else).
@@ -23,18 +26,23 @@ export const Route = createFileRoute("/home")({
   beforeLoad: async ({ context, search }) => {
     const session = await requireSession();
     const profile = await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
-    if (!isOnboardingComplete(profile.onboarding_status)) {
-      throw redirect({ to: "/onboarding", replace: true });
-    }
+    const onboardingComplete = isOnboardingComplete(profile.onboarding_status);
+    const { liveBrands } = needsWorkspaceAccessCheck({
+      onboardingComplete,
+      requestedBrand: search.brand,
+    })
+      ? await fetchWorkspaceAccess(context.queryClient, session.user.id)
+      : { liveBrands: [] };
+    const gate = decideWorkspaceGate({
+      onboardingComplete,
+      liveBrands,
+      requestedBrand: search.brand,
+    });
+    if (gate === "onboarding") throw redirect({ to: "/onboarding", replace: true });
     // A live brand is only for the verified owner; anyone else lands on the
     // default demo brand instead of an error.
-    if (isLiveBrand(search.brand)) {
-      const access = await context.queryClient.ensureQueryData(
-        workspaceAccessQueryOptions(session.user.id),
-      );
-      if (!access.liveBrands.includes(search.brand)) {
-        throw redirect({ to: "/home", search: { brand: DEFAULT_BRAND }, replace: true });
-      }
+    if (gate === "default-brand") {
+      throw redirect({ to: "/home", search: { brand: DEFAULT_BRAND }, replace: true });
     }
   },
   loaderDeps: ({ search }) => ({ brand: search.brand }),

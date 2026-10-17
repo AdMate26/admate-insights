@@ -1,10 +1,12 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { AccountErrorState } from "@/components/auth/AccountErrorState";
 import { AuthLayout, AuthPending } from "@/components/auth/AuthLayout";
 import { Button } from "@/components/ui/button";
+import { workspaceAccessQueryOptions } from "@/lib/analysis-query";
 import { isOnboardingComplete, profileQueryOptions } from "@/lib/auth/profile";
 import { requireSession, useLogout } from "@/lib/auth/session";
 
@@ -13,6 +15,11 @@ import { requireSession, useLogout } from "@/lib/auth/session";
  * complete. Placeholder until the setup steps (Early Access, first brand, ad
  * accounts) are built — it never marks onboarding complete or activates a
  * subscription.
+ *
+ * The one exception is the owner: when the server verifies this session as
+ * META_OWNER_USER_ID, their setup (the read-only Meta connection) is already
+ * configured server-side, so "Continue" opens the live My Account workspace.
+ * Nothing is written to the profile and other users see the placeholder.
  */
 export const Route = createFileRoute("/onboarding")({
   ssr: false,
@@ -22,7 +29,7 @@ export const Route = createFileRoute("/onboarding")({
     if (isOnboardingComplete(profile.onboarding_status)) {
       throw redirect({ to: "/home", replace: true });
     }
-    return { email: session.user.email ?? null };
+    return { email: session.user.email ?? null, userId: session.user.id };
   },
   head: () => ({ meta: [{ title: "Welcome to AdMate" }] }),
   pendingComponent: () => <AuthPending />,
@@ -31,24 +38,47 @@ export const Route = createFileRoute("/onboarding")({
 });
 
 function OnboardingPage() {
-  const { email } = Route.useRouteContext();
+  const { email, userId } = Route.useRouteContext();
   const logout = useLogout();
+  const navigate = useNavigate();
+  const access = useQuery(workspaceAccessQueryOptions(userId));
+  const isOwner = access.data?.liveBrands.includes("my_account") ?? false;
 
   return (
     <AuthLayout>
       <h1 className="text-xl font-semibold tracking-tight text-foreground">Welcome to AdMate</h1>
       <p className="mt-2 text-sm text-foreground">Your account is ready.</p>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        Next, we&apos;ll set up your Early Access workspace and first brand.
-      </p>
-
-      <Button
-        className="mt-6 w-full"
-        onClick={() => toast("Workspace setup is coming in the next step.")}
-      >
-        Continue setup
-        <ArrowRight size={16} />
-      </Button>
+      {isOwner ? (
+        <>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            This account has owner access to the live My Account workspace, which reads your
+            configured Meta ad account (read-only).
+          </p>
+          <Button
+            className="mt-6 w-full"
+            onClick={() =>
+              void navigate({ to: "/home", search: { brand: "my_account" }, replace: true })
+            }
+          >
+            Open My Account
+            <ArrowRight size={16} />
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Next, we&apos;ll set up your Early Access workspace and first brand.
+          </p>
+          <Button
+            className="mt-6 w-full"
+            disabled={access.isPending}
+            onClick={() => toast("Workspace setup is coming in the next step.")}
+          >
+            Continue setup
+            <ArrowRight size={16} />
+          </Button>
+        </>
+      )}
 
       <div className="mt-6 border-t border-border/70 pt-4 text-sm">
         {email ? (
