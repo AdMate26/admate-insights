@@ -1,13 +1,15 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell, type ShellMode } from "@/components/admate/AppShell";
+import { LiveConnectionPanel } from "@/components/admate/LiveConnectionPanel";
 import { OverviewView } from "@/components/admate/views/OverviewView";
 import { CampaignsView } from "@/components/admate/views/CampaignsView";
 import { AlertsView } from "@/components/admate/views/AlertsView";
 import { BriefingsView } from "@/components/admate/views/BriefingsView";
 import { ReportsView } from "@/components/admate/views/ReportsView";
-import { allAnalysisQueryOptions } from "@/lib/analysis-query";
-import { resolveBrandPlatform, brandPlatforms } from "@/lib/brands";
+import { allAnalysisQueryOptions, workspaceAccessQueryOptions } from "@/lib/analysis-query";
+import { useAuthSession } from "@/lib/auth/session";
+import { LIVE_BRANDS, isBrand, resolveBrandPlatform, brandPlatforms } from "@/lib/brands";
 import type { DashboardSearch } from "@/lib/dashboard-search";
 
 /**
@@ -27,6 +29,17 @@ export function DashboardScreen({
   const { view, brand, platform, objective } = search;
   const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions(brand));
 
+  // Live brands appear only in the workspace, and only once the server confirms
+  // this user is the verified owner. The public demo never asks.
+  const auth = useAuthSession();
+  const userId = auth.user?.id ?? "";
+  const access = useQuery({
+    ...workspaceAccessQueryOptions(userId),
+    enabled: mode === "workspace" && Boolean(userId),
+  });
+  const liveBrands = LIVE_BRANDS.filter((b) => access.data?.liveBrands.some((id) => id === b.id));
+  const liveConnection = analyses.find((a) => a.source === "meta_live")?.live ?? null;
+
   const go = (next: Partial<DashboardSearch>) => {
     const nextBrand = next.brand ?? brand;
     // Switching brand (or platform) always re-clamps to a platform this brand
@@ -44,7 +57,9 @@ export function DashboardScreen({
       brand={brand}
       platform={platform}
       onSelectBrand={(b) => go({ view: "campaigns", brand: b })}
+      liveBrands={liveBrands}
     >
+      {liveConnection ? <LiveConnectionPanel connection={liveConnection} /> : null}
       {view === "overview" ? (
         <OverviewView
           analyses={analyses}
@@ -70,7 +85,19 @@ export function DashboardScreen({
           onOpenCampaigns={(p) => go({ view: "campaigns", platform: p })}
         />
       ) : null}
-      {view === "briefings" ? <BriefingsView brand={brand} /> : null}
+      {view === "briefings" ? (
+        isBrand(brand) ? (
+          <BriefingsView brand={brand} />
+        ) : (
+          <section className="panel">
+            <h2 className="text-sm font-semibold text-foreground">Telegram briefings</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Scheduled and on-demand briefings for live Meta data aren&apos;t available yet. They
+              currently cover the sample brands only.
+            </p>
+          </section>
+        )
+      ) : null}
       {view === "reports" ? <ReportsView /> : null}
     </AppShell>
   );

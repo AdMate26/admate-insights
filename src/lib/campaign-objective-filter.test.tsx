@@ -20,6 +20,8 @@ for (const brand of BRANDS) {
     provider: "demo",
     providerLabel: "Demo",
     modeLabel: "Synthetic demo",
+    source: "demo",
+    live: null,
     aiStatus: "failed",
     aiError: null,
   }));

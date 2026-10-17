@@ -10,7 +10,7 @@ import {
   type CampaignFinding,
   type Performance,
 } from "@/lib/analysis/engine";
-import { brandMeta, type Brand } from "@/lib/brands";
+import { brandMeta, type WorkspaceBrand } from "@/lib/brands";
 import { platformMeta, type Platform } from "@/lib/platforms";
 import { filterCampaignObjectives } from "@/lib/campaign-objective-filter";
 
@@ -42,7 +42,7 @@ export function CampaignsView({
   onSelectObjective,
 }: {
   analyses: AdMateAnalysis[];
-  brand: Brand;
+  brand: WorkspaceBrand;
   platform: Platform;
   /** The selected brand's connected platforms (tabs are scoped to these). */
   platforms: readonly Platform[];
@@ -58,7 +58,8 @@ export function CampaignsView({
     options,
     objective: selectedObjective,
   } = filterCampaignObjectives(active?.findings ?? [], objective);
-  const lowOf = (a?: AdMateAnalysis) => (a?.findings ?? []).filter((f) => f.performance === "Low").length;
+  const lowOf = (a?: AdMateAnalysis) =>
+    (a?.findings ?? []).filter((f) => f.performance === "Low").length;
 
   const tally = PERFORMANCE_ORDER.map((p) => ({
     perf: p,
@@ -83,13 +84,17 @@ export function CampaignsView({
           Which campaigns are earning their budget
         </h1>
         <p className="view-sub">
-          {brandMeta(brand).label} · last 7 complete days. Every campaign is graded on the metric its
-          objective was actually bought against — not one blended number. Click a row for the full
-          signal, why and action.
+          {brandMeta(brand).label} · last 7 complete days. Every campaign is graded on the metric
+          its objective was actually bought against — not one blended number. Click a row for the
+          full signal, why and action.
         </p>
       </div>
 
-      <div className="tabs" role="tablist" aria-label={`${brandMeta(brand).label} connected platforms`}>
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label={`${brandMeta(brand).label} connected platforms`}
+      >
         {platforms.map((p) => {
           const a = byPlatform.get(p);
           const n = a?.findings.length ?? 0;
@@ -159,7 +164,9 @@ export function CampaignsView({
               <div className="panel" key={fam}>
                 <div className="panel-head">
                   <h2 className="panel-title">Campaign Objective: {list[0].objectiveLabel}</h2>
-                  <span className="panel-note">{money(famSpend)} · {list.length} campaigns</span>
+                  <span className="panel-note">
+                    {money(famSpend)} · {list.length} campaigns
+                  </span>
                 </div>
                 <p className="fam-blurb">{list[0].objectiveExplanation}</p>
                 <div className="ledger-wrap">
@@ -221,7 +228,8 @@ export function CampaignsView({
                         exposure (upper funnel / no target) — never invented revenue. */}
                     {f.exposure.kind === "budget_at_risk" ? "Budget at risk" : "Spend at risk"} ·{" "}
                     {f.objectiveLabel.toLowerCase()} — {f.primaryMetric} {f.primaryMetricValue}
-                    {f.targetOrBaseline ? ` against ${f.targetOrBaseline}` : ""}, {money(f.spend)} spent
+                    {f.targetOrBaseline ? ` against ${f.targetOrBaseline}` : ""}, {money(f.spend)}{" "}
+                    spent
                   </p>
                   <p className="risk-a">{f.aiRecommendedAction ?? f.action}</p>
                 </div>
@@ -231,7 +239,8 @@ export function CampaignsView({
             <div className="empty">
               <strong>Nothing below target</strong>
               No campaign here is rated Low. Lower-funnel misses show as defensible budget at risk;
-              upper-funnel Low campaigns show their actual spend exposure — never invented dollar loss.
+              upper-funnel Low campaigns show their actual spend exposure — never invented dollar
+              loss.
             </div>
           )}
         </aside>
@@ -258,11 +267,11 @@ function CampaignRows({
             <ChevronRight size={14} aria-hidden="true" className="camp-caret" />
             {f.campaignName}
           </span>
-          <span className="camp-sub">{f.campaignStateLabel} · {f.signal}</span>
+          <span className="camp-sub">
+            {f.campaignStateLabel} · {f.signal}
+          </span>
         </td>
-        <td>
-          {money(f.spend)}
-        </td>
+        <td>{money(f.spend)}</td>
         {f.supportingColumns.map((c) => (
           <td key={c.label}>{c.value}</td>
         ))}
@@ -305,7 +314,9 @@ function CampaignRows({
                           <td className="mono">{e.current}</td>
                           <td className="mono muted">{e.previous}</td>
                           <td className="mono">
-                            {e.changePct === null ? "—" : `${e.changePct > 0 ? "+" : ""}${e.changePct.toFixed(1)}%`}
+                            {e.changePct === null
+                              ? "—"
+                              : `${e.changePct > 0 ? "+" : ""}${e.changePct.toFixed(1)}%`}
                           </td>
                         </tr>
                       ))}
