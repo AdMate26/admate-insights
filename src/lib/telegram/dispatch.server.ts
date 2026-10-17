@@ -11,12 +11,65 @@
 import type { AdMateAnalysis } from "../admate.functions"; // type-only → erased at build (no runtime cycle)
 import { analyzeCampaigns } from "../analysis/engine";
 import { getDemoCampaignsForBrand } from "../analysis/demo";
-import { brandMeta, brandPlatforms, type Brand } from "../brands";
+import type { OwnerAccess } from "../auth/viewer.server"; // type-only
+import {
+  brandMeta,
+  brandPlatforms,
+  isLiveBrand,
+  type Brand,
+  type LiveBrand,
+  type WorkspaceBrand,
+} from "../brands";
 import { buildBriefing, briefingPlainText } from "../briefing";
+import { loadMetaLiveData } from "../meta/provider.server";
 import { platformMeta, type Platform } from "../platforms";
 
-/** Analyse one (brand, platform) and attach the best-effort AI narrative. */
-export async function computeAnalysis(brand: Brand, platform: Platform): Promise<AdMateAnalysis> {
+/**
+ * Analyse one (brand, platform). Demo brands use the synthetic provider plus a
+ * best-effort AI narrative; a live brand reads the owner's real Meta account
+ * and requires proof that the request comes from the verified owner.
+ */
+export async function computeAnalysis(
+  brand: WorkspaceBrand,
+  platform: Platform,
+  access?: OwnerAccess | null,
+): Promise<AdMateAnalysis> {
+  if (isLiveBrand(brand)) {
+    if (!access) throw new Error("Live data is only available to the account owner.");
+    return computeLiveAnalysis(brand, platform);
+  }
+  return computeDemoAnalysis(brand, platform);
+}
+
+/**
+ * Live Meta analysis — read-only, server-side, owner-only (enforced by the
+ * caller via OwnerAccess). No AI narrative call in this first stage, and no
+ * fake data: an empty account produces an empty, successful analysis.
+ */
+async function computeLiveAnalysis(brand: LiveBrand, platform: Platform): Promise<AdMateAnalysis> {
+  const meta = brandMeta(brand);
+  if (platform !== "meta") {
+    throw new Error(`${meta.label} has no live ${platformMeta(platform).label} connection.`);
+  }
+  const live = await loadMetaLiveData({ idPrefix: `${brand}__` });
+  const result = analyzeCampaigns(live.campaigns, live.todayIso);
+  return {
+    ...result,
+    brand,
+    brandLabel: meta.label,
+    platform,
+    provider: "meta-marketing-api",
+    providerLabel: `${meta.label} · Meta Ads (live, read-only)`,
+    modeLabel: "Live — Meta Ads (read-only)",
+    source: "meta_live",
+    live: live.connection,
+    aiStatus: "disabled",
+    aiError: null,
+  };
+}
+
+/** Synthetic demo analysis with the best-effort AI narrative (unchanged). */
+async function computeDemoAnalysis(brand: Brand, platform: Platform): Promise<AdMateAnalysis> {
   const result = analyzeCampaigns(getDemoCampaignsForBrand(brand, platform));
 
   let aiStatus: "ok" | "failed" = "ok";
@@ -44,6 +97,8 @@ export async function computeAnalysis(brand: Brand, platform: Platform): Promise
     provider: `${brand}-${platform}-demo`,
     providerLabel: `${brandMeta(brand).label} · ${platformMeta(platform).label} (synthetic demo)`,
     modeLabel: platformMeta(platform).modeLabel,
+    source: "demo",
+    live: null,
     aiStatus,
     aiError,
   };
@@ -110,6 +165,9 @@ export async function sendBrandBriefing(brand: Brand, chatId?: string): Promise<
     }
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Unable to send to Telegram." };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Unable to send to Telegram.",
+    };
   }
 }

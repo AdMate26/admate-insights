@@ -3,7 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { StatusPill } from "@/components/admate/badges";
 import type { AdMateAnalysis } from "@/lib/admate.functions";
 import type { CampaignFinding, Performance } from "@/lib/analysis/engine";
-import { brandMeta, type Brand } from "@/lib/brands";
+import { brandMeta, type WorkspaceBrand } from "@/lib/brands";
 import { platformMeta, type Platform } from "@/lib/platforms";
 
 const money = (n: number) =>
@@ -22,7 +22,7 @@ export function OverviewView({
   onOpenBriefings,
 }: {
   analyses: AdMateAnalysis[];
-  brand: Brand;
+  brand: WorkspaceBrand;
   onOpenCampaigns: (p: Platform) => void;
   onOpenBriefings: () => void;
 }) {
@@ -47,8 +47,9 @@ export function OverviewView({
           {meta.label} — every connected account in one view
         </h1>
         <p className="view-sub">
-          {meta.blurb}. Each campaign is judged on the KPI its objective was bought against, compared
-          to its target, its own baseline or comparable campaigns — per platform, never blended.
+          {meta.blurb}. Each campaign is judged on the KPI its objective was bought against,
+          compared to its target, its own baseline or comparable campaigns — per platform, never
+          blended.
         </p>
       </div>
 
@@ -57,7 +58,8 @@ export function OverviewView({
           <dt>Campaigns</dt>
           <dd>{totalCampaigns}</dd>
           <span>
-            across {meta.platforms.length} connected {meta.platforms.length === 1 ? "platform" : "platforms"}
+            across {meta.platforms.length} connected{" "}
+            {meta.platforms.length === 1 ? "platform" : "platforms"}
           </span>
         </div>
         <div>
@@ -98,7 +100,11 @@ export function OverviewView({
                 {analyses.map((a) => {
                   const low = a.findings.filter((f) => f.performance === "Low").length;
                   return (
-                    <tr key={a.platform} className="camp-row" onClick={() => onOpenCampaigns(a.platform)}>
+                    <tr
+                      key={a.platform}
+                      className="camp-row"
+                      onClick={() => onOpenCampaigns(a.platform)}
+                    >
                       <td>
                         <span className="camp-name">
                           <span className={`dot dot--${a.platform}`} aria-hidden="true" />
@@ -137,7 +143,8 @@ export function OverviewView({
                     <StatusPill performance={f.performance} />
                   </div>
                   <p className="attn-sig">
-                    {platformMeta(f.platform).label} · Campaign Objective: {f.objectiveLabel} — {f.signal}
+                    {platformMeta(f.platform).label} · Campaign Objective: {f.objectiveLabel} —{" "}
+                    {f.signal}
                   </p>
                   <p className="attn-act">{f.aiRecommendedAction ?? f.action}</p>
                 </button>
@@ -160,8 +167,8 @@ export function OverviewView({
         <div className="next-briefing-body">
           <p>
             The next briefing summarizes every campaign whose performance is Low, plus tracking
-            issues — the same analysis shown here. High and Moderate campaigns are omitted to keep it
-            scannable.
+            issues — the same analysis shown here. High and Moderate campaigns are omitted to keep
+            it scannable.
           </p>
           <button className="button-secondary" onClick={onOpenBriefings}>
             Open briefings <ArrowUpRight size={15} aria-hidden="true" />

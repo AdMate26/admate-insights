@@ -71,7 +71,7 @@ function AuthCallback() {
     setFailure(null);
     try {
       const destination = await completeSignIn(queryClient);
-      await navigate({ to: destination, replace: true });
+      await navigate({ ...destination, replace: true });
     } catch (error) {
       setFailure(failureFor(error));
     }

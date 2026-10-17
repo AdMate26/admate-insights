@@ -7,7 +7,13 @@ import { AccountMenu } from "./AccountMenu";
 import { ThemeToggle } from "./ThemeToggle";
 import { sendTelegramBriefing } from "@/lib/admate.functions";
 import { useAuthSession } from "@/lib/auth/session";
-import { BRANDS, brandMeta, type Brand } from "@/lib/brands";
+import {
+  BRANDS,
+  brandMeta,
+  isBrand,
+  type WorkspaceBrand,
+  type WorkspaceBrandMeta,
+} from "@/lib/brands";
 import { platformMeta, type Platform } from "@/lib/platforms";
 
 export type ViewKey = "overview" | "campaigns" | "alerts" | "briefings" | "reports";
@@ -29,14 +35,17 @@ export function AppShell({
   brand,
   platform,
   onSelectBrand,
+  liveBrands = [],
   railNote,
   children,
 }: {
   mode: ShellMode;
   active: ViewKey;
-  brand: Brand;
+  brand: WorkspaceBrand;
   platform: Platform;
-  onSelectBrand: (brand: Brand) => void;
+  onSelectBrand: (brand: WorkspaceBrand) => void;
+  /** Live brands the verified owner may open (workspace only; empty otherwise). */
+  liveBrands?: readonly WorkspaceBrandMeta[];
   railNote?: string;
   children: React.ReactNode;
 }) {
@@ -48,6 +57,7 @@ export function AppShell({
   const basePath = mode === "demo" ? "/demo" : "/home";
 
   async function sendNow() {
+    if (!isBrand(brand)) return;
     setSending(true);
     try {
       const res = await sendTelegramBriefing({ data: { brand } });
@@ -100,6 +110,29 @@ export function AppShell({
             </Link>
           ))}
 
+          {mode === "workspace" && liveBrands.length > 0 ? (
+            <>
+              <div className="rail-divider" role="separator" />
+              <p className="rail-heading">Your account</p>
+              <div className="rail-brands" role="tablist" aria-label="Your account">
+                {liveBrands.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={b.id === brand}
+                    className={`nav-item nav-brand${b.id === brand ? " is-active" : ""}`}
+                    onClick={() => onSelectBrand(b.id)}
+                    title={b.blurb}
+                  >
+                    <Circle size={10} className="live-dot" aria-hidden="true" />
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+
           <div className="rail-divider" role="separator" />
           <p className="rail-heading">Brands</p>
           <div className="rail-brands" role="tablist" aria-label="Brands">
@@ -133,6 +166,10 @@ export function AppShell({
             <span className="demo-badge" title="You are exploring AdMate with synthetic demo data">
               <Circle size={7} className="live-dot" aria-hidden="true" /> Demo Mode
             </span>
+          ) : activeBrand.live ? (
+            <span className="demo-badge" title="Real data from your Meta ad account (read-only)">
+              <Circle size={7} className="live-dot" aria-hidden="true" /> Live · Meta
+            </span>
           ) : (
             <span
               className="demo-badge"
@@ -157,10 +194,14 @@ export function AppShell({
           </div>
           <div className="topbar-spacer" />
           <ThemeToggle />
-          <button type="button" className="send-briefing" onClick={sendNow} disabled={sending}>
-            <Send size={14} aria-hidden="true" />
-            {sending ? "Sending…" : "Send briefing now"}
-          </button>
+          {/* Telegram briefings cover the demo brands only for now; a live
+              brand must never trigger a (demo) briefing from its own screen. */}
+          {activeBrand.live ? null : (
+            <button type="button" className="send-briefing" onClick={sendNow} disabled={sending}>
+              <Send size={14} aria-hidden="true" />
+              {sending ? "Sending…" : "Send briefing now"}
+            </button>
+          )}
           {/* Nothing until the session is known, so logged-in users never see a
               login prompt flash (and vice versa). */}
           {auth.status === "authenticated" && auth.user ? (

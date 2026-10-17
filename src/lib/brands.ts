@@ -54,21 +54,64 @@ export const BRANDS: readonly BrandMeta[] = [
 
 export const DEFAULT_BRAND: Brand = "northlane";
 
+/** A public synthetic demo brand. */
 export function isBrand(value: unknown): value is Brand {
   return value === "northlane" || value === "olive" || value === "kite";
 }
 
-export function brandMeta(brand: Brand): BrandMeta {
-  return BRANDS.find((b) => b.id === brand) ?? BRANDS[0];
+/* ----------------------------- Live brands ------------------------------ */
+
+/**
+ * The owner's real account, served from live Meta data. Kept separate from the
+ * demo brands above: it is never listed in `BRANDS`, never accepted by
+ * `isBrand`, never shown on the public /demo, and the server only returns its
+ * data to the verified owner (see admate.functions / auth/viewer.server).
+ */
+export type LiveBrand = "my_account";
+
+/** Any brand the signed-in workspace can show: demo brands plus live brands. */
+export type WorkspaceBrand = Brand | LiveBrand;
+
+export type WorkspaceBrandMeta = Omit<BrandMeta, "id"> & {
+  id: WorkspaceBrand;
+  /** True for brands backed by live (non-synthetic) data. */
+  live?: boolean;
+};
+
+export const LIVE_BRANDS: readonly WorkspaceBrandMeta[] = [
+  {
+    id: "my_account",
+    label: "My Account",
+    blurb: "Your connected Meta ad account (live, read-only)",
+    platforms: ["meta"],
+    live: true,
+  },
+] as const;
+
+export function isLiveBrand(value: unknown): value is LiveBrand {
+  return value === "my_account";
+}
+
+/** A demo brand or a live brand (the workspace URL may carry either). */
+export function isWorkspaceBrand(value: unknown): value is WorkspaceBrand {
+  return isBrand(value) || isLiveBrand(value);
+}
+
+export function brandMeta(brand: WorkspaceBrand): WorkspaceBrandMeta {
+  return (
+    BRANDS.find((b) => b.id === brand) ??
+    LIVE_BRANDS.find((b) => b.id === brand) ??
+    (BRANDS[0] as BrandMeta)
+  );
 }
 
 /** Platforms a brand has connected (in display order). */
-export function brandPlatforms(brand: Brand): readonly Platform[] {
+export function brandPlatforms(brand: WorkspaceBrand): readonly Platform[] {
   return brandMeta(brand).platforms;
 }
 
 /** Whether a brand has connected a given platform. */
-export function brandHasPlatform(brand: Brand, platform: Platform): boolean {
+export function brandHasPlatform(brand: WorkspaceBrand, platform: Platform): boolean {
   return brandMeta(brand).platforms.includes(platform);
 }
 
@@ -77,7 +120,7 @@ export function brandHasPlatform(brand: Brand, platform: Platform): boolean {
  * keep platform switching *inside* the selected brand: if the incoming platform
  * isn't connected, fall back to the brand's first connected platform.
  */
-export function resolveBrandPlatform(brand: Brand, platform: unknown): Platform {
+export function resolveBrandPlatform(brand: WorkspaceBrand, platform: unknown): Platform {
   const connected = brandPlatforms(brand);
   if (isPlatform(platform) && connected.includes(platform)) return platform;
   return connected[0];

@@ -6,6 +6,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { fetchWorkspaceAccess } from "@/lib/analysis-query";
 import { PROFILE_QUERY_KEY, isOnboardingComplete, profileQueryOptions } from "./profile";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
@@ -49,7 +50,9 @@ export async function requireSession(): Promise<Session> {
   return data.session;
 }
 
-export type PostLoginPath = "/home" | "/onboarding";
+/** Where to go after sign-in. The verified owner can land on My Account. */
+export type PostLoginTarget =
+  { to: "/home"; search?: { brand: "my_account" } } | { to: "/onboarding" };
 
 /** A session could not be established or validated. */
 export class SignInError extends Error {
@@ -64,7 +67,7 @@ export class SignInError extends Error {
  * their own profile, and returns where they belong. Shared by the OAuth
  * callback and the email-code flow so post-login routing lives in one place.
  */
-export async function completeSignIn(queryClient: QueryClient): Promise<PostLoginPath> {
+export async function completeSignIn(queryClient: QueryClient): Promise<PostLoginTarget> {
   // getSession() waits for the client to finish initialising, which includes
   // picking up tokens from an OAuth / magic-link redirect URL.
   let session = (await supabase.auth.getSession()).data.session;
@@ -88,7 +91,15 @@ export async function completeSignIn(queryClient: QueryClient): Promise<PostLogi
   }
 
   const profile = await queryClient.fetchQuery(profileQueryOptions(userData.user.id));
-  return isOnboardingComplete(profile.onboarding_status) ? "/home" : "/onboarding";
+  if (isOnboardingComplete(profile.onboarding_status)) return { to: "/home" };
+
+  // Onboarding isn't complete. The server decides whether this session belongs
+  // to the owner (Supabase-validated token vs META_OWNER_USER_ID); only then
+  // does the user skip onboarding, straight to their live workspace.
+  const access = await fetchWorkspaceAccess(queryClient, userData.user.id);
+  return access.liveBrands.includes("my_account")
+    ? { to: "/home", search: { brand: "my_account" } }
+    : { to: "/onboarding" };
 }
 
 /** Real Supabase logout: ends the session and returns to the public landing page. */
@@ -105,5 +116,8 @@ export function useLogout() {
     }
     await navigate({ to: "/", replace: true });
     queryClient.removeQueries({ queryKey: PROFILE_QUERY_KEY });
+    // Drop analyses (including the owner's live data) and access answers so
+    // nothing from this session is reused by the next sign-in in this browser.
+    queryClient.removeQueries({ queryKey: ["admate"] });
   };
 }

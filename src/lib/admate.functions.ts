@@ -1,30 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { type AnalysisResult } from "./analysis/engine";
+import { verifyOwnerAccess, type OwnerAccess } from "./auth/viewer.server";
 import {
   brandPlatforms,
   DEFAULT_BRAND,
   isBrand,
+  isLiveBrand,
+  isWorkspaceBrand,
   resolveBrandPlatform,
   type Brand,
+  type LiveBrand,
+  type WorkspaceBrand,
 } from "./brands";
+import type { LiveConnection } from "./live-connection";
 import { isPlatform, type Platform } from "./platforms";
-import {
-  computeAnalysis,
-  renderBriefingText,
-  sendBrandBriefing,
-} from "./telegram/dispatch.server";
+import { computeAnalysis, renderBriefingText, sendBrandBriefing } from "./telegram/dispatch.server";
 import {
   getScheduleForBrand,
   setScheduleEnabled,
   upsertSchedule,
   type StoredSchedule,
 } from "./telegram/schedules.server";
-import {
-  browserTimezone,
-  validateSchedule,
-  type DeliveryType,
-} from "./telegram/schedule-model";
+import { browserTimezone, validateSchedule, type DeliveryType } from "./telegram/schedule-model";
 
 /**
  * MVP keeps everything in-memory: the demo campaigns are deterministic, so the
@@ -36,13 +34,18 @@ import {
  * platforms are never blended together under a brand.
  */
 export type AdMateAnalysis = AnalysisResult & {
-  brand: Brand;
+  brand: WorkspaceBrand;
   brandLabel: string;
   platform: Platform;
   provider: string;
   providerLabel: string;
   modeLabel: string;
-  aiStatus: "ok" | "failed";
+  /** Where the campaigns came from. "meta_live" is owner-only real data. */
+  source: "demo" | "meta_live";
+  /** Live connection status (account, counts, or a safe error); null for demo. */
+  live: LiveConnection | null;
+  /** "disabled" = no AI narrative requested (live data in this first stage). */
+  aiStatus: "ok" | "failed" | "disabled";
   aiError: string | null;
 };
 
@@ -51,7 +54,10 @@ export type AdMateAnalysis = AnalysisResult & {
 // adds latency.
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { at: number; value: AdMateAnalysis }>();
-const cacheKey = (brand: Brand, platform: Platform) => `${brand}:${platform}`;
+const cacheKey = (brand: WorkspaceBrand, platform: Platform) => `${brand}:${platform}`;
+// Live results are re-read sooner; a failed live read is never cached, so a
+// fixed token or a recovered Meta API is picked up on the next request.
+const LIVE_CACHE_TTL_MS = 2 * 60 * 1000;
 
 // Analysis generation now lives in ./telegram/dispatch.server (the single source
 // of truth shared by the UI, preview, Send Now and the cron runner). This module
@@ -65,8 +71,17 @@ function coerceBrand(input: unknown): Brand {
   return isBrand(value) ? value : DEFAULT_BRAND;
 }
 
-function coerceScope(input: unknown): { brand: Brand; platform: Platform } {
-  const brand = coerceBrand(input);
+/** Demo brands plus live brands — used ONLY by the analysis functions below. */
+function coerceWorkspaceBrand(input: unknown): WorkspaceBrand {
+  const value =
+    input && typeof input === "object" && "brand" in input
+      ? (input as { brand?: unknown }).brand
+      : input;
+  return isWorkspaceBrand(value) ? value : DEFAULT_BRAND;
+}
+
+function coerceScope(input: unknown): { brand: WorkspaceBrand; platform: Platform } {
+  const brand = coerceWorkspaceBrand(input);
   const rawPlatform =
     input && typeof input === "object" && "platform" in input
       ? (input as { platform?: unknown }).platform
@@ -78,25 +93,51 @@ function coerceScope(input: unknown): { brand: Brand; platform: Platform } {
 }
 
 /**
- * Gather one brand's analyses — one per connected platform, each analysed on its
- * own. This is the list the cross-platform Telegram briefing reads for the brand.
+ * Owner gate for live brands. Runs BEFORE the cache is consulted, so cached live
+ * data can never be served to anyone but the verified owner. Demo brands need
+ * no identity at all (they stay public).
  */
-async function gatherBrandAnalyses(brand: Brand): Promise<AdMateAnalysis[]> {
+async function requireAccess(brand: WorkspaceBrand): Promise<OwnerAccess | null> {
+  if (!isLiveBrand(brand)) return null;
+  const access = await verifyOwnerAccess();
+  if (!access) throw new Error("This workspace isn't available.");
+  return access;
+}
+
+/** One (brand, platform) analysis behind the per-(brand, platform) cache. */
+async function cachedAnalysis(
+  brand: WorkspaceBrand,
+  platform: Platform,
+  access: OwnerAccess | null,
+): Promise<AdMateAnalysis> {
+  const key = cacheKey(brand, platform);
+  const ttl = isLiveBrand(brand) ? LIVE_CACHE_TTL_MS : CACHE_TTL_MS;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
+  const value = await computeAnalysis(brand, platform, access);
+  if (value.live?.status !== "error") cache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+/**
+ * Gather one brand's analyses — one per connected platform, each analysed on its
+ * own. The owner check (live brands only) happens once, up front.
+ */
+async function gatherBrandAnalyses(brand: WorkspaceBrand): Promise<AdMateAnalysis[]> {
+  const access = await requireAccess(brand);
   return Promise.all(
-    brandPlatforms(brand).map((platform) => getAdMateAnalysis({ data: { brand, platform } })),
+    brandPlatforms(brand).map((platform) => cachedAnalysis(brand, platform, access)),
   );
 }
 
 export const getAdMateAnalysis = createServerFn({ method: "GET" })
-  .validator((input: { brand?: Brand; platform?: Platform } | undefined) => coerceScope(input))
+  .validator((input: { brand?: WorkspaceBrand; platform?: Platform } | undefined) =>
+    coerceScope(input),
+  )
   .handler(async ({ data }): Promise<AdMateAnalysis> => {
     const { brand, platform } = data;
-    const key = cacheKey(brand, platform);
-    const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
-    const value = await computeAnalysis(brand, platform);
-    cache.set(key, { at: Date.now(), value });
-    return value;
+    const access = await requireAccess(brand);
+    return cachedAnalysis(brand, platform, access);
   });
 
 /**
@@ -104,8 +145,22 @@ export const getAdMateAnalysis = createServerFn({ method: "GET" })
  * Overview, the shell and Alerts. Scoped to the brand's connected platforms.
  */
 export const getAllAnalyses = createServerFn({ method: "GET" })
-  .validator((input: { brand?: Brand } | undefined) => ({ brand: coerceBrand(input) }))
+  .validator((input: { brand?: WorkspaceBrand } | undefined) => ({
+    brand: coerceWorkspaceBrand(input),
+  }))
   .handler(async ({ data }): Promise<AdMateAnalysis[]> => gatherBrandAnalyses(data.brand));
+
+/**
+ * Which live brands the current signed-in user may open. Only the verified
+ * owner (META_OWNER_USER_ID) gets the live "My Account" brand; everyone else —
+ * including anonymous visitors — gets an empty list.
+ */
+export const getWorkspaceAccess = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ liveBrands: LiveBrand[] }> => {
+    const access = await verifyOwnerAccess();
+    return { liveBrands: access ? ["my_account"] : [] };
+  },
+);
 
 /**
  * Plain-text render of the CROSS-PLATFORM digest for one brand (Telegram
@@ -146,9 +201,9 @@ function coerceScheduleInput(input: unknown): {
   dayOfMonth: number | null;
 } {
   const o = (input ?? {}) as Record<string, unknown>;
-  const deliveryType = (["daily", "weekly", "monthly"].includes(String(o.deliveryType))
-    ? o.deliveryType
-    : "daily") as DeliveryType;
+  const deliveryType = (
+    ["daily", "weekly", "monthly"].includes(String(o.deliveryType)) ? o.deliveryType : "daily"
+  ) as DeliveryType;
   return {
     brand: coerceBrand(input),
     deliveryType,
@@ -175,23 +230,27 @@ export const getTelegramSchedule = createServerFn({ method: "GET" })
 /** Create/replace a brand's schedule. Persisted; the cron runner executes it. */
 export const saveTelegramSchedule = createServerFn({ method: "POST" })
   .validator(coerceScheduleInput)
-  .handler(async ({ data }): Promise<{ ok: true; schedule: StoredSchedule } | { ok: false; error: string }> => {
-    const invalid = validateSchedule(data);
-    if (invalid) return { ok: false, error: invalid };
-    try {
-      const schedule = await upsertSchedule(data.brand, {
-        deliveryType: data.deliveryType,
-        time: data.time,
-        timezone: data.timezone,
-        weekday: data.weekday,
-        dayOfMonth: data.dayOfMonth,
-      });
-      return { ok: true, schedule };
-    } catch (error) {
-      console.error("saveTelegramSchedule failed", error);
-      return { ok: false, error: "Unable to save schedule." };
-    }
-  });
+  .handler(
+    async ({
+      data,
+    }): Promise<{ ok: true; schedule: StoredSchedule } | { ok: false; error: string }> => {
+      const invalid = validateSchedule(data);
+      if (invalid) return { ok: false, error: invalid };
+      try {
+        const schedule = await upsertSchedule(data.brand, {
+          deliveryType: data.deliveryType,
+          time: data.time,
+          timezone: data.timezone,
+          weekday: data.weekday,
+          dayOfMonth: data.dayOfMonth,
+        });
+        return { ok: true, schedule };
+      } catch (error) {
+        console.error("saveTelegramSchedule failed", error);
+        return { ok: false, error: "Unable to save schedule." };
+      }
+    },
+  );
 
 /** Enable or disable an existing schedule without deleting it. */
 export const setTelegramScheduleEnabled = createServerFn({ method: "POST" })
@@ -199,12 +258,16 @@ export const setTelegramScheduleEnabled = createServerFn({ method: "POST" })
     brand: coerceBrand(input),
     enabled: Boolean((input as { enabled?: boolean } | undefined)?.enabled),
   }))
-  .handler(async ({ data }): Promise<{ ok: true; schedule: StoredSchedule | null } | { ok: false; error: string }> => {
-    try {
-      const schedule = await setScheduleEnabled(data.brand, data.enabled);
-      return { ok: true, schedule };
-    } catch (error) {
-      console.error("setTelegramScheduleEnabled failed", error);
-      return { ok: false, error: "Unable to update schedule." };
-    }
-  });
+  .handler(
+    async ({
+      data,
+    }): Promise<{ ok: true; schedule: StoredSchedule | null } | { ok: false; error: string }> => {
+      try {
+        const schedule = await setScheduleEnabled(data.brand, data.enabled);
+        return { ok: true, schedule };
+      } catch (error) {
+        console.error("setTelegramScheduleEnabled failed", error);
+        return { ok: false, error: "Unable to update schedule." };
+      }
+    },
+  );
