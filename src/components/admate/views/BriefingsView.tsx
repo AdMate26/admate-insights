@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Eye, CalendarClock, ChevronDown } from "lucide-react";
+import { Send, Eye, CalendarClock, ChevronDown, Lock } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -10,16 +10,25 @@ import {
   setTelegramScheduleEnabled,
 } from "@/lib/admate.functions";
 import { brandMeta, type Brand } from "@/lib/brands";
-import {
-  browserTimezone,
-  WEEKDAY_LABELS,
-  type DeliveryType,
-} from "@/lib/telegram/schedule-model";
+import { browserTimezone, WEEKDAY_LABELS, type DeliveryType } from "@/lib/telegram/schedule-model";
 import type { StoredSchedule } from "@/lib/telegram/schedules.server";
 
 type Mode = null | "menu" | DeliveryType;
 
-export function BriefingsView({ brand }: { brand: Brand }) {
+/**
+ * `canManage` is true only once the server has confirmed this session is the
+ * verified owner. It only decides what to show: every Telegram server function
+ * re-checks the owner itself and refuses everyone else.
+ */
+export function BriefingsView({
+  brand,
+  canManage,
+  signedIn,
+}: {
+  brand: Brand;
+  canManage: boolean;
+  signedIn: boolean;
+}) {
   const [chatId, setChatId] = useState("");
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -40,6 +49,11 @@ export function BriefingsView({ brand }: { brand: Brand }) {
   useEffect(() => {
     let cancelled = false;
     setMode(null);
+    // Only the owner may read schedules; don't ask the server otherwise.
+    if (!canManage) {
+      setSchedule(null);
+      return;
+    }
     getTelegramSchedule({ data: { brand } })
       .then((res) => {
         if (cancelled) return;
@@ -56,7 +70,7 @@ export function BriefingsView({ brand }: { brand: Brand }) {
     return () => {
       cancelled = true;
     };
-  }, [brand]);
+  }, [brand, canManage]);
 
   // Close the month-day popover on outside click or Escape.
   useEffect(() => {
@@ -168,148 +182,186 @@ export function BriefingsView({ brand }: { brand: Brand }) {
             <span className="panel-note">Cross-platform digest</span>
           </div>
 
-          <input
-            className="sched-input"
-            value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
-            placeholder="Telegram chat ID (optional — overrides the default)"
-            aria-label="Telegram chat ID"
-          />
+          {canManage ? (
+            <>
+              <input
+                className="sched-input"
+                value={chatId}
+                onChange={(e) => setChatId(e.target.value)}
+                placeholder="Telegram chat ID (optional — overrides the default)"
+                aria-label="Telegram chat ID"
+              />
 
-          {/* Two clear, separate actions. Preview never needs Telegram. */}
-          <div className="brief-actions">
-            <button className="button-secondary" onClick={loadPreview} disabled={loadingPreview}>
-              <Eye size={15} aria-hidden="true" />
-              {loadingPreview ? "Building…" : preview ? "Refresh preview" : "Preview Message"}
-            </button>
-            <button
-              className="send-briefing"
-              onClick={() => setMode(mode ? null : "menu")}
-              aria-expanded={mode != null}
-            >
-              <CalendarClock size={15} aria-hidden="true" />
-              Telegram Schedule &amp; Send
-            </button>
-          </div>
-
-          {/* Send & Schedule menu */}
-          {mode ? (
-            <div className="sched-panel">
-              <div className="sched-options" role="tablist" aria-label="Delivery">
-                <button className="sched-opt" onClick={sendNow} disabled={sending}>
-                  <Send size={13} aria-hidden="true" /> {sending ? "Sending…" : "Send Now"}
+              {/* Two clear, separate actions. Preview never needs Telegram. */}
+              <div className="brief-actions">
+                <button
+                  className="button-secondary"
+                  onClick={loadPreview}
+                  disabled={loadingPreview}
+                >
+                  <Eye size={15} aria-hidden="true" />
+                  {loadingPreview ? "Building…" : preview ? "Refresh preview" : "Preview Message"}
                 </button>
-                {(["daily", "weekly", "monthly"] as DeliveryType[]).map((d) => (
-                  <button
-                    key={d}
-                    className={`sched-opt${mode === d ? " is-active" : ""}`}
-                    aria-selected={mode === d}
-                    onClick={() => setMode(d)}
-                  >
-                    {d[0].toUpperCase() + d.slice(1)}
-                  </button>
-                ))}
+                <button
+                  className="send-briefing"
+                  onClick={() => setMode(mode ? null : "menu")}
+                  aria-expanded={mode != null}
+                >
+                  <CalendarClock size={15} aria-hidden="true" />
+                  Telegram Schedule &amp; Send
+                </button>
               </div>
 
-              {mode !== "menu" ? (
-                <div className="sched-form">
-                  {mode === "weekly" ? (
-                    <label className="sched-field">
-                      <span>Send every</span>
-                      <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
-                        {WEEKDAY_LABELS.map((label, i) => (
-                          <option key={label} value={i}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-
-                  {mode === "monthly" ? (
-                    <div className="sched-field sched-monthfield" ref={monthFieldRef}>
-                      <span>Send every month on</span>
+              {/* Send & Schedule menu */}
+              {mode ? (
+                <div className="sched-panel">
+                  <div className="sched-options" role="tablist" aria-label="Delivery">
+                    <button className="sched-opt" onClick={sendNow} disabled={sending}>
+                      <Send size={13} aria-hidden="true" /> {sending ? "Sending…" : "Send Now"}
+                    </button>
+                    {(["daily", "weekly", "monthly"] as DeliveryType[]).map((d) => (
                       <button
-                        type="button"
-                        className="sched-day-field"
-                        aria-haspopup="dialog"
-                        aria-expanded={monthPickerOpen}
-                        onClick={() => setMonthPickerOpen((o) => !o)}
+                        key={d}
+                        className={`sched-opt${mode === d ? " is-active" : ""}`}
+                        aria-selected={mode === d}
+                        onClick={() => setMode(d)}
                       >
-                        {dayOfMonth}
-                        <ChevronDown size={14} aria-hidden="true" />
+                        {d[0].toUpperCase() + d.slice(1)}
                       </button>
-                      {monthPickerOpen ? (
-                        <div className="sched-daygrid" role="dialog" aria-label="Select day of month">
-                          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                            <button
-                              key={d}
-                              type="button"
-                              className={`sched-day${d === dayOfMonth ? " is-active" : ""}`}
-                              aria-pressed={d === dayOfMonth}
-                              onClick={() => {
-                                setDayOfMonth(d);
-                                setMonthPickerOpen(false);
-                              }}
+                    ))}
+                  </div>
+
+                  {mode !== "menu" ? (
+                    <div className="sched-form">
+                      {mode === "weekly" ? (
+                        <label className="sched-field">
+                          <span>Send every</span>
+                          <select
+                            value={weekday}
+                            onChange={(e) => setWeekday(Number(e.target.value))}
+                          >
+                            {WEEKDAY_LABELS.map((label, i) => (
+                              <option key={label} value={i}>
+                                {label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+
+                      {mode === "monthly" ? (
+                        <div className="sched-field sched-monthfield" ref={monthFieldRef}>
+                          <span>Send every month on</span>
+                          <button
+                            type="button"
+                            className="sched-day-field"
+                            aria-haspopup="dialog"
+                            aria-expanded={monthPickerOpen}
+                            onClick={() => setMonthPickerOpen((o) => !o)}
+                          >
+                            {dayOfMonth}
+                            <ChevronDown size={14} aria-hidden="true" />
+                          </button>
+                          {monthPickerOpen ? (
+                            <div
+                              className="sched-daygrid"
+                              role="dialog"
+                              aria-label="Select day of month"
                             >
-                              {d}
-                            </button>
-                          ))}
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                                <button
+                                  key={d}
+                                  type="button"
+                                  className={`sched-day${d === dayOfMonth ? " is-active" : ""}`}
+                                  aria-pressed={d === dayOfMonth}
+                                  onClick={() => {
+                                    setDayOfMonth(d);
+                                    setMonthPickerOpen(false);
+                                  }}
+                                >
+                                  {d}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
+                      ) : null}
+
+                      <label className="sched-field">
+                        <span>At</span>
+                        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                      </label>
+
+                      <button
+                        className="send-briefing"
+                        onClick={() => saveSchedule(mode)}
+                        disabled={saving}
+                      >
+                        {saving ? "Saving…" : "Save Schedule"}
+                      </button>
+                      {mode === "monthly" ? (
+                        <p className="fam-blurb sched-note">
+                          Days 29–31 fall back to the last valid day of shorter months.
+                        </p>
                       ) : null}
                     </div>
                   ) : null}
-
-                  <label className="sched-field">
-                    <span>At</span>
-                    <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-                  </label>
-
-                  <button className="send-briefing" onClick={() => saveSchedule(mode)} disabled={saving}>
-                    {saving ? "Saving…" : "Save Schedule"}
-                  </button>
-                  {mode === "monthly" ? (
-                    <p className="fam-blurb sched-note">
-                      Days 29–31 fall back to the last valid day of shorter months.
-                    </p>
-                  ) : null}
                 </div>
               ) : null}
-            </div>
-          ) : null}
 
-          {/* Existing schedule */}
-          {schedule ? (
-            <div className="sched-current">
+              {/* Existing schedule */}
+              {schedule ? (
+                <div className="sched-current">
+                  <div>
+                    <span className="sched-current-label">Scheduled</span>
+                    <strong className={schedule.enabled ? "" : "sched-off"}>
+                      {schedule.summary}
+                      {schedule.enabled ? "" : " (disabled)"}
+                    </strong>
+                  </div>
+                  <div className="sched-current-actions">
+                    <button className="button-quiet" onClick={startEdit}>
+                      Edit
+                    </button>
+                    {schedule.enabled ? (
+                      <button className="button-quiet" onClick={() => toggleEnabled(false)}>
+                        Disable
+                      </button>
+                    ) : (
+                      <button className="button-quiet" onClick={() => toggleEnabled(true)}>
+                        Enable
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              <p className="fam-blurb">
+                Telegram Schedule &amp; Send is not connected in the demo — use Preview to see the
+                exact message.
+              </p>
+              {preview ? <pre className="briefing-preview">{preview}</pre> : null}
+            </>
+          ) : (
+            <div className="sched-current" role="note">
               <div>
-                <span className="sched-current-label">Scheduled</span>
-                <strong className={schedule.enabled ? "" : "sched-off"}>
-                  {schedule.summary}
-                  {schedule.enabled ? "" : " (disabled)"}
+                <span className="sched-current-label">
+                  <Lock size={13} aria-hidden="true" /> Owner only
+                </span>
+                <strong>
+                  Previewing, sending and scheduling Telegram briefings is available to the AdMate
+                  owner account.
                 </strong>
               </div>
-              <div className="sched-current-actions">
-                <button className="button-quiet" onClick={startEdit}>
-                  Edit
-                </button>
-                {schedule.enabled ? (
-                  <button className="button-quiet" onClick={() => toggleEnabled(false)}>
-                    Disable
-                  </button>
-                ) : (
-                  <button className="button-quiet" onClick={() => toggleEnabled(true)}>
-                    Enable
-                  </button>
-                )}
-              </div>
+              {signedIn ? null : (
+                <div className="sched-current-actions">
+                  <a className="button-quiet" href="/login">
+                    Sign in
+                  </a>
+                </div>
+              )}
             </div>
-          ) : null}
-
-          <p className="fam-blurb">
-            Telegram Schedule &amp; Send is not connected in the demo — use Preview to see the exact
-            message.
-          </p>
-          {preview ? <pre className="briefing-preview">{preview}</pre> : null}
+          )}
         </div>
 
         <div className="panel">

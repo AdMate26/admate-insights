@@ -22,7 +22,8 @@ import {
   upsertSchedule,
   type StoredSchedule,
 } from "./telegram/schedules.server";
-import { browserTimezone, validateSchedule, type DeliveryType } from "./telegram/schedule-model";
+import { createTelegramActions, type ScheduleInput } from "./telegram/owner-actions";
+import { browserTimezone, type DeliveryType } from "./telegram/schedule-model";
 
 /**
  * MVP keeps everything in-memory: the demo campaigns are deterministic, so the
@@ -162,20 +163,39 @@ export const getWorkspaceAccess = createServerFn({ method: "GET" }).handler(
   },
 );
 
-/**
- * Plain-text render of the CROSS-PLATFORM digest for one brand (Telegram
- * preview). The briefing spans the brand's connected platforms and counts only
- * Performance = Low.
- */
+/* -------------------------------------------------------------------------- */
+/* Telegram briefings — owner only                                            */
+/* -------------------------------------------------------------------------- */
+
+// Preview, Send Now and the schedule functions below are callable from any
+// browser, so each one re-checks the caller ON THE SERVER before it builds a
+// briefing, calls Telegram or touches telegram_schedules: only the verified
+// owner (Supabase-validated token whose user id equals META_OWNER_USER_ID) gets
+// through; everyone else receives one generic error. Hiding the buttons in the
+// UI is a convenience, not the protection. The scheduled cron runner does not
+// use these functions (it is authorised by CRON_SECRET in api/cron).
+// A function (not a module-level call) so the server-only wiring is only ever
+// reached from inside the handlers, which never run in the browser bundle.
+function telegram() {
+  return createTelegramActions({
+    verifyOwner: verifyOwnerAccess,
+    renderBriefingText,
+    sendBrandBriefing,
+    getScheduleForBrand,
+    upsertSchedule,
+    setScheduleEnabled,
+  });
+}
+
 /**
  * Preview the EXACT briefing that would be sent — reuses the one dispatcher, so
  * it works with no Telegram credentials and never requires a successful send.
+ * The briefing spans the brand's connected platforms and counts only
+ * Performance = Low.
  */
 export const previewBriefing = createServerFn({ method: "GET" })
   .validator((input: { brand?: Brand } | undefined) => ({ brand: coerceBrand(input) }))
-  .handler(async ({ data }) => {
-    return { text: await renderBriefingText(data.brand) };
-  });
+  .handler(async ({ data }) => telegram().preview(data));
 
 /** Send Now — preserves the working Telegram behaviour via the shared sender. */
 export const sendTelegramBriefing = createServerFn({ method: "POST" })
@@ -183,23 +203,13 @@ export const sendTelegramBriefing = createServerFn({ method: "POST" })
     chatId: input?.chatId?.trim() || undefined,
     brand: coerceBrand(input),
   }))
-  .handler(async ({ data }) => {
-    const result = await sendBrandBriefing(data.brand, data.chatId);
-    return result.ok ? { ok: true as const } : { ok: false as const, error: result.error };
-  });
+  .handler(async ({ data }) => telegram().send(data));
 
 /* -------------------------------------------------------------------------- */
 /* Telegram schedules (persisted; executed server-side by the Vercel cron)     */
 /* -------------------------------------------------------------------------- */
 
-function coerceScheduleInput(input: unknown): {
-  brand: Brand;
-  deliveryType: DeliveryType;
-  time: string;
-  timezone: string;
-  weekday: number | null;
-  dayOfMonth: number | null;
-} {
+function coerceScheduleInput(input: unknown): ScheduleInput {
   const o = (input ?? {}) as Record<string, unknown>;
   const deliveryType = (
     ["daily", "weekly", "monthly"].includes(String(o.deliveryType)) ? o.deliveryType : "daily"
@@ -217,15 +227,9 @@ function coerceScheduleInput(input: unknown): {
 /** Current saved schedule for a brand. `configured:false` when storage is unavailable. */
 export const getTelegramSchedule = createServerFn({ method: "GET" })
   .validator((input: { brand?: Brand } | undefined) => ({ brand: coerceBrand(input) }))
-  .handler(async ({ data }): Promise<{ configured: boolean; schedule: StoredSchedule | null }> => {
-    try {
-      const schedule = await getScheduleForBrand(data.brand);
-      return { configured: true, schedule };
-    } catch (error) {
-      console.error("getTelegramSchedule failed", error);
-      return { configured: false, schedule: null };
-    }
-  });
+  .handler(async ({ data }): Promise<{ configured: boolean; schedule: StoredSchedule | null }> =>
+    telegram().getSchedule(data),
+  );
 
 /** Create/replace a brand's schedule. Persisted; the cron runner executes it. */
 export const saveTelegramSchedule = createServerFn({ method: "POST" })
@@ -233,23 +237,8 @@ export const saveTelegramSchedule = createServerFn({ method: "POST" })
   .handler(
     async ({
       data,
-    }): Promise<{ ok: true; schedule: StoredSchedule } | { ok: false; error: string }> => {
-      const invalid = validateSchedule(data);
-      if (invalid) return { ok: false, error: invalid };
-      try {
-        const schedule = await upsertSchedule(data.brand, {
-          deliveryType: data.deliveryType,
-          time: data.time,
-          timezone: data.timezone,
-          weekday: data.weekday,
-          dayOfMonth: data.dayOfMonth,
-        });
-        return { ok: true, schedule };
-      } catch (error) {
-        console.error("saveTelegramSchedule failed", error);
-        return { ok: false, error: "Unable to save schedule." };
-      }
-    },
+    }): Promise<{ ok: true; schedule: StoredSchedule } | { ok: false; error: string }> =>
+      telegram().saveSchedule(data),
   );
 
 /** Enable or disable an existing schedule without deleting it. */
@@ -261,13 +250,6 @@ export const setTelegramScheduleEnabled = createServerFn({ method: "POST" })
   .handler(
     async ({
       data,
-    }): Promise<{ ok: true; schedule: StoredSchedule | null } | { ok: false; error: string }> => {
-      try {
-        const schedule = await setScheduleEnabled(data.brand, data.enabled);
-        return { ok: true, schedule };
-      } catch (error) {
-        console.error("setTelegramScheduleEnabled failed", error);
-        return { ok: false, error: "Unable to update schedule." };
-      }
-    },
+    }): Promise<{ ok: true; schedule: StoredSchedule | null } | { ok: false; error: string }> =>
+      telegram().setScheduleEnabled(data),
   );

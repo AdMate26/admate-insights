@@ -38,6 +38,11 @@ export function DashboardScreen({
     enabled: mode === "workspace" && Boolean(userId),
   });
   const liveBrands = LIVE_BRANDS.filter((b) => access.data?.liveBrands.some((id) => id === b.id));
+  // Telegram controls are shown only to the server-verified owner (the same
+  // answer that unlocks My Account). The Telegram server functions enforce this
+  // on their own; this just avoids offering buttons that would be refused.
+  const canManageTelegram =
+    mode === "workspace" && Boolean(access.data?.liveBrands.includes("my_account"));
   const liveConnection = analyses.find((a) => a.source === "meta_live")?.live ?? null;
 
   const go = (next: Partial<DashboardSearch>) => {
@@ -87,7 +92,7 @@ export function DashboardScreen({
       ) : null}
       {view === "briefings" ? (
         isBrand(brand) ? (
-          <BriefingsView brand={brand} />
+          <BriefingsView brand={brand} canManage={canManageTelegram} signedIn={Boolean(userId)} />
         ) : (
           <section className="panel">
             <h2 className="text-sm font-semibold text-foreground">Telegram briefings</h2>
