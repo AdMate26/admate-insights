@@ -31,17 +31,14 @@ function Wordmark() {
 }
 
 /**
- * Public marketing header. "How it works" and "Pricing" smooth-scroll to their
- * sections; one primary "Login / Sign up" button routes to the combined
- * login/signup placeholder. Collapses to a toggle menu on mobile.
+ * Public marketing header. "How it works" smooth-scrolls to its section; one
+ * primary "Login / Sign up" button routes to the combined login/signup page.
+ * Collapses to a toggle menu on mobile.
  */
 export function LandingHeader() {
   const [open, setOpen] = useState(false);
 
-  const scrollLinks = [
-    { href: "#how-it-works", label: "How it works" },
-    { href: "#pricing", label: "Pricing" },
-  ];
+  const scrollLinks = [{ href: "#how-it-works", label: "How it works" }];
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-md">
