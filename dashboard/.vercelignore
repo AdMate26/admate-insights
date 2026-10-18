@@ -1,0 +1,9 @@
+# Never upload local data or private test files to Vercel.
+/.data
+/fixtures/private
+/.next-review
+/.next-auth
+/.claude
+.env*
+!.env.example
+*.tsbuildinfo

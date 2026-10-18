@@ -1,0 +1,1226 @@
+<title>AdMate v3 Overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap">
+<style>
+/* Layout: the AdMate app frame (v2 sidebar) with v3 pages, running AdMate's real engine in the page.
+   Colour = priority (High red, Medium amber, Low grey). Problem / opportunity = icon + label.
+   Brand tokens from app/globals.css (Blade A logo, Violet, Signal only for "Start here"). */
+:root {
+  --bg: #ffffff; --surface: #f6f6f9; --surface-2: #eeeef4; --line: #e3e3ec;
+  --fg: #0a0a13; --muted: #5d5d72; --faint: #9696a8;
+  --violet: #6a3fe8; --violet-soft: #efeafe;
+  --signal: #c2e233; --signal-ink: #0a0a13;
+  --hi: #d23b3b; --hi-soft: #fcecec; --mid: #b26a00; --mid-soft: #fbf0dc; --lo: #6b6b80; --lo-soft: #eeeef4;
+  --good: #1f8a5b; --good-soft: #e3f4ec;
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --shadow: 0 10px 40px rgb(10 10 19 / 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0a13; --surface: #12121d; --surface-2: #1a1a28; --line: #262635;
+    --fg: #f1f1f6; --muted: #a0a0b4; --faint: #6c6c80;
+    --violet: #8f74ff; --violet-soft: #1e1838;
+    --hi: #ff6b6b; --hi-soft: #2c1518; --mid: #f2b155; --mid-soft: #2b2112; --lo: #a0a0b4; --lo-soft: #1f1f2e;
+    --good: #4fd19a; --good-soft: #10261d;
+    --shadow: 0 10px 40px rgb(0 0 0 / 0.5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0a13; --surface: #12121d; --surface-2: #1a1a28; --line: #262635;
+  --fg: #f1f1f6; --muted: #a0a0b4; --faint: #6c6c80;
+  --violet: #8f74ff; --violet-soft: #1e1838;
+  --hi: #ff6b6b; --hi-soft: #2c1518; --mid: #f2b155; --mid-soft: #2b2112; --lo: #a0a0b4; --lo-soft: #1f1f2e;
+  --good: #4fd19a; --good-soft: #10261d;
+  --shadow: 0 10px 40px rgb(0 0 0 / 0.5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-display); font-size: 14px; line-height: 1.45; }
+h1, h2, h3 { font-weight: 700; letter-spacing: -0.03em; margin: 0; text-wrap: balance; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible, summary:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+svg text { font-family: var(--font-mono); }
+
+.frame { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100%; }
+/* Pinned to the screen, so "Other accounts" and Sign out stay in view on long pages. */
+.side { border-right: 1px solid var(--line); background: var(--surface); padding: 16px 10px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto; }
+.wordmark { display: inline-flex; align-items: center; gap: 7px; padding-inline: 8px; font-size: 21px; letter-spacing: -0.04em; line-height: 1; background: none; border: 0; }
+.wordmark .ad { font-weight: 500; } .wordmark .mate { font-weight: 700; }
+.acct { padding-inline: 8px; display: grid; gap: 1px; }
+.acct b { font-weight: 500; }
+.acct span:last-child { color: var(--muted); font-size: 12px; }
+.nav { display: grid; gap: 2px; }
+.nav button { display: flex; align-items: center; gap: 10px; background: none; border: 0; border-radius: 8px; padding: 8px 10px; text-align: left; color: var(--muted); }
+.nav button svg { flex: none; }
+.nav button[aria-current="page"] { background: var(--violet-soft); color: var(--violet); font-weight: 500; }
+.nav button:hover { color: var(--fg); }
+.nav .count { margin-left: auto; font-family: var(--font-mono); font-size: 11px; background: var(--hi); color: #fff; border-radius: 999px; padding: 0 7px; }
+.nav .count.soft { background: var(--surface-2); color: var(--muted); }
+.nav .new { margin-left: auto; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; background: var(--signal); color: var(--signal-ink); border-radius: 4px; padding: 0 5px; }
+.sidenote { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px; font-size: 12px; color: var(--muted); margin-inline: 4px; }
+.sidenote b { color: var(--fg); font-weight: 500; display: block; margin-bottom: 2px; }
+.others { margin-top: auto; display: grid; gap: 2px; }
+.others .label { padding: 0 10px 4px; font-size: 10px; }
+.others button { background: none; border: 0; border-radius: 6px; padding: 6px 10px; text-align: left; color: var(--muted); font-size: 13.5px; }
+.others button:hover { background: var(--bg); color: var(--fg); }
+.others .add { color: var(--violet); }
+.others .reset { font-size: 12px; }
+.user { border-top: 1px solid var(--line); padding: 10px 8px 0; display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+
+.main { min-width: 0; display: grid; align-content: start; }
+.banner { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: space-between; align-items: center; background: var(--violet-soft); border-bottom: 1px solid var(--line); padding-block: 10px; padding-inline: clamp(16px, 4vw, 40px); font-size: 13.5px; }
+.banner b { font-weight: 500; }
+.content { padding-block: 20px 48px; padding-inline: clamp(16px, 4vw, 40px); display: grid; gap: 18px; align-content: start; max-width: 1200px; width: 100%; }
+.proto { border: 1px dashed var(--line); border-radius: 10px; padding: 7px 12px; color: var(--muted); font-size: 12.5px; margin: 0; }
+.proto b { color: var(--fg); font-weight: 500; }
+
+.head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; }
+.head h1 { font-size: 26px; }
+.head .meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; position: relative; }
+.btn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 12px; font-weight: 500; font-size: 13px; }
+.btn.primary { background: var(--violet); border-color: var(--violet); color: #fff; }
+.btn.small { padding: 3px 9px; font-size: 12px; }
+.btn:hover { border-color: var(--faint); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.link { background: none; border: 0; color: var(--violet); font-weight: 500; padding: 0; text-align: left; }
+.periodbtn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 12px; text-align: left; }
+.periodbtn b { font-family: var(--font-mono); font-weight: 500; font-size: 13px; }
+.periodbtn span { color: var(--muted); font-size: 12px; }
+.compareline { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 13px; color: var(--muted); border-left: 3px solid var(--violet); padding: 2px 0 2px 10px; margin: 0; }
+.compareline b { color: var(--fg); font-weight: 500; }
+
+/* Period picker */
+.picker { position: absolute; right: 0; top: calc(100% + 8px); z-index: 25; width: min(560px, calc(100vw - 32px)); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 14px; display: grid; gap: 14px; max-height: min(80vh, 640px); overflow-y: auto; }
+.pk { display: grid; gap: 8px; }
+.pk h4 { margin: 0; font-size: 13px; font-weight: 500; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; padding: 2px; justify-self: start; }
+.seg button { border: 0; background: none; border-radius: 6px; padding: 4px 12px; color: var(--muted); font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--fg); font-weight: 500; }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 6px; max-height: 170px; overflow-y: auto; padding: 1px; }
+.choices button { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 8px; font-family: var(--font-mono); font-size: 12px; text-align: left; }
+.choices button small { display: block; color: var(--muted); font-family: var(--font-display); font-size: 11px; }
+.choices button[aria-pressed="true"] { border-color: var(--violet); background: var(--violet-soft); color: var(--violet); font-weight: 500; }
+.dates { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.dates input { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--bg); font-family: var(--font-mono); font-size: 12.5px; }
+.radios { display: grid; gap: 6px; }
+.radios label { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.radios input { accent-color: var(--violet); margin-top: 3px; }
+.radios small { display: block; color: var(--muted); font-size: 12px; }
+.pickfoot { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+.pickfoot span { margin-right: auto; color: var(--muted); font-size: 12px; }
+
+.page { display: grid; gap: 26px; align-content: start; }
+.status { display: grid; gap: 10px; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { display: inline-flex; align-items: baseline; gap: 8px; border-radius: 10px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--line); font-size: 14px; }
+.pill .num { font-size: 20px; font-weight: 500; }
+.pill.hi { background: var(--hi-soft); border-color: transparent; color: var(--hi); }
+.pill.good { background: var(--good-soft); border-color: transparent; color: var(--good); }
+.oneline { color: var(--muted); max-width: 74ch; margin: 0; }
+
+.section { display: grid; gap: 12px; }
+.section > header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
+.section > header h2 { font-size: 17px; }
+.section > header .hint { color: var(--muted); font-size: 13px; }
+.section > header .more { margin-left: auto; }
+.two { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 22px; align-items: start; }
+
+.goals { display: grid; gap: 14px; }
+.goal { display: grid; gap: 6px; }
+.goal .top { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.goal .name { font-weight: 500; }
+.goal .val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; margin-left: auto; }
+.state { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.state.bad { background: var(--hi-soft); color: var(--hi); }
+.state.warn { background: var(--mid-soft); color: var(--mid); }
+.state.good { background: var(--good-soft); color: var(--good); }
+.state.flat { background: var(--surface-2); color: var(--muted); }
+.goal svg { width: 100%; height: 26px; display: block; overflow: visible; }
+.goal .cap { font-size: 12px; color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.tile { text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 12px; display: grid; gap: 4px; }
+button.tile:hover { border-color: var(--faint); }
+.tile[aria-pressed="true"] { border-color: var(--violet); }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font-family: var(--font-mono); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tile .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tile svg { width: 110px; height: 30px; flex: none; }
+.delta { font-family: var(--font-mono); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.delta.good { color: var(--good); } .delta.bad { color: var(--hi); } .delta.flat { color: var(--muted); }
+.chartbox { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+.chartbox svg { width: 100%; height: auto; display: block; }
+.chartbox .cap { color: var(--muted); font-size: 12px; }
+.chartbox .title { font-weight: 500; font-size: 13px; }
+.more-objs { display: flex; flex-wrap: wrap; gap: 6px; }
+.more-objs button { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--muted); }
+.more-objs button[aria-pressed="true"] { border-color: var(--violet); color: var(--violet); }
+
+/* Priority colour (the one colour rule) */
+.prio { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; white-space: nowrap; font-weight: 500; }
+.prio.high { background: var(--hi); color: #fff; }
+.prio.medium { background: var(--mid-soft); color: var(--mid); border: 1px solid var(--mid); }
+.prio.low, .prio.monitor { background: var(--lo-soft); color: var(--lo); }
+.kindtag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px 1px 6px; white-space: nowrap; }
+.start { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; background: var(--signal); color: var(--signal-ink); border-radius: 4px; padding: 2px 7px; font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.sw.high { background: var(--hi); } .sw.medium { background: var(--mid); } .sw.low { background: var(--lo); }
+
+.great { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.gcard { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 8px; background: var(--bg); }
+.gcard .t { font-weight: 500; overflow-wrap: anywhere; }
+.gcard p { margin: 0; color: var(--muted); font-size: 13px; }
+.gcard .do { color: var(--fg); }
+.gcard .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.reuse { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 3px; }
+
+.rows { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.irow { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px 12px 20px; border: 0; border-top: 1px solid var(--line); background: var(--bg); text-align: left; width: 100%; }
+.irow:first-child { border-top: 0; }
+.irow:hover { background: var(--surface); }
+.irow::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--lo); }
+.irow.high::before { background: var(--hi); } .irow.medium::before { background: var(--mid); }
+.irow.closed { opacity: 0.7; }
+.irow .body { min-width: 0; display: grid; gap: 5px; }
+.irow .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.irow .t { font-weight: 500; }
+.irow .sub { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); font-size: 12.5px; }
+.path { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.path b { color: var(--fg); font-weight: 500; }
+.metric { font-family: var(--font-mono); font-size: 12px; color: var(--fg); background: var(--surface-2); border-radius: 6px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
+.side-r { display: grid; justify-items: end; gap: 4px; }
+.stake { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+.stake small { color: var(--muted); font-size: 11px; }
+.conf { display: inline-flex; gap: 3px; align-items: center; }
+.conf i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.conf i.on { background: var(--fg); }
+.conflabel { font-size: 11px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
+.plat { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+
+.health { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.hrow { display: grid; grid-template-columns: 150px minmax(0, 1.6fr) minmax(90px, 0.8fr) minmax(150px, 1.2fr) 120px; gap: 12px; align-items: center; padding: 10px 14px; border: 0; border-top: 1px solid var(--line); background: var(--bg); text-align: left; width: 100%; }
+.hrow:first-child { border-top: 0; }
+.hrow:hover { background: var(--surface); }
+.hrow.headrow { background: var(--surface); cursor: default; padding-block: 7px; }
+.hstate { display: flex; align-items: center; gap: 7px; font-size: 13px; flex-wrap: wrap; }
+.hname { min-width: 0; display: grid; gap: 2px; }
+.hname b { font-weight: 500; overflow-wrap: anywhere; }
+.hname span { color: var(--muted); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.share { display: grid; gap: 3px; }
+.share .bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.share .bar i { display: block; height: 100%; background: var(--muted); }
+.share .num { font-size: 12px; color: var(--muted); }
+.vs { display: grid; gap: 2px; font-size: 12px; }
+.vs svg { width: 100%; height: 14px; display: block; overflow: visible; }
+.next { font-size: 12.5px; text-align: right; color: var(--muted); }
+
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 5px 12px; font-size: 13px; color: var(--muted); }
+.filters button[aria-pressed="true"] { border-color: var(--fg); color: var(--fg); font-weight: 500; }
+.empty { border: 1px dashed var(--line); border-radius: 12px; padding: 22px; color: var(--muted); text-align: center; margin: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.toggle { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+
+/* Campaigns tree */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.ct { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px; }
+.ct th { text-align: left; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.ct td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ct tr:last-child td { border-bottom: 0; }
+.ct tbody tr[data-row] { cursor: pointer; }
+.ct tbody tr[data-row]:hover td { background: var(--surface); }
+.ct .r { text-align: right; }
+.ct .nm { font-weight: 500; overflow-wrap: anywhere; display: flex; gap: 6px; align-items: baseline; }
+.ct .sub { color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 3px; }
+.ct select { border: 1px solid var(--line); background: var(--bg); border-radius: 6px; font-size: 12px; padding: 1px 4px; color: var(--muted); max-width: 150px; }
+.ct .was { color: var(--faint); font-size: 11px; }
+.ct tr.lv1 td:nth-child(2) { padding-left: 34px; }
+.ct tr.lv2 td:nth-child(2) { padding-left: 58px; }
+.ct tr.lv1 td, .ct tr.lv2 td { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.ct tr.grouphead td { background: var(--surface-2); font-weight: 500; font-size: 12.5px; padding-block: 6px; cursor: default; }
+.lvl { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; white-space: nowrap; }
+.tw { background: none; border: 0; padding: 0 4px 0 0; color: var(--muted); font-size: 12px; }
+
+/* Lists, forms */
+.list { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.li { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); }
+.li:first-child { border-top: 0; }
+.li .grow { flex: 1 1 260px; min-width: 0; display: grid; gap: 2px; }
+.li .grow b { font-weight: 500; overflow-wrap: anywhere; }
+.li .grow span { color: var(--muted); font-size: 12.5px; }
+.card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.card > header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: baseline; }
+.card > header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 65ch; }
+.cardbody { padding: 16px; display: grid; gap: 14px; }
+.trow { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; padding: 16px; border-top: 1px solid var(--line); }
+.trow:first-of-type { border-top: 0; }
+.trow .who { display: grid; gap: 4px; align-content: start; }
+.trow .who span { color: var(--muted); font-size: 12px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; align-content: start; }
+.field { display: grid; gap: 5px; }
+.field > span { font-size: 12px; color: var(--muted); }
+.field .in { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.field .in:focus-within { border-color: var(--violet); }
+.field .in i { font-style: normal; font-family: var(--font-mono); font-size: 12px; color: var(--faint); padding-inline: 10px; }
+.field input, .field select { width: 100%; min-width: 0; border: 0; background: transparent; padding: 8px 10px; outline: none; }
+.field input { font-family: var(--font-mono); }
+.note { font-size: 12px; color: var(--muted); grid-column: 1 / -1; margin: 0; }
+.be { grid-column: 1 / -1; background: var(--violet-soft); border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin: 0; }
+.be b { font-family: var(--font-mono); font-weight: 500; }
+.formfoot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--surface); }
+.formfoot span { color: var(--muted); font-size: 12.5px; margin-right: auto; }
+.uploadgrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.drop { border: 1.5px dashed var(--line); border-radius: 12px; padding: 28px 16px; text-align: center; display: grid; gap: 8px; justify-items: center; }
+.drop b { font-weight: 500; }
+.drop p { margin: 0; color: var(--muted); font-size: 13px; }
+.guides { display: grid; gap: 8px; align-content: start; }
+.guides details { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.guides summary { cursor: pointer; font-weight: 500; font-size: 13.5px; }
+.guides ol { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
+.small-note { color: var(--muted); font-size: 12px; margin: 0; }
+
+/* Audience insight */
+.aud-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.aud-controls select { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); max-width: 100%; }
+.insights { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.icard { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 6px; }
+.icard.best { border-color: var(--good); }
+.icard.costly { border-color: var(--hi); }
+.icard p { margin: 0; font-size: 13px; }
+.icard .do { color: var(--muted); }
+.vchip { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+.vchip.best { background: var(--good-soft); color: var(--good); }
+.vchip.costly { background: var(--hi-soft); color: var(--hi); }
+.vchip.average { background: var(--surface-2); color: var(--muted); }
+.vchip.small { border: 1px dashed var(--line); color: var(--muted); }
+.segs { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.segrow { display: grid; grid-template-columns: 170px minmax(0, 1fr) 120px 110px; gap: 12px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--line); font-size: 13px; }
+.segrow:first-child { border-top: 0; }
+.segrow.head { background: var(--surface); }
+.segbars { display: grid; gap: 3px; }
+.segbars div { display: grid; grid-template-columns: 74px minmax(0, 1fr) 38px; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); }
+.segbars i { display: block; height: 8px; border-radius: 2px; }
+.segbars i.sp { background: var(--faint); } .segbars i.rs { background: var(--violet); }
+.segbars .track { background: var(--surface-2); border-radius: 2px; }
+.heat { display: grid; gap: 3px; }
+.heat .hrowx { display: grid; gap: 3px; align-items: center; }
+.heat .cell { border-radius: 3px; height: 30px; display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; }
+.aud-basis { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 12px; }
+.caution { border-left: 3px solid var(--mid); padding: 4px 0 4px 10px; color: var(--muted); font-size: 13px; margin: 0; }
+
+/* Drawer + modal */
+.scrim { position: fixed; inset: 0; background: rgb(10 10 19 / 0.45); z-index: 20; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 100%); background: var(--bg); border-left: 1px solid var(--line); box-shadow: var(--shadow); z-index: 21; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.drawer header { padding: 14px 20px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.drawer header .x { justify-self: end; margin-top: -2px; background: none; border: 0; color: var(--muted); font-size: 13px; }
+.drawer h3 { font-size: 19px; line-height: 1.25; }
+.drawer .scroll { overflow-y: auto; padding: 16px 20px 24px; display: grid; gap: 18px; align-content: start; }
+.drawer footer { border-top: 1px solid var(--line); padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; position: relative; }
+.drawer footer .note { margin-right: auto; }
+.crumbs { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.crumbs b { color: var(--fg); font-weight: 500; }
+.rank { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rank > div { background: var(--surface); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; font-size: 12.5px; }
+.rank b { font-size: 13px; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+.rank span { color: var(--muted); }
+.blk { display: grid; gap: 6px; }
+.blk h4 { margin: 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.blk p { margin: 0; max-width: 70ch; }
+.blk ol, .blk ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.hyp { font-size: 11px; color: var(--muted); font-style: italic; }
+.costbox { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; }
+.costbox .big { font-family: var(--font-mono); font-size: 20px; font-weight: 500; }
+.costbox small { color: var(--muted); font-size: 12px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.facts div { background: var(--surface); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.facts b { font-family: var(--font-mono); font-size: 14px; color: var(--fg); font-weight: 500; }
+.ev { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ev th, .ev td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+.ev th:first-child, .ev td:first-child { text-align: left; }
+.ev th { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.evwrap { overflow-x: auto; }
+details.small summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.small ul { margin-top: 6px; color: var(--muted); font-size: 13px; }
+.warnbox { background: var(--mid-soft); color: var(--mid); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.menu { position: absolute; bottom: calc(100% + 6px); right: 20px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; display: grid; min-width: 200px; z-index: 2; }
+.menu button { background: none; border: 0; border-radius: 6px; padding: 7px 10px; text-align: left; font-size: 13px; display: flex; justify-content: space-between; gap: 12px; }
+.menu button:hover { background: var(--surface); }
+.menu button small { color: var(--muted); font-family: var(--font-mono); }
+
+.modal { position: fixed; inset: 0; display: grid; place-items: start center; padding: 24px 16px; z-index: 22; overflow-y: auto; }
+.report { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); width: min(900px, 100%); display: grid; }
+.report > header { padding: 16px 22px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; position: sticky; top: 0; background: var(--bg); border-radius: 14px 14px 0 0; z-index: 1; }
+.report .rbody { padding: 20px 22px 26px; display: grid; gap: 22px; }
+.report h2 { font-size: 22px; }
+.report .headline { font-size: 16px; max-width: 70ch; margin: 0; }
+.report .rsec { display: grid; gap: 10px; }
+.report .rsec h3 { font-size: 15px; }
+.report ul { margin: 0; padding-left: 20px; display: grid; gap: 5px; font-size: 13.5px; }
+.report .rtiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.report .rtiles .tile { padding: 10px; }
+.report .rtiles .v { font-size: 19px; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); border-radius: 8px; padding: 8px 14px; font-size: 13px; z-index: 30; max-width: calc(100% - 32px); }
+.loading { padding: 40px 0; color: var(--muted); }
+
+@media (max-width: 960px) {
+  .two, .uploadgrid { grid-template-columns: minmax(0, 1fr); }
+  .hrow { grid-template-columns: 130px minmax(0, 1fr) 90px; }
+  .hrow .vs, .hrow .next { display: none; }
+  .trow { grid-template-columns: minmax(0, 1fr); }
+  .report .rtiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .segrow { grid-template-columns: 130px minmax(0, 1fr) 96px; }
+  .segrow > :last-child { display: none; }
+}
+@media (max-width: 720px) {
+  .frame { grid-template-columns: minmax(0, 1fr); }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); padding: 12px 16px; gap: 10px; position: static; height: auto; overflow: visible; }
+  .side .acct, .sidenote, .others, .user { display: none; }
+  .nav { display: flex; gap: 4px; overflow-x: auto; }
+  .nav button { white-space: nowrap; }
+  .tiles, .rank { grid-template-columns: minmax(0, 1fr); }
+  .irow { grid-template-columns: minmax(0, 1fr); }
+  .irow .side-r { justify-items: start; grid-auto-flow: column; justify-content: start; gap: 10px; align-items: center; }
+  .hrow { grid-template-columns: minmax(0, 1fr) 80px; }
+  .hrow .hstate { grid-column: 1 / -1; }
+  .segrow { grid-template-columns: minmax(0, 1fr) 90px; }
+  .segrow .segbars { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .drawer { animation: slide 0.18s ease-out; }
+  @keyframes slide { from { transform: translateX(24px); opacity: 0.6; } }
+}
+</style>
+
+<div class="frame">
+  <aside class="side">
+    <button class="wordmark" type="button" data-view="overview" aria-label="AdMate home">
+      <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><path d="M6 58 L25 6 L39 6 L58 58 L44 58 L32 25.2 L20 58 Z" fill="var(--violet)"/><rect x="21" y="30.7" width="22" height="11" rx="5.5" fill="var(--signal)"/></svg>
+      <span><span class="ad">Ad</span><span class="mate">Mate</span></span>
+    </button>
+    <div class="acct"><span class="label" style="font-size:10px">Ad account</span><b>Lotus Skincare (sample)</b><span>Beauty &amp; retail · Cambodia</span></div>
+    <nav class="nav" aria-label="Pages" id="nav"></nav>
+    <div class="sidenote"><b>How AdMate works</b>Every number you see is calculated from your uploaded reports. The AI explains those numbers; it never makes them up. Recommendations are advice: AdMate never changes your ad account.</div>
+    <div class="others">
+      <span class="label">Other accounts</span>
+      <button type="button" data-fake="Opens your own ad account, with the same pages">My business</button>
+      <button type="button" class="add" data-view="addaccount">+ Add an ad account</button>
+      <button type="button" class="reset" data-reset>Reset the sample account</button>
+    </div>
+    <div class="user"><span>you@example.com</span><span>Sign out</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="banner"><span><b>You’re exploring a sample account.</b> Lotus Skincare (sample) is a made-up skincare brand with a few planted problems for AdMate to find.</span><button class="link" type="button" data-view="upload">Upload your own report →</button></div>
+    <div class="content">
+      <p class="proto"><b>Clickable v3 prototype.</b> This page runs AdMate’s real v3 engine on the sample account, so every date and comparison you pick is calculated live. Changes last until you close the page.</p>
+      <div class="head">
+        <div><span class="label" id="eyebrow">Overview</span><h1 id="title">Lotus Skincare (sample)</h1></div>
+        <div class="meta" id="meta"></div>
+      </div>
+      <p class="compareline" id="compareline"></p>
+      <div id="pages"><p class="loading">Starting the AdMate engine…</p></div>
+    </div>
+  </main>
+</div>
+<div id="overlay"></div>
+<div id="toastRoot"></div>
+
+<script>/*ENGINE*/</script>
+<script>
+const E = window.AdMateEngine;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const money = (v) => v == null ? "—" : "$" + (Math.abs(v) >= 100 ? Math.round(v).toLocaleString("en-US") : Math.abs(v) >= 0.1 ? v.toFixed(2) : v.toFixed(3));
+const kpi = (v, mode) => v == null ? "—" : mode === "roas" ? v.toFixed(2) + "×" : money(v);
+const pct = (v, d = 0) => v == null ? "—" : (v * 100).toFixed(d) + "%";
+const n0 = (v) => Math.round(v).toLocaleString("en-US");
+const signed = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v * 100)) + "%";
+const higher = (mode) => mode === "roas";
+const D0 = (s) => new Date(s + "T00:00:00Z");
+const iso = (d) => d.toISOString().slice(0, 10);
+const addDays = (s, n) => { const d = D0(s); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+const fmtDate = (s) => D0(s).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const fmtDay = (s) => D0(s).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+const range = (a, b) => (a === b ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`);
+const days = (a, b) => Math.round((D0(b) - D0(a)) / 86400000) + 1;
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const PLATFORM = { meta: "Meta", tiktok: "TikTok", google: "Google", linkedin: "LinkedIn" };
+const ROLE = { prospecting: "Prospecting", retargeting: "Retargeting", existing: "Existing customers", brand: "Brand search" };
+const STATE = { far_off: ["bad", "Far off"], off_track: ["warn", "Off track"], worse: ["bad", "Worse"], on_track: ["good", "On track"], better: ["good", "Better"], flat: ["flat", "Steady"], unknown: ["flat", "Not judged"] };
+const KIND = { issue: ["Problem", "problem"], opportunity: ["Opportunity", "opportunity"], on_track: ["On track", "ok"], learning: ["Learning", "wait"], waiting: ["Not enough data", "wait"], signal: ["Early signal", "wait"] };
+const LEVEL = { campaign: "Campaign", ad_group: "Ad set", ad: "Ad" };
+const META = E.meta, END = META.end, MIN = META.minDate;
+
+// ---------- state ----------
+const decided = {}, roles = {}, objectiveOverride = {}, expanded = new Set();
+let targets = {};
+let view = "overview", filter = "problem", level = "campaign", objFilter = null, diag = false, trendObj = null, current = null;
+let aud = { target: null, breakdown: "age_gender" };
+// Period: what to show (A) and what to compare it with (B).
+const sel = { a: { from: addDays(END, -6), to: END, name: "Last 7 days" }, cmp: "previous", b: null };
+const cache = new Map();
+function params() {
+  const p = { from: sel.a.from, to: sel.a.to };
+  if (sel.cmp === "none") p.cmp = "none";
+  else if (sel.cmp === "pick" && sel.b) Object.assign(p, { cmp: "custom", cfrom: sel.b.from, cto: sel.b.to });
+  else p.cmp = "previous";
+  return p;
+}
+function V() {
+  const k = JSON.stringify(params());
+  if (!cache.has(k)) cache.set(k, E.view(params()));
+  return cache.get(k);
+}
+
+// ---------- period choices (calendar days, weeks Mon–Sun, months) ----------
+function choices(kind) {
+  if (kind === "day") return Array.from({ length: 21 }, (_, i) => { const d = addDays(END, -i); return { from: d, to: d, name: fmtDay(d), small: i === 0 ? "latest day" : "" }; });
+  if (kind === "week") {
+    const mon = addDays(END, -((D0(END).getUTCDay() + 6) % 7));
+    const out = [{ from: addDays(END, -6), to: END, name: "Last 7 days", small: range(addDays(END, -6), END) }];
+    for (let i = 0; i < 12; i++) {
+      const f = addDays(mon, -7 * i), t = i === 0 ? END : addDays(f, 6);
+      if (f < MIN) break;
+      out.push({ from: f, to: t, name: range(f, t), small: i === 0 ? "this week so far" : `week of ${fmtDate(f)}` });
+    }
+    return out;
+  }
+  if (kind === "month") {
+    const out = [{ from: addDays(END, -29), to: END, name: "Last 30 days", small: range(addDays(END, -29), END) }];
+    let y = D0(END).getUTCFullYear(), m = D0(END).getUTCMonth();
+    for (let i = 0; i < 4; i++) {
+      const f = iso(new Date(Date.UTC(y, m, 1))), last = iso(new Date(Date.UTC(y, m + 1, 0)));
+      const from = f < MIN ? MIN : f, to = last > END ? END : last;
+      const name = D0(f).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+      out.push({ from, to, name, small: to < last ? "so far" : from > f ? `from ${fmtDate(from)}` : "full month" });
+      m--; if (m < 0) { m = 11; y--; }
+    }
+    return out;
+  }
+  return [];
+}
+function prevOf(a) {
+  // The engine's "previous period": a full month → the month before; otherwise the same number of days right before.
+  const f = D0(a.from), full = f.getUTCDate() === 1 && addDays(a.to, 1).slice(8) === "01";
+  if (full) { const pf = iso(new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() - 1, 1))); return { from: pf, to: addDays(a.from, -1) }; }
+  const n = days(a.from, a.to);
+  return { from: addDays(a.from, -n), to: addDays(a.from, -1) };
+}
+
+// Goal status: same rules as lib/analysis/goalStatus.ts, so editing a target re-judges the goal.
+function breakEven(t) {
+  if (!t) return null;
+  if (t.objective === "sales" && t.marginPct > 0) return 1 / (t.marginPct / 100);
+  if ((t.objective === "leads" || t.objective === "messages") && t.closePct > 0 && t.profit > 0) return (t.closePct / 100) * t.profit;
+  return null;
+}
+function goalOf(o) {
+  const t = targets[o.objective], be = o.mode !== "cpm" ? breakEven(t) : null;
+  const yard = o.mode === "cpm" ? null : t?.target > 0 ? t.target : be;
+  let state;
+  if (yard != null && o.value != null) {
+    const worse = higher(o.mode) ? 1 - o.value / yard : o.value / yard - 1;
+    const below = be != null && (higher(o.mode) ? o.value < be : o.value > be);
+    state = below || worse > 0.3 ? "far_off" : worse > 0.1 ? "off_track" : "on_track";
+  } else if (o.change != null) state = Math.abs(o.change) <= 0.03 ? "flat" : (higher(o.mode) ? o.change > 0 : o.change < 0) ? "better" : "worse";
+  else state = "unknown";
+  return { target: o.mode !== "cpm" && t?.target > 0 ? t.target : null, breakEven: be, state };
+}
+
+// ---------- small renderers ----------
+const allItems = () => { const v = V(); return [...v.problems, ...v.opportunities, ...v.signals]; };
+const detailOf = (key) => allItems().find((d) => d.key === key) ?? V().details[key];
+const isOpen = (d) => !decided[d.key];
+const decisions = () => { const v = V(); return [...v.problems, ...v.opportunities].filter((d) => isOpen(d) && (d.priority === "high" || d.priority === "medium")); };
+function deltaChip(change, mode, confidence) {
+  if (change == null) return '<span class="delta flat">— no comparison</span>';
+  const flat = Math.abs(change) < 0.03, good = higher(mode) ? change > 0 : change < 0;
+  const cls = flat || confidence === "low" || mode === "neutral" ? "flat" : good ? "good" : "bad";
+  return `<span class="delta ${cls}" title="Change vs ${esc(V().compareLabel)}">${flat ? "→" : change > 0 ? "▲" : "▼"} ${signed(change)}</span>`;
+}
+const ICON = {
+  problem: '<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1 11 10.5H1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M6 4.6v2.6M6 8.7v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  opportunity: '<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.5 5.5 6 2l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  ok: '<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.5 5 9.5 10 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  wait: '<svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/></svg>',
+};
+const kindTag = (kind) => { const [label, icon] = KIND[kind] ?? ["", "wait"]; return `<span class="kindtag">${ICON[icon]} ${label}</span>`; };
+const prioChip = (p) => (p ? `<span class="prio ${p}" title="Priority: how much it matters now">${p} priority</span>` : "");
+const confDots = (c) => { const n = { high: 3, medium: 2, low: 1 }[c] ?? 1; return `<span class="conf">${[1, 2, 3].map((i) => `<i class="${i <= n ? "on" : ""}"></i>`).join("")}</span>`; };
+const metricOf = (d) => { const e = d.evidence?.[0]; return e ? `${e.label} ${e.a ? `${e.a} → ` : ""}${e.b}` : ""; };
+function pathHtml(where) {
+  const parts = String(where ?? "").split(" › ").filter(Boolean);
+  const labels = parts.length === 3 ? ["Campaign", "Ad set", "Ad"] : parts.length === 2 ? ["Campaign", "Ad set"] : ["Campaign"];
+  return parts.map((p, i) => `<span class="lvl">${labels[i]}</span> <b>${esc(p)}</b>`).join(' <span aria-hidden="true">›</span> ');
+}
+const STATUS_TEXT = (dec) => (dec.status === "done" ? "Action taken" : dec.status === "remind" ? `Reminder set for ${fmtDay(dec.until)}` : `Dismissed${dec.reason ? `: ${dec.reason}` : ""}`);
+function row(d, i, opts = {}) {
+  const dec = decided[d.key];
+  const plat = d.platform ? `<span class="plat">${PLATFORM[d.platform] ?? d.platform}</span>` : "";
+  const kind = d.bucket === "problem" ? "issue" : d.bucket === "opportunity" ? "opportunity" : "signal";
+  return `<button class="irow ${d.priority}${dec ? " closed" : ""}" data-key="${esc(d.key)}" type="button">
+    <span class="body">
+      <span class="tags">${opts.start && i === 0 && !dec ? '<span class="start">Start here</span>' : ""}${prioChip(d.priority)}${kindTag(kind)}${plat}</span>
+      <span class="t">${esc(d.title)}</span>
+      <span class="path">${pathHtml(d.where)}</span>
+      <span class="sub"><span class="metric">${esc(metricOf(d))}</span>${dec ? `<span>${esc(STATUS_TEXT(dec))}</span>` : ""}</span>
+    </span>
+    <span class="side-r"><span class="stake">${money(d.stake)} <small>${pct(d.share)} of spend</small></span><span class="conflabel" title="Confidence: how sure AdMate is about the numbers">${confDots(d.confidence)} ${d.confidence} confidence</span></span>
+  </button>`;
+}
+const legend = () => `<div class="legend"><span><i class="sw high"></i>High</span><span><i class="sw medium"></i>Medium</span><span><i class="sw low"></i>Low priority</span><span>· Colour = how much it matters now · ${ICON.problem} Problem / ${ICON.opportunity} Opportunity · ${confDots("high")} confidence = how sure AdMate is</span></div>`;
+
+// Line + bar chart helpers ------------------------------------------------------
+function spark(points, target, w = 110, h = 30) {
+  const pts = points.filter((p) => p.v != null);
+  if (pts.length < 3) return "";
+  const vals = pts.map((p) => p.v).concat(target != null ? [target] : []);
+  const max = Math.max(...vals) * 1.08, min = Math.min(0, ...vals);
+  const x = (i) => (i / (points.length - 1)) * (w - 4) + 2, y = (v) => h - 3 - ((v - min) / (max - min || 1)) * (h - 6);
+  let d = "";
+  points.forEach((p, i) => { if (p.v == null) return; d += (d && points[i - 1]?.v != null ? "L" : "M") + x(i).toFixed(1) + "," + y(p.v).toFixed(1) + " "; });
+  const first = points.findIndex((p) => p.v != null), last = points.length - 1 - [...points].reverse().findIndex((p) => p.v != null);
+  const area = d + `L${x(last).toFixed(1)},${h - 2} L${x(first).toFixed(1)},${h - 2} Z`;
+  const tline = target != null ? `<line x1="2" x2="${w - 2}" y1="${y(target)}" y2="${y(target)}" stroke="var(--muted)" stroke-dasharray="3 3" stroke-width="1"/>` : "";
+  return `<svg viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${area}" fill="var(--surface-2)"/>${tline}<path d="${d}" fill="none" stroke="var(--fg)" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${x(last)}" cy="${y(points[last].v)}" r="2.6" fill="var(--violet)"/></svg>`;
+}
+// Daily results as bars, cost per result as a line, the selected period shaded, the best day marked.
+function dailyChart(series, from, to, opts = {}) {
+  const ds = series.days;
+  if (ds.length < 2) return '<p class="small-note">Not enough daily data for a chart.</p>';
+  const W = 640, H = opts.h ?? 200, L = 44, R = 50, T = 18, B = 26;
+  const maxR = Math.max(1, ...ds.map((d) => d.results)) * 1.15;
+  const kv = ds.map((d) => d.kpi).filter((v) => v != null && v > 0);
+  const maxK = kv.length ? Math.max(...kv) * 1.15 : 1;
+  const bw = (W - L - R) / ds.length;
+  const x = (i) => L + i * bw;
+  const yR = (v) => H - B - (v / maxR) * (H - T - B), yK = (v) => H - B - (v / maxK) * (H - T - B);
+  const inP = (d) => d.date >= from && d.date <= to;
+  const best = ds.reduce((b, d, i) => (inP(d) && (b < 0 || d.results > ds[b].results) ? i : b), -1);
+  let line = "";
+  ds.forEach((d, i) => { if (d.kpi == null || d.kpi <= 0) return; line += (line && ds[i - 1]?.kpi > 0 ? "L" : "M") + (x(i) + bw / 2).toFixed(1) + "," + yK(d.kpi).toFixed(1) + " "; });
+  const i0 = ds.findIndex(inP), i1 = ds.length - 1 - [...ds].reverse().findIndex(inP);
+  const shade = i0 >= 0 ? `<rect x="${x(i0)}" y="${T - 8}" width="${(i1 - i0 + 1) * bw}" height="${H - T - B + 8}" fill="var(--violet-soft)"/>` : "";
+  const bars = ds.map((d, i) => `<rect x="${(x(i) + bw * 0.18).toFixed(1)}" y="${yR(d.results).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${(H - B - yR(d.results)).toFixed(1)}" rx="1.5" fill="${i === best ? "var(--violet)" : inP(d) ? "var(--faint)" : "var(--line)"}"><title>${fmtDay(d.date)}: ${n0(d.results)} ${series.resultLabel}${d.kpi != null ? `, ${series.kpiShort} ${kpi(d.kpi, series.mode)}` : ""}, spend ${money(d.spend)}</title></rect>`).join("");
+  const step = Math.max(1, Math.ceil(ds.length / 8));
+  const xl = ds.map((d, i) => (i % step === 0 || i === ds.length - 1 ? `<text x="${x(i) + bw / 2}" y="${H - 8}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${fmtDate(d.date)}</text>` : "")).join("");
+  const yl = [0, maxR / 2, maxR].map((v) => `<line x1="${L}" x2="${W - R}" y1="${yR(v)}" y2="${yR(v)}" stroke="var(--line)" stroke-width="0.8"/><text x="${L - 6}" y="${yR(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${v >= 1000 ? (v / 1000).toFixed(1) + "K" : Math.round(v)}</text>`).join("");
+  const kl = [maxK / 2, maxK].map((v) => `<text x="${W - R + 6}" y="${yK(v) + 3}" font-size="9.5" fill="var(--fg)">${kpi(v, series.mode)}</text>`).join("");
+  const bestMark = best >= 0 ? `<text x="${x(best) + bw / 2}" y="${yR(ds[best].results) - 5}" text-anchor="middle" font-size="10" font-weight="500" fill="var(--violet)">best</text>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.resultLabel)} per day and ${esc(series.kpiLabel)}">${shade}${yl}${bars}${bestMark}<path d="${line}" fill="none" stroke="var(--fg)" stroke-width="1.8" stroke-linejoin="round"/>${kl}${xl}</svg>
+    <div class="legend"><span><i class="sw" style="background:var(--faint)"></i>${esc(series.resultLabel)} per day</span><span><i class="sw" style="background:var(--violet)"></i>best day</span><span><svg width="18" height="8" aria-hidden="true"><line x1="0" x2="18" y1="4" y2="4" stroke="var(--fg)" stroke-width="2"/></svg>${esc(series.kpiShort)} (right axis)</span><span><i class="sw" style="background:var(--violet-soft)"></i>selected period</span></div>`;
+}
+function dailyFacts(series, from, to) {
+  const inP = series.days.filter((d) => d.date >= from && d.date <= to);
+  if (!inP.length) return "";
+  const best = inP.reduce((b, d) => (d.results > b.results ? d : b));
+  const withRes = inP.filter((d) => d.kpi != null && d.kpi > 0);
+  const cheapest = withRes.length ? withRes.reduce((b, d) => ((higher(series.mode) ? d.kpi > b.kpi : d.kpi < b.kpi) ? d : b)) : null;
+  const byWd = Array.from({ length: 7 }, () => ({ r: 0, n: 0 }));
+  for (const d of series.days) { byWd[d.weekday].r += d.results; byWd[d.weekday].n++; }
+  const bestWd = byWd.map((x, i) => ({ i, avg: x.n ? x.r / x.n : 0 })).sort((p, q) => q.avg - p.avg)[0];
+  const total = inP.reduce((s, d) => s + d.results, 0);
+  return `<div class="facts">
+    <div>Best day<b>${fmtDay(best.date)}</b>${n0(best.results)} ${esc(series.resultLabel)}</div>
+    ${cheapest ? `<div>${higher(series.mode) ? "Highest" : "Cheapest"} ${esc(series.kpiShort)}<b>${fmtDay(cheapest.date)}</b>${kpi(cheapest.kpi, series.mode)}</div>` : ""}
+    <div>Best weekday (avg, 4 weeks)<b>${WEEKDAYS[bestWd.i]}</b>${bestWd.avg.toFixed(1)} ${esc(series.resultLabel)} a day</div>
+    <div>Total in period<b>${n0(total)}</b>${esc(series.resultLabel)} over ${inP.length} day${inP.length === 1 ? "" : "s"}</div>
+  </div>`;
+}
+function bullet(o, g) {
+  const vals = [o.value, g.target, g.breakEven, o.previous].filter((v) => v != null);
+  const max = Math.max(...vals) * 1.18, W = 400, H = 26, X = (v) => (v / max) * W;
+  const [cls] = STATE[g.state] ?? ["flat"];
+  const fill = cls === "bad" ? "var(--hi)" : cls === "warn" ? "var(--mid)" : cls === "good" ? "var(--good)" : "var(--muted)";
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(o.kpiShort)} ${esc(kpi(o.value, o.mode))}"><rect x="0" y="9" width="${W}" height="8" rx="4" fill="var(--surface-2)"/><rect x="0" y="9" width="${X(o.value)}" height="8" rx="4" fill="${fill}"/>`;
+  if (o.previous != null) s += `<rect x="${X(o.previous) - 1}" y="11" width="2" height="4" fill="var(--faint)"/>`;
+  if (g.breakEven != null) s += `<line x1="${X(g.breakEven)}" x2="${X(g.breakEven)}" y1="3" y2="23" stroke="var(--fg)" stroke-width="1.5" stroke-dasharray="2 2"/>`;
+  if (g.target != null) s += `<rect x="${X(g.target) - 1.5}" y="2" width="3" height="22" fill="var(--fg)"/>`;
+  return s + "</svg>";
+}
+function goalsHtml(v) {
+  return `<div class="goals">${v.objectives.map((o) => {
+    const g = goalOf(o), [cls, label] = STATE[g.state] ?? ["flat", "Not judged"];
+    const cap = [g.target != null ? `target ${kpi(g.target, o.mode)}` : v.compareLabel ? "no target · vs last period" : "no target", g.breakEven != null ? `break-even ${kpi(g.breakEven, o.mode)}` : null, o.previous != null ? `${esc(v.compareLabel)}: ${kpi(o.previous, o.mode)}` : null, higher(o.mode) ? "higher is better" : "lower is better"].filter(Boolean).join(" · ");
+    return `<div class="goal"><div class="top"><span class="name">${esc(o.label)}</span><span class="state ${cls}">${label}</span>${g.target == null && o.mode !== "cpm" ? `<button class="link" type="button" data-view="settings" style="font-size:12px">Set target</button>` : ""}<span class="val">${esc(o.kpiShort)} ${kpi(o.value, o.mode)}</span></div>${bullet(o, g)}<span class="cap">${cap}</span></div>`;
+  }).join("")}</div>`;
+}
+
+// ---------- header ----------
+function renderMeta() {
+  const v = V();
+  $("#meta").innerHTML = `<button class="periodbtn" type="button" id="periodBtn" aria-expanded="false"><b>${esc(sel.a.name && sel.a.name !== range(sel.a.from, sel.a.to) ? `${sel.a.name}` : v.label)}</b><span>${v.compareLabel ? `vs ${esc(v.compareLabel)}` : "no comparison"}</span><span aria-hidden="true">▾</span></button>
+    <button class="btn" id="summaryBtn" type="button">Summary report</button><div id="pickerRoot"></div>`;
+  const how = sel.cmp === "pick" ? "the period you chose" : sel.cmp === "previous" ? (days(v.from, v.to) === 1 ? "the day before" : "the same number of days right before") : "";
+  $("#compareline").innerHTML = v.compareLabel
+    ? `<span>Showing <b>${esc(v.label)}</b> (${v.days} day${v.days === 1 ? "" : "s"}). Every ▲▼ change compares it with <b>${esc(v.compareLabel)}</b> (${how})${v.perDay ? ", per day because the two periods have different lengths" : ""}.</span>${v.history ? `<span>Before suggesting “put more money in” or “cut”, AdMate also checks the change against the older history (<b>${esc(v.history)}</b>).</span>` : ""}${v.days === 1 ? "<span>One day is for exploring only: no budget calls on a single day.</span>" : ""}`
+    : `<span>Showing <b>${esc(v.label)}</b> with <b>no comparison</b>.</span><span>${v.history ? `Campaigns are judged against their own results before this period (<b>${esc(v.history)}</b>), then your targets.` : "Campaigns are judged against your targets and against each other."}</span>`;
+}
+let pk = null;
+function openPicker() {
+  pk = { aKind: guessKind(sel.a), a: { ...sel.a }, cmp: sel.cmp, bKind: sel.b ? guessKind(sel.b) : guessKind(sel.a), b: sel.b ? { ...sel.b } : null };
+  $("#periodBtn").setAttribute("aria-expanded", "true");
+  drawPicker();
+}
+function guessKind(p) { const n = days(p.from, p.to); return n === 1 ? "day" : n <= 8 ? "week" : "month"; }
+function chooser(which) {
+  const kind = which === "a" ? pk.aKind : pk.bKind, cur = pk[which];
+  const list = kind === "custom" ? [] : choices(kind);
+  const tabs = ["day", "week", "month", "custom"].map((k) => `<button type="button" data-pkkind="${which}:${k}" aria-pressed="${k === kind}">${{ day: "Day", week: "Week", month: "Month", custom: "Custom dates" }[k]}</button>`).join("");
+  const body = kind === "custom"
+    ? `<div class="dates"><label>From <input type="date" id="pk-${which}-from" min="${MIN}" max="${END}" value="${cur?.from ?? ""}"></label><label>to <input type="date" id="pk-${which}-to" min="${MIN}" max="${END}" value="${cur?.to ?? ""}"></label></div>`
+    : `<div class="choices">${list.map((c, i) => `<button type="button" data-pkpick="${which}:${i}" aria-pressed="${cur && cur.from === c.from && cur.to === c.to}">${esc(c.name)}${c.small ? `<small>${esc(c.small)}</small>` : ""}</button>`).join("")}</div>`;
+  return `<div class="seg" role="group" aria-label="Period type">${tabs}</div>${body}`;
+}
+function drawPicker() {
+  const prev = prevOf(pk.a);
+  $("#pickerRoot").innerHTML = `<div class="picker" role="dialog" aria-label="Choose periods">
+    <div class="pk"><h4>1. Show</h4>${chooser("a")}</div>
+    <div class="pk"><h4>2. Compare with</h4>
+      <div class="radios">
+        <label><input type="radio" name="pkcmp" value="previous" ${pk.cmp === "previous" ? "checked" : ""}><span>The period right before<small>${range(prev.from, prev.to)}${prev.from < MIN ? " · partly before your first upload" : ""}</small></span></label>
+        <label><input type="radio" name="pkcmp" value="pick" ${pk.cmp === "pick" ? "checked" : ""}><span>Another period I choose<small>Any day, week, month or dates: e.g. this Tuesday vs last Tuesday, or October vs August</small></span></label>
+        <label><input type="radio" name="pkcmp" value="none" ${pk.cmp === "none" ? "checked" : ""}><span>Don’t compare<small>See this period on its own, judged against each campaign’s own past and your targets</small></span></label>
+      </div>
+      ${pk.cmp === "pick" ? chooser("b") : ""}
+    </div>
+    <div class="pickfoot"><span>Data from ${fmtDate(MIN)} to ${fmtDate(END)}</span><button class="btn" type="button" data-pkcancel>Cancel</button><button class="btn primary" type="button" data-pkapply>Apply</button></div>
+  </div>`;
+}
+function readCustom(which) {
+  const f = $(`#pk-${which}-from`)?.value, t = $(`#pk-${which}-to`)?.value;
+  if (f && t && f <= t) pk[which] = { from: f, to: t, name: range(f, t) };
+}
+function closePicker() { if ($("#pickerRoot")) $("#pickerRoot").innerHTML = ""; $("#periodBtn")?.setAttribute("aria-expanded", "false"); pk = null; }
+
+// ---------- pages ----------
+const NAV = [
+  ["overview", "Overview", '<rect x="2" y="2" width="5" height="6" rx="1"/><rect x="9" y="2" width="5" height="3.5" rx="1"/><rect x="9" y="7.5" width="5" height="6.5" rx="1"/><rect x="2" y="10" width="5" height="4" rx="1"/>'],
+  ["actions", "Actions", '<path d="M8 1.8 14.2 8 8 14.2 1.8 8Z M8 5.5v3.2 M8 10.8v.1"/>'],
+  ["campaigns", "Campaigns", '<path d="M2.5 4h11 M2.5 8h11 M2.5 12h11 M5 2.5v11"/>'],
+  ["audience", "Audience insight", '<circle cx="6" cy="5.5" r="2.3"/><path d="M2 13.5c.6-2.4 2.1-3.6 4-3.6s3.4 1.2 4 3.6"/><path d="M10.5 3.5a2.2 2.2 0 0 1 0 4.2 M12 9.9c1.2.5 1.8 1.6 2.1 3.2"/>'],
+  ["reports", "Reports", '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M2.5 6.2h11 M2.5 9.8h11 M6.2 6.2v7.3"/>'],
+  ["upload", "Upload report", '<path d="M8 12.5V3.5 M4.5 7 8 3.5 11.5 7 M3 13.5h10"/>'],
+  ["settings", "Targets & settings", '<path d="M2.5 4.5h11 M2.5 11.5h11"/><circle cx="5.5" cy="4.5" r="1.7"/><circle cx="10.5" cy="11.5" r="1.7"/>'],
+];
+function renderNav() {
+  $("#nav").innerHTML = NAV.map(([k, name, icon]) => {
+    const extra = k === "actions" ? `<span class="count">${decisions().length}</span>` : k === "reports" ? `<span class="count soft">${META.reports.length}</span>` : k === "audience" ? '<span class="new">NEW</span>' : "";
+    return `<button type="button" data-view="${k}" ${k === view ? 'aria-current="page"' : ""}><svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg><span>${name}</span>${extra}</button>`;
+  }).join("");
+}
+const objLabel = (r) => { const o = objectiveOverride[r.id]; return o ? META.allObjectives.find((x) => x.objective === o).label : r.objectiveLabel; };
+
+function overviewHtml() {
+  const v = V();
+  const goals = v.objectives.map((o) => ({ o, g: goalOf(o) }));
+  const off = goals.filter(({ g }) => ["far_off", "off_track", "worse"].includes(g.state)).length;
+  const dec = decisions();
+  const stake = dec.filter((d) => d.bucket === "problem").reduce((s, d) => s + d.stake, 0);
+  const great = v.great.filter((g) => !decided[g.key]);
+  if (!trendObj || !v.objectives.some((o) => o.objective === trendObj)) trendObj = v.objectives[0]?.objective;
+  return `
+  <div class="status">
+    <div class="pills">
+      <span class="pill ${off ? "hi" : ""}"><span class="num">${off}</span> goals off track</span>
+      <span class="pill"><span class="num">${dec.length}</span> decisions waiting</span>
+      <span class="pill"><span class="num">${money(stake)}</span> spent where problems were found</span>
+      <span class="pill ${great.length ? "good" : ""}"><span class="num">${great.length}</span> doing great</span>
+    </div>
+    <p class="oneline">${esc(v.oneLine)}</p>
+  </div>
+  <div class="two">
+    <section class="section" aria-labelledby="g-h">
+      <header><h2 id="g-h">Goals</h2><span class="hint">Bar: this period · solid mark: your target · dashed: break-even · grey tick: ${v.compareLabel ? esc(v.compareLabel) : "no comparison"}</span></header>
+      ${goalsHtml(v)}
+    </section>
+    <section class="section" aria-labelledby="k-h">
+      <header><h2 id="k-h">Key numbers</h2><span class="hint">▲▼ vs ${v.compareLabel ? esc(v.compareLabel) : "— (no comparison)"} · click a tile for its trend</span></header>
+      <div class="tiles">
+        <div class="tile"><span class="k">Spend · ${esc(v.label)}</span><span class="v">${money(v.spend)}</span><span class="row">${deltaChip(v.spendChange, "neutral")}<span class="k">${v.compareLabel ? `vs ${esc(v.compareLabel)}` : ""}</span></span></div>
+        ${v.objectives.slice(0, 3).map((o) => `<button class="tile" type="button" data-trend="${o.objective}" aria-pressed="${o.objective === trendObj}"><span class="k">${esc(o.label)} · ${esc(o.kpiLabel)}</span><span class="v">${kpi(o.value, o.mode)}</span><span class="row">${deltaChip(o.change, o.mode, o.confidence)}${spark(o.daily, goalOf(o).target)}</span></button>`).join("")}
+      </div>
+      ${v.objectives.length > 3 ? `<div class="more-objs" role="group" aria-label="More objectives"><span class="label" style="align-self:center">More:</span>${v.objectives.slice(3).map((o) => `<button type="button" data-trend="${o.objective}" aria-pressed="${o.objective === trendObj}">${esc(o.label)} ${kpi(o.value, o.mode)}</button>`).join("")}</div>` : ""}
+      <div class="chartbox" id="trend"></div>
+    </section>
+  </div>
+  <section class="section" aria-labelledby="dg-h">
+    <header><h2 id="dg-h">Doing great: consider more budget</h2><span class="hint">Campaigns clearly beating their target or their own past</span></header>
+    ${great.length ? `<div class="great">${great.map((g) => { const d = detailOf(g.key); return `<div class="gcard"><div class="row">${prioChip(d?.priority)}${kindTag("opportunity")}<span class="plat">${PLATFORM[g.platform] ?? ""}</span></div><span class="t">${esc(g.campaign)}</span><div class="row"><span class="metric">${esc(g.kpi)}</span><span class="small-note">${pct(g.share)} of spend</span></div><p>${esc(g.why)}</p><p class="do"><b style="font-weight:500">Consider:</b> ${esc(g.action)}</p><div><button class="btn small" type="button" data-key="${esc(g.key)}">See the analysis and daily chart</button></div></div>`; }).join("")}</div>` : `<p class="empty">No campaign is clearly beating its target or its own past in ${esc(v.label)}.</p>`}
+    ${v.reuse.length ? `<div><span class="label">Ads worth copying</span><ul class="reuse">${v.reuse.map((r) => `<li><button class="link" type="button" data-key="${esc(r.key)}">${esc(r.name)}</button> <span class="small-note">(${esc(r.where)})</span>: ${esc(r.why)}</li>`).join("")}</ul></div>` : ""}
+  </section>
+  <section class="section" aria-labelledby="q-h">
+    <header><h2 id="q-h">Needs your decision</h2><span class="hint">Most urgent first</span><button class="link more" type="button" data-view="actions">All in Actions →</button></header>
+    ${legend()}
+    ${dec.length ? `<div class="rows">${dec.slice(0, 5).map((d, i) => row(d, i, { start: true })).join("")}</div>` : `<p class="empty">Nothing waiting for a decision in ${esc(v.label)}.</p>`}
+  </section>
+  <section class="section" aria-labelledby="h-h">
+    <header><h2 id="h-h">All campaigns</h2><span class="hint">One row each · open any for its analysis and daily chart</span><button class="link more" type="button" data-view="campaigns">Ad sets and ads →</button></header>
+    <div class="health">
+      <div class="hrow headrow" aria-hidden="true"><span class="label">Priority · state</span><span class="label">Campaign</span><span class="label">Share of spend</span><span class="label vs">Result vs expected</span><span class="label next">Next step</span></div>
+      ${v.health.map((h) => {
+        const val = h.value, ex = h.expected, max = Math.max(val ?? 0, ex ?? 0) * 1.25 || 1, W = 200;
+        const good = ex == null || val == null ? null : higher(h.mode) ? val >= ex : val <= ex;
+        const bar = val == null ? "" : `<svg viewBox="0 0 ${W} 14" preserveAspectRatio="none" aria-hidden="true"><rect x="0" y="4" width="${W}" height="6" rx="3" fill="var(--surface-2)"/><rect x="0" y="4" width="${(val / max) * W}" height="6" rx="3" fill="${good === false ? "var(--hi)" : "var(--muted)"}"/>${ex != null ? `<rect x="${(ex / max) * W - 1}" y="0" width="2" height="14" fill="var(--fg)"/>` : ""}</svg>`;
+        const role = roles[h.id] ?? h.role;
+        return `<button class="hrow" type="button" data-entity="campaign:${esc(h.id)}">
+          <span class="hstate">${prioChip(h.priority)}${kindTag(h.kind)}</span>
+          <span class="hname"><b>${esc(h.name)}</b><span><span class="plat">${PLATFORM[h.platform]}</span>${esc(objLabel(h))}${role !== "prospecting" ? ` · ${ROLE[role]}` : ""}</span></span>
+          <span class="share"><span class="bar"><i style="width:${Math.max(2, h.share * 100)}%"></i></span><span class="num">${pct(h.share)} · ${money(h.spend)}</span></span>
+          <span class="vs"><span class="num">${esc(h.kpiShort)} ${kpi(val, h.mode)}${ex != null ? ` <span style="color:var(--muted)">vs ${kpi(ex, h.mode)}</span>` : ""}</span>${bar}</span>
+          <span class="next">${esc(h.label ?? "")}</span></button>`;
+      }).join("")}
+    </div>
+  </section>`;
+}
+function drawTrend() {
+  const v = V(), o = v.objectives.find((x) => x.objective === trendObj);
+  if (!o || !$("#trend")) return;
+  $$("[data-trend]").forEach((t) => t.setAttribute("aria-pressed", String(t.dataset.trend === trendObj)));
+  const series = { mode: o.mode, kpiShort: o.kpiShort, kpiLabel: o.kpiLabel, resultLabel: o.resultLabel, days: o.daily.map((d) => ({ date: d.date, weekday: D0(d.date).getUTCDay(), spend: d.spend, results: d.results, kpi: d.v })) };
+  $("#trend").innerHTML = `<span class="title">${esc(o.label)}: ${esc(o.resultLabel)} per day and ${esc(o.kpiLabel)}</span>${dailyChart(series, v.from, v.to, { h: 180 })}`;
+}
+
+function actionsHtml() {
+  const v = V();
+  const groups = {
+    problem: v.problems.filter(isOpen), opportunity: v.opportunities.filter(isOpen), signal: v.signals.filter(isOpen),
+    done: [...allItems(), ...Object.values(v.details)].filter((d, i, arr) => decided[d.key] && arr.findIndex((x) => x.key === d.key) === i),
+  };
+  const names = { problem: "Problems", opportunity: "Opportunities", signal: "Monitoring", done: "Done & reminders" };
+  const empty = {
+    problem: `No open problems in ${esc(v.label)}.`, opportunity: "No open opportunities.",
+    signal: "Nothing to watch in this period. Early signals land here when a change isn't confirmed yet. Try a single day in the date picker to see some.",
+    done: "Nothing yet. Open any item and choose Action taken, Remind me later or Dismiss.",
+  };
+  const list = groups[filter];
+  return `<section class="section">
+      <header><h2>Actions</h2><span class="hint">One list. Every problem and opportunity appears once, with the campaign, ad set and ad it belongs to.</span></header>
+      <div class="filters" role="group" aria-label="Filter">${Object.keys(groups).map((k) => `<button type="button" data-filter="${k}" aria-pressed="${k === filter}">${names[k]} <span class="num">${groups[k].length}</span></button>`).join("")}</div>
+      ${legend()}
+      ${list.length ? `<div class="rows">${list.map((d, i) => row(d, i, { start: filter === "problem" })).join("")}</div>` : `<p class="empty">${empty[filter]}</p>`}
+    </section>`;
+}
+
+function campaignsHtml() {
+  const v = V();
+  const camps = v.levels.campaign.filter((r) => !objFilter || r.objective === objFilter);
+  const objs = [...new Set(v.levels.campaign.map((r) => r.objective))];
+  const cols = 7 + (diag ? 2 : 0);
+  const head = `<thead><tr><th>Priority · state</th><th>Name</th><th class="r">Spend</th><th class="r">Main result ${v.compareLabel ? `(▲▼ vs ${esc(v.compareLabel)})` : ""}</th><th class="r">Results</th>${diag ? '<th class="r">CTR</th><th class="r">CPM</th>' : ""}<th>Next step</th><th></th></tr></thead>`;
+  const cells = (r, lv, extra = "") => {
+    const role = roles[r.id] ?? r.role, obj = objectiveOverride[r.id] ?? r.objective;
+    const ctl = lv === 0
+      ? `<select id="obj-${esc(r.id)}" data-objsel="${esc(r.id)}" aria-label="Objective">${META.allObjectives.map((o) => `<option value="${o.objective}" ${o.objective === obj ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select><select id="role-${esc(r.id)}" data-role="${esc(r.id)}" aria-label="Funnel role">${Object.entries(ROLE).map(([k, n]) => `<option value="${k}" ${k === role ? "selected" : ""}>${n}${k === r.role && !roles[r.id] ? " (guessed)" : ""}</option>`).join("")}</select>`
+      : "";
+    const crumb = lv === 1 ? `<span>in campaign <b>${esc(r.campaignName)}</b></span>` : lv === 2 ? `<span>in <b>${esc(r.campaignName)}</b> › <b>${esc(r.adSetName)}</b></span>` : "";
+    return `<td>${r.priority ? `${prioChip(r.priority)} ` : ""}${r.kind ? kindTag(r.kind) : ""}</td>
+      <td><div class="nm">${extra}<span class="lvl">${LEVEL[r.level]}</span><span>${esc(r.name)}</span></div><div class="sub"><span class="plat">${PLATFORM[r.platform]}</span>${lv === 0 ? "" : `<span>${esc(r.objectiveLabel)}</span>`}${crumb}${ctl}</div></td>
+      <td class="r"><div class="num">${money(r.spend)}</div><div class="was num">${pct(r.share)} of all</div></td>
+      <td class="r"><div class="num">${esc(r.kpiShort)} ${kpi(r.kpi, r.mode)}</div>${deltaChip(r.change, r.mode, r.confidence)}${r.kpiA != null ? `<div class="was num">was ${kpi(r.kpiA, r.mode)}</div>` : ""}</td>
+      <td class="r"><div class="num">${r.mode === "cpm" ? "—" : n0(r.results)}</div><div class="was">${r.mode === "cpm" ? "judged by CPM" : esc(r.resultLabel)}</div></td>
+      ${diag ? `<td class="r num">${pct(r.ctr, 2)}</td><td class="r num">${money(r.cpm)}</td>` : ""}
+      <td>${esc(r.label ?? "")}</td><td class="r"><span class="small-note">Open ›</span></td>`;
+  };
+  let body = "";
+  if (level === "campaign") {
+    for (const c of camps) {
+      const sets = v.levels.ad_group.filter((s) => s.campaignId === c.id);
+      const open = expanded.has(c.id);
+      body += `<tr data-row="campaign:${esc(c.id)}" tabindex="0">${cells(c, 0, sets.length ? `<button class="tw" type="button" data-expand="${esc(c.id)}" aria-expanded="${open}" aria-label="${open ? "Hide" : "Show"} ad sets">${open ? "▾" : "▸"}</button>` : "")}</tr>`;
+      if (!open) continue;
+      for (const s of sets) {
+        const ads = v.levels.ad.filter((a) => a.adSetId === s.id);
+        const sOpen = expanded.has(s.id);
+        body += `<tr class="lv1" data-row="ad_group:${esc(s.id)}" tabindex="0">${cells(s, 1, ads.length ? `<button class="tw" type="button" data-expand="${esc(s.id)}" aria-expanded="${sOpen}" aria-label="${sOpen ? "Hide" : "Show"} ads">${sOpen ? "▾" : "▸"}</button>` : "")}</tr>`;
+        if (sOpen) for (const a of ads) body += `<tr class="lv2" data-row="ad:${esc(a.id)}" tabindex="0">${cells(a, 2)}</tr>`;
+      }
+    }
+  } else {
+    // Ad sets / ads: grouped under their campaign (and ad set), so two items with the same objective never look alike.
+    for (const c of camps) {
+      const items = v.levels[level].filter((x) => x.campaignId === c.id);
+      if (!items.length) continue;
+      body += `<tr class="grouphead"><td colspan="${cols + 1}"><span class="lvl">Campaign</span> ${esc(c.name)} <span class="small-note">· ${esc(c.objectiveLabel)} · ${PLATFORM[c.platform]}</span></td></tr>`;
+      if (level === "ad_group") for (const s of items) body += `<tr class="lv1" data-row="ad_group:${esc(s.id)}" tabindex="0">${cells(s, 1)}</tr>`;
+      else for (const set of v.levels.ad_group.filter((s) => s.campaignId === c.id)) {
+        const ads = items.filter((a) => a.adSetId === set.id);
+        if (!ads.length) continue;
+        for (const a of ads) body += `<tr class="lv2" data-row="ad:${esc(a.id)}" tabindex="0">${cells(a, 2)}</tr>`;
+      }
+    }
+  }
+  return `<section class="section">
+      <header><h2>Campaigns</h2><span class="hint">${esc(v.label)} · click ▸ to see a campaign’s ad sets and ads · click any row for its analysis and daily chart</span></header>
+      <div class="toolbar">
+        <div class="filters" role="group" aria-label="View">${[["campaign", "Campaign › ad set › ad"], ["ad_group", "All ad sets"], ["ad", "All ads"]].map(([k, n]) => `<button type="button" data-level="${k}" aria-pressed="${k === level}">${n} <span class="num">${v.levels[k].length}</span></button>`).join("")}</div>
+        ${level === "campaign" ? `<button class="btn small" type="button" data-expandall>${camps.every((c) => expanded.has(c.id)) ? "Collapse all" : "Expand all ad sets"}</button>` : ""}
+        <label class="toggle"><input type="checkbox" id="diag" ${diag ? "checked" : ""}> Show CTR and CPM</label>
+      </div>
+      <div class="filters" role="group" aria-label="Objective"><button type="button" data-obj="" aria-pressed="${!objFilter}">All objectives</button>${objs.map((o) => `<button type="button" data-obj="${o}" aria-pressed="${objFilter === o}">${esc(META.allObjectives.find((x) => x.objective === o).label)}</button>`).join("")}</div>
+      <div class="tablewrap"><table class="ct">${head}<tbody>${body}</tbody></table></div>
+      <p class="small-note">Every ad set shows the campaign it belongs to, and every ad shows its campaign and ad set, so items with the same objective can’t be confused.</p>
+    </section>`;
+}
+
+// ---------- audience insight ----------
+const BD = { age_gender: "Age & gender", location: "Location", placement: "Placement", device: "Device", weekday: "Day of week", hour: "Time of day" };
+const HOWTO = {
+  age_gender: ["Meta: Ads Manager → Breakdown → By delivery → Age and gender → Export.", "TikTok: Reporting → Custom report → dimensions Age and Gender.", "Google Ads: Insights and reports → Demographics (age, gender) → Download."],
+  location: ["Meta: Breakdown → By delivery → Region (or Country / DMA).", "TikTok: Custom report → dimension Province / City.", "Google Ads: Insights and reports → When and where ads showed → Locations."],
+  placement: ["Meta: Breakdown → By delivery → Placement (or Platform).", "TikTok: Custom report → dimension Placement.", "Google Ads: Placements report (Display and Video)."],
+  device: ["Meta: Breakdown → By delivery → Impression device.", "Google Ads: Segment → Device.", "TikTok: Custom report → dimension Device / OS."],
+  weekday: ["Uses your normal daily export: nothing extra to upload."],
+  hour: ["Meta: Breakdown → By delivery → Time of day (ad account time zone). Meta can’t combine this with age, gender or location.", "Google Ads: Insights and reports → When and where ads showed → Day and hour.", "TikTok: Custom report → dimension Hour."],
+};
+function advice(bd, r, a, kind) {
+  const cost = `${a.kpiShort} ${kpi(r.cost, a.mode)} vs ${kpi(a.avg, a.mode)} on average`;
+  const share = `${pct(r.resultShare)} of ${a.resultLabel} on ${pct(r.spendShare)} of the spend (${cost})`;
+  const T = {
+    best: {
+      age_gender: `Make an ad with a message and visuals for ${r.name.toLowerCase()} and give it its own ad set, or use the people in this group who converted to seed a lookalike audience. Try it in one ad set before moving budget.`,
+      location: `Keep ${r.name} in every campaign; test a separate ad set with an offer or language made for it.`,
+      placement: `Make creative in ${r.name}'s format (e.g. vertical 9:16 video for Reels) so the platform can use it more.`,
+      device: `Make sure the landing page is fast and easy on ${r.name.toLowerCase()}; that’s where results come from.`,
+      weekday: `Plan launches, offers and new creative for ${r.name}s, and avoid big changes the day before.`,
+      hour: `Reply to messages quickly around ${r.name}, and schedule posts and boosts for these hours.`,
+    },
+    costly: {
+      age_gender: `Exclude ${r.name.toLowerCase()} (or narrow the age range) in one ad set for a week, and compare it with the others.`,
+      location: `Exclude ${r.name}, or lower the budget there, in one ad set first.`,
+      placement: `Turn off ${r.name} in placements (Advantage+ placements → manual placements) and watch cost per result for a week.`,
+      device: `Check the landing page and form on ${r.name.toLowerCase()}: slow or broken pages often cause this.`,
+      weekday: `Lower spend on ${r.name}s only if this repeats over several weeks; weekday patterns change.`,
+      hour: `Spend less at ${r.name}: Google Ads ad schedule can do this; Meta only allows it with a lifetime budget.`,
+    },
+  };
+  return { head: kind === "best" ? `${r.name}: best value` : `${r.name}: costly`, text: `${r.name} brought ${share}.`, todo: T[kind][bd] };
+}
+function audienceHtml() {
+  const t = E.audienceTargets(params());
+  // Open on the biggest objective that has enough results for groups to stand out (not awareness).
+  if (!aud.target || (aud.target.startsWith("obj:") && !t.objectives.some((o) => `obj:${o.objective}` === aud.target))) {
+    const enough = t.objectives.find((o) => o.objective !== "awareness" && E.audience(params(), `obj:${o.objective}`, "device").results >= 200);
+    aud.target = `obj:${(enough ?? t.objectives[0]).objective}`;
+  }
+  const a = E.audience(params(), aud.target, aud.breakdown);
+  const best = a.rows.filter((r) => r.verdict === "best").sort((x, y) => y.index - x.index).slice(0, 2);
+  const costly = a.rows.filter((r) => r.verdict === "costly").sort((x, y) => x.index - y.index).slice(0, 2);
+  const opts = t.objectives.map((o) => `<optgroup label="${esc(o.label)}"><option value="obj:${o.objective}" ${aud.target === `obj:${o.objective}` ? "selected" : ""}>All ${esc(o.label.toLowerCase())} campaigns</option>${t.campaigns.filter((c) => c.objective === o.objective).map((c) => `<option value="c:${c.id}" ${aud.target === `c:${c.id}` ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</optgroup>`).join("");
+  const maxShare = Math.max(...a.rows.map((r) => Math.max(r.spendShare, r.resultShare)), 0.01);
+  const VCH = { best: "Best value", costly: "Costly", average: "As expected", small: "Too little data" };
+  const segRows = a.rows.map((r) => `<div class="segrow">
+      <span><b style="font-weight:500">${esc(r.name)}</b><br><span class="small-note">${n0(r.results)} ${esc(a.resultLabel)} · ${money(r.spend)}</span></span>
+      <span class="segbars"><div><span>Spend</span><span class="track"><i class="sp" style="width:${(r.spendShare / maxShare) * 100}%"></i></span><span class="num">${pct(r.spendShare)}</span></div><div><span>${esc(a.resultLabel.split(" ")[0])}</span><span class="track"><i class="rs" style="width:${(r.resultShare / maxShare) * 100}%"></i></span><span class="num">${pct(r.resultShare)}</span></div></span>
+      <span class="num">${esc(a.kpiShort)} ${kpi(r.cost, a.mode)}</span>
+      <span><span class="vchip ${r.verdict}">${VCH[r.verdict]}</span></span>
+    </div>`).join("");
+  let visual = "";
+  if (aud.breakdown === "age_gender") {
+    const ages = ["18–24", "25–34", "35–44", "45–54", "55+"];
+    const cell = (name) => { const r = a.rows.find((x) => x.name === name) ?? a.rows.find((x) => name.startsWith("Men") && x.name === "Men 45+" && /45|55/.test(name)); return r; };
+    const color = (r) => { if (!r || r.index == null) return "var(--surface-2)"; const k = Math.max(-1, Math.min(1, Math.log(r.index) / Math.log(2))); return k >= 0 ? `color-mix(in srgb, var(--good) ${Math.round(15 + 70 * k)}%, var(--bg))` : `color-mix(in srgb, var(--hi) ${Math.round(15 + 70 * -k)}%, var(--bg))`; };
+    visual = `<div class="chartbox"><span class="title">Cost per result by age and gender</span><div class="heat"><div class="hrowx" style="grid-template-columns:70px repeat(${ages.length},1fr)"><span></span>${ages.map((x) => `<span class="small-note" style="text-align:center">${x}</span>`).join("")}</div>${["Women", "Men"].map((g) => `<div class="hrowx" style="grid-template-columns:70px repeat(${ages.length},1fr)"><span class="small-note">${g}</span>${ages.map((x) => { const r = g === "Men" && (x === "45–54" || x === "55+") ? a.rows.find((y) => y.name === "Men 45+") : a.rows.find((y) => y.name === `${g} ${x}`); return `<span class="cell" style="background:${color(r)}" title="${esc(r?.name ?? "")}">${r ? kpi(r.cost, a.mode) : "—"}</span>`; }).join("")}</div>`).join("")}</div><span class="cap">Green: cheaper than average · red: more expensive · men 45–54 and 55+ are one group in this sample.</span></div>`;
+  } else if (aud.breakdown === "hour") {
+    const maxR = Math.max(...a.rows.map((r) => r.results), 1);
+    visual = `<div class="chartbox"><span class="title">${esc(a.resultLabel)} by hour of day (ad account time zone)</span><svg viewBox="0 0 640 140" role="img" aria-label="Results by hour">${a.rows.map((r, i) => { const h = (r.results / maxR) * 100; return `<rect x="${12 + i * 26}" y="${112 - h}" width="20" height="${h}" rx="2" fill="${r.verdict === "best" ? "var(--good)" : r.verdict === "costly" ? "var(--hi)" : "var(--faint)"}"><title>${r.name}: ${n0(r.results)} ${esc(a.resultLabel)}, ${esc(a.kpiShort)} ${kpi(r.cost, a.mode)}</title></rect>${i % 3 === 0 ? `<text x="${22 + i * 26}" y="130" text-anchor="middle" font-size="9.5" fill="var(--muted)">${r.name.slice(0, 2)}h</text>` : ""}`; }).join("")}</svg><span class="cap">Green: best-value hours · red: costly hours.</span></div>`;
+  } else if (aud.breakdown === "weekday") {
+    const maxR = Math.max(...a.rows.map((r) => r.results), 1);
+    const top = a.rows.reduce((b, r) => (r.results > b.results ? r : b));
+    visual = `<div class="chartbox"><span class="title">${esc(a.resultLabel)} by day of week (real data)</span><svg viewBox="0 0 640 150" role="img" aria-label="Results by weekday">${a.rows.map((r, i) => { const h = (r.results / maxR) * 100; return `<rect x="${30 + i * 86}" y="${118 - h}" width="56" height="${h}" rx="3" fill="${r === top ? "var(--violet)" : "var(--faint)"}"><title>${r.name}: ${n0(r.results)} ${esc(a.resultLabel)}</title></rect><text x="${58 + i * 86}" y="${112 - h}" text-anchor="middle" font-size="10" fill="var(--fg)">${n0(r.results)}</text><text x="${58 + i * 86}" y="136" text-anchor="middle" font-size="10" fill="var(--muted)">${r.name.slice(0, 3)}</text>`; }).join("")}</svg><span class="cap">Most ${esc(a.resultLabel)}: <b>${top.name}</b> (${pct(top.resultShare)} of the week).</span></div>`;
+  }
+  return `<section class="section">
+      <header><h2>Audience insight</h2><span class="hint">Who responds to your ads, where, on which placement and when, and what to test next.</span></header>
+      <div class="aud-controls">
+        <label class="toggle">Campaigns <select id="audTarget" aria-label="Campaigns">${opts}</select></label>
+        <div class="filters" role="group" aria-label="Breakdown">${Object.entries(BD).map(([k, n]) => `<button type="button" data-bd="${k}" aria-pressed="${k === aud.breakdown}">${n}</button>`).join("")}</div>
+      </div>
+      <div class="aud-basis"><span><b style="color:var(--fg);font-weight:500">${esc(a.objectiveLabel)}</b> · ${n0(a.results)} ${esc(a.resultLabel)} · ${money(a.spend)} · average ${esc(a.kpiShort)} ${kpi(a.avg, a.mode)}</span><span>${esc(a.basis)}${a.simulated ? " (the sample has no breakdown upload)" : ""}</span></div>
+      ${best.length || costly.length ? `<div class="insights">${[...best.map((r) => ["best", r]), ...costly.map((r) => ["costly", r])].map(([k, r]) => { const x = advice(aud.breakdown, r, a, k); return `<div class="icard ${k}"><span class="vchip ${k}">${k === "best" ? "Best value" : "Costly"}</span><b style="font-weight:500">${esc(x.head)}</b><p>${esc(x.text)}</p><p class="do"><b style="font-weight:500;color:var(--fg)">Next step:</b> ${esc(x.todo)}</p></div>`; }).join("")}</div>` : `<p class="empty">No group stands out clearly in ${esc(V().label)}: every group gets about the results you’d expect for its share of spend.</p>`}
+      ${visual}
+      <div class="segs"><div class="segrow head"><span class="label">Group</span><span class="label">Share of spend vs share of ${esc(a.resultLabel)}</span><span class="label">Cost</span><span class="label">Verdict</span></div>${segRows}</div>
+      <p class="caution">Ad platforms already shift delivery toward the people who respond, so a “best value” group may simply be where the platform is doing well. Treat these as tests to run in one ad set, not as changes to make everywhere. A group is only called best or costly when the difference is statistically clear.</p>
+      <details class="small"><summary>How to get this from your own account</summary><ul>${HOWTO[aud.breakdown].map((s) => `<li>${esc(s)}</li>`).join("")}<li>Upload it under Upload report; AdMate links it to your campaigns by name.</li></ul></details>
+    </section>`;
+}
+
+function reportsHtml() {
+  return `<section class="section">
+      <header><h2>Reports</h2><span class="hint">${META.reports.length} reports uploaded for this account. Open one, compare it with the one before, or undo it.</span><button class="btn primary more" type="button" data-view="upload">Upload report</button></header>
+      <div class="list">${META.reports.map((r) => `<div class="li"><div class="grow"><b>${esc(r.fileName)}</b><span>${PLATFORM[r.platform]} · ${range(r.from, r.to)} · daily rows · ${n0(r.rows)} rows</span></div>
+        <button class="btn small" type="button" data-openreport>Open</button>
+        <button class="btn small" type="button" data-fake="Compares this report with the previous one on the same platform">Compare with previous</button>
+        <button class="btn small" type="button" data-fake="Undo removes this upload's numbers (the app asks first)">Undo</button></div>`).join("")}</div>
+    </section>`;
+}
+const GUIDES = [
+  ["Meta Ads Manager", ["Open Ads Manager → Campaigns (or Ad sets / Ads for more detail) and pick the date range.", "Breakdown → By time → Day (recommended: unlocks trends, day-by-day and tracking checks).", "Keep the Results, Result indicator, Amount spent, Impressions, Reach and Link clicks columns.", "Reports → Export table data → .xlsx or .csv.", "For Audience insight: export again with Breakdown → By delivery → Age and gender (or Region, Placement, Impression device)."]],
+  ["TikTok Ads Manager", ["Campaign tab → choose the date range.", "Custom columns: Cost, Impressions, Reach, Clicks (destination), Conversions, Video views, Paid follows.", "Export → .xlsx. For daily data, use Reporting → Custom report with the Day dimension.", "For Audience insight: a custom report with Age, Gender, Province or Placement."]],
+  ["Google Ads", ["Campaigns → set the date range.", "Segment → Time → Day.", "Download → .csv or Excel.", "For Audience insight: Insights and reports → Demographics, or When and where ads showed."]],
+  ["LinkedIn Campaign Manager", ["Analyze → Campaign performance.", "Time breakdown → Daily.", "Export → .csv."]],
+];
+function uploadHtml() {
+  return `<div class="uploadgrid">
+      <div class="card"><header><div><h2 style="font-size:17px">Upload your own report</h2><p>Add an export from your ads manager, or a breakdown export for Audience insight. AdMate shows the detected platform and columns before anything is saved.</p></div></header>
+        <div class="cardbody"><div class="drop"><b>Choose a CSV or XLSX export</b><p>Meta, TikTok, Google Ads or LinkedIn · up to 4 MB</p><label class="btn primary" for="fileIn" style="cursor:pointer">Choose file</label><input type="file" id="fileIn" accept=".csv,.xlsx,.xls" hidden><p id="fileName"></p></div>
+        <p class="small-note">On the sample account, your first upload starts your own ad account, so the sample stays as it is.</p></div></div>
+      <aside class="guides"><h2 style="font-size:17px">How to export</h2>${GUIDES.map(([n, steps], i) => `<details ${i === 0 ? "open" : ""}><summary>${n}</summary><ol>${steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></details>`).join("")}
+        <p class="small-note">Your reports are stored in AdMate’s database, and only your account can see them. They are never used to train AI models.</p></aside>
+    </div>`;
+}
+function settingsHtml() {
+  const t = Object.values(targets);
+  return `<form class="card" id="targetsForm" novalidate>
+      <header><div><h2 style="font-size:17px">Targets</h2><p>The most you want to pay per result (or the ROAS you need). Leave one empty and AdMate compares that goal with your previous period. Change one, save, and look at the Goals on Overview.</p></div>
+        <span class="state flat num">${t.filter((x) => x.target > 0).length} of ${t.length} targets set</span></header>
+      ${t.map((x) => {
+        const be = breakEven(x), roas = x.mode === "roas";
+        return `<div class="trow"><div class="who"><b>${esc(x.label)}</b><span>Judged by ${esc(x.kpiLabel)}</span></div>
+          <div class="fields">
+            <label class="field"><span>${roas ? "Target ROAS" : x.mode === "cpm" ? "Target cost per 1,000 people reached" : `Target ${esc(x.kpiLabel.toLowerCase())}`}</span><span class="in">${roas ? "" : "<i>USD</i>"}<input id="t-${x.objective}" data-o="${x.objective}" data-f="target" inputmode="decimal" placeholder="Optional" value="${x.target ?? ""}">${roas ? "<i>×</i>" : ""}</span></label>
+            ${x.objective === "sales" ? `<label class="field"><span>Gross margin</span><span class="in"><input id="m-${x.objective}" data-o="${x.objective}" data-f="marginPct" inputmode="decimal" placeholder="e.g. 40" value="${x.marginPct ?? ""}"><i>%</i></span></label>` : ""}
+            ${x.objective === "leads" || x.objective === "messages" ? `<label class="field"><span>Out of 100 ${x.objective === "leads" ? "leads" : "conversations"}, how many buy?</span><span class="in"><input id="c-${x.objective}" data-o="${x.objective}" data-f="closePct" inputmode="decimal" placeholder="e.g. 10" value="${x.closePct ?? ""}"><i>%</i></span></label>
+              <label class="field"><span>Profit from one customer</span><span class="in"><i>USD</i><input id="p-${x.objective}" data-o="${x.objective}" data-f="profit" inputmode="decimal" placeholder="e.g. 20" value="${x.profit ?? ""}"></span></label>` : ""}
+            ${x.mode === "cpm" ? `<p class="note">With daily reports AdMate judges awareness by cost per 1,000 impressions (reach can't be added up across days), so this target is used for period reports.</p>` : ""}
+            <p class="be" id="be-${x.objective}" ${be == null ? "hidden" : ""}>Break-even: <b>${be == null ? "" : roas ? `ROAS ${be.toFixed(2)}×` : `${esc(x.kpiShort)} ${money(be)}`}</b>. Worse than this loses money.</p>
+          </div></div>`;
+      }).join("")}
+      <div class="formfoot"><span>Saved in this prototype until you close the page.</span><button class="btn primary" type="submit">Save targets</button></div>
+    </form>`;
+}
+function addAccountHtml() {
+  return `<form class="card" id="addForm" style="max-width:560px" novalidate>
+      <header><div><span class="label">Step 1 of 2</span><h2 style="font-size:20px;margin-top:4px">Add your ad account</h2><p>The business or brand you run ads for. Next, you’ll upload an export from your ads manager.</p></div></header>
+      <div class="cardbody">
+        <label class="field"><span>Business or brand name</span><span class="in"><input id="newName" placeholder="e.g. Lotus Skincare" style="font-family:var(--font-display)"></span></label>
+        <div class="fields">
+          <label class="field"><span>Industry</span><span class="in"><select id="newInd"><option value="">Choose…</option><option>Beauty &amp; retail</option><option>E-commerce</option><option>Local services</option><option>B2B</option></select></span></label>
+          <label class="field"><span>Country</span><span class="in"><select id="newCountry"><option value="">Choose…</option><option>Cambodia</option><option>Thailand</option><option>Vietnam</option><option>Other</option></select></span></label>
+          <label class="field"><span>Currency</span><span class="in"><input id="newCur" value="USD" maxlength="3"></span></label>
+        </div>
+        <p class="small-note" id="addError" role="alert"></p>
+      </div>
+      <div class="formfoot"><span></span><button class="btn primary" type="submit">Continue to upload</button></div>
+    </form>`;
+}
+
+const PAGES = { overview: overviewHtml, actions: actionsHtml, campaigns: campaignsHtml, audience: audienceHtml, reports: reportsHtml, upload: uploadHtml, settings: settingsHtml, addaccount: addAccountHtml };
+const TITLES = { overview: "Overview", actions: "Actions", campaigns: "Campaigns", audience: "Audience insight", reports: "Reports", upload: "Upload report", settings: "Targets & settings", addaccount: "Add an ad account" };
+const PERIOD_PAGES = new Set(["overview", "actions", "campaigns", "audience"]);
+function render() {
+  renderNav();
+  $("#eyebrow").textContent = TITLES[view];
+  $("#title").textContent = view === "addaccount" ? "New ad account" : "Lotus Skincare (sample)";
+  const showPeriod = PERIOD_PAGES.has(view);
+  $("#meta").hidden = !showPeriod; $("#compareline").hidden = !showPeriod;
+  if (showPeriod) renderMeta();
+  $("#pages").innerHTML = `<div class="page">${PAGES[view]()}</div>`;
+  if (view === "overview") drawTrend();
+}
+function go(v) { view = v; closeOverlay(); render(); window.scrollTo({ top: 0 }); }
+
+// ---------- drawer ----------
+function openDrawer(d, entity) {
+  if (!d) return;
+  current = d;
+  const v = V();
+  const ent = entity ?? d.entity;
+  const cause = d.whyHappening?.[0], rest = (d.whyHappening ?? []).slice(1);
+  const recheck = (d.whatToDo ?? []).find((s) => /^Re-check/.test(s));
+  const steps = (d.whatToDo ?? []).filter((s) => s !== recheck);
+  const costAmount = d.cost ? (d.cost.match(/\$[\d,]+(\.\d+)?/g) ?? []).find((m, i, arr) => (/^You paid/.test(d.cost) ? i === 0 : /would have brought/.test(d.cost) && i === arr.length - 2)) : null;
+  const dec = decided[d.key];
+  const prReason = String(d.priorityReason ?? "").replace(/^(High|Medium|Low)( instead of high)?: /, "");
+  const kind = d.bucket === "problem" ? "issue" : d.bucket === "opportunity" ? "opportunity" : d.kind;
+  const series = ent ? E.daily(ent.level, ent.id, v.from, v.to) : null;
+  $("#overlay").innerHTML = `<div class="scrim" data-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-t">
+    <header>
+      <button class="x" type="button" data-close>Close ✕</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">${prioChip(d.priority)}${kindTag(kind)}${d.platform ? `<span class="plat">${PLATFORM[d.platform]}</span>` : ""}</div>
+      <h3 id="dr-t">${esc(d.title)}</h3>
+      ${d.where ? `<div class="crumbs">${pathHtml(d.where)}</div>` : ""}
+    </header>
+    <div class="scroll">
+      <div class="rank">
+        <div><b>Priority: ${prioChip(d.priority)}</b><span>How much it matters now. ${esc(prReason)}</span></div>
+        <div><b>Confidence: ${confDots(d.confidence)} ${esc(d.confidence)}</b><span>How sure AdMate is about the numbers. ${esc(String(d.confidenceText ?? "").replace(/^\w+ — /, ""))}</span></div>
+      </div>
+      <div class="blk"><h4>What happened</h4><p>${esc(d.description)}</p></div>
+      ${series ? `<div class="blk"><h4>Day by day</h4>${dailyChart(series, v.from, v.to)}${dailyFacts(series, v.from, v.to)}</div>` : ""}
+      ${d.cost ? `<div class="blk"><h4>What it cost you</h4><div class="costbox">${costAmount ? `<span class="big">${esc(costAmount)} ${/would have brought/.test(d.cost) ? "less revenue" : "extra"}</span>` : ""}<p>${esc(d.cost)}</p><small>Calculated from your own numbers in ${esc(v.label)} and ${esc(v.compareLabel ?? "the period before")}. It's money the change already cost, not a forecast.</small></div></div>` : ""}
+      ${(d.evidence ?? []).length ? `<div class="blk"><h4>Evidence</h4><div class="evwrap"><table class="ev"><thead><tr><th>Metric</th><th>${v.compareLabel ? esc(v.compareLabel) : "Before"}</th><th>${esc(v.label)}</th></tr></thead><tbody>${d.evidence.map((e) => `<tr><td>${esc(e.label)}</td><td class="num">${esc(e.a ?? "—")}</td><td class="num">${esc(e.b)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+      ${cause ? `<div class="blk"><h4>Likely cause</h4><span class="hyp">A hypothesis from the numbers, not a confirmed cause.</span><p>${esc(cause)}</p>${rest.length ? `<details class="small"><summary>More context (${rest.length})</summary><ul>${rest.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details>` : ""}</div>` : ""}
+      <div class="blk"><h4>What to do</h4><ol>${steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol></div>
+      ${d.risk || recheck ? `<div class="blk"><h4>Risk and re-check</h4>${d.risk ? `<p>${esc(d.risk)}</p>` : ""}${recheck ? `<p>${esc(recheck)}</p>` : ""}</div>` : ""}
+      ${(d.cantTell ?? []).length ? `<div class="warnbox"><b>What this report can't tell us.</b> ${d.cantTell.map(esc).join(" ")}</div>` : ""}
+      <details class="small"><summary>How AdMate judged this</summary><ul>${(d.judgedBy ?? []).map((w) => `<li>${esc(w)}</li>`).join("")}</ul></details>
+    </div>
+    <footer id="drawerFoot">${footer(dec)}</footer>
+  </aside>`;
+  $(".drawer .x").focus();
+}
+function footer(dec, mode = "") {
+  if (dec) return `<span class="note small-note">${esc(STATUS_TEXT(dec))}.</span><button class="btn" type="button" data-act="restore">${dec.status === "remind" ? "Cancel reminder" : "Restore"}</button>`;
+  if (mode === "dismiss") return `<span class="note small-note">Why? It helps AdMate get better.</span>${["Not relevant", "Already handled", "Wrong"].map((r) => `<button class="btn small" type="button" data-act="dismissed" data-reason="${r}">${r}</button>`).join("")}<button class="btn small" type="button" data-act="cancel">Cancel</button>`;
+  const menu = mode === "remind" ? `<div class="menu" role="menu">${[[1, "Tomorrow"], [3, "In 3 days"], [7, "In a week"]].map(([n, l]) => `<button type="button" role="menuitem" data-act="remind" data-days="${n}">${l}<small>${fmtDay(addDays(END, n))}</small></button>`).join("")}<button type="button" role="menuitem" data-act="remind" data-days="upload">After my next upload<small>new data</small></button></div>` : "";
+  return `${menu}<span class="note small-note">AdMate never changes your ad account.</span>
+    <button class="btn" type="button" data-act="remindmenu" aria-expanded="${mode === "remind"}">Remind me later ▾</button><button class="btn" type="button" data-act="dismiss">Dismiss</button><button class="btn primary" type="button" data-act="done">Action taken</button>`;
+}
+function act(kind, extra) {
+  const d = current;
+  if (!d) return;
+  if (kind === "dismiss") return ($("#drawerFoot").innerHTML = footer(null, "dismiss"));
+  if (kind === "remindmenu") return ($("#drawerFoot").innerHTML = footer(null, $(".menu") ? "" : "remind"));
+  if (kind === "cancel") return ($("#drawerFoot").innerHTML = footer(null));
+  if (kind === "restore") { delete decided[d.key]; toast("Back in the list"); }
+  else if (kind === "remind") {
+    const until = extra === "upload" ? null : addDays(END, Number(extra));
+    decided[d.key] = { status: "remind", until: until ?? addDays(END, 7) };
+    toast(until ? `We’ll remind you on ${fmtDay(until)}` : "We’ll remind you after your next upload");
+  } else { decided[d.key] = { status: kind, reason: extra }; toast(kind === "done" ? "Marked as done. AdMate re-checks it after your next upload." : "Dismissed"); }
+  closeOverlay(); render();
+}
+function closeOverlay() { $("#overlay").innerHTML = ""; current = null; }
+function toast(t) { $("#toastRoot").innerHTML = `<div class="toast" role="status">${esc(t)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => ($("#toastRoot").innerHTML = ""), 3200); }
+function openEntity(levelKey, id) {
+  const v = V();
+  const r = v.levels[levelKey].find((x) => x.id === id);
+  if (!r) return;
+  // A diagnosed problem on this exact item is the richer view; otherwise its plan.
+  const problem = [...v.problems, ...v.opportunities].find((p) => p.entity && p.entity.level === levelKey && p.entity.id === id);
+  openDrawer(problem ?? v.details[r.planKey], { level: levelKey, id });
+}
+
+// ---------- visual summary report ----------
+function openSummary() {
+  const v = V(), f = v.summaryFacts;
+  const main = v.objectives[0];
+  const tot = main ? main.daily.map((d) => ({ date: d.date, weekday: D0(d.date).getUTCDay(), spend: d.spend, results: d.results, kpi: d.v })) : [];
+  const a = main ? E.audience(params(), `obj:${main.objective}`, "age_gender") : null;
+  const topSeg = a ? a.rows.filter((r) => r.verdict === "best").sort((x, y) => y.index - x.index)[0] : null;
+  const great = v.great[0];
+  $("#overlay").innerHTML = `<div class="scrim" data-close></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="rp-t"><article class="report">
+    <header><div><span class="label">Summary report</span><h2 id="rp-t">${esc(f.title)}</h2></div><div style="display:flex;gap:8px"><button class="btn" type="button" id="copyBtn">Copy as text</button><button class="btn" type="button" data-close>Close</button></div></header>
+    <div class="rbody">
+      <p class="headline">${esc(f.headline)}</p>
+      <div class="rtiles">
+        <div class="tile"><span class="k">Spend</span><span class="v">${money(v.spend)}</span>${deltaChip(v.spendChange, "neutral")}</div>
+        ${v.objectives.slice(0, 3).map((o) => `<div class="tile"><span class="k">${esc(o.label)} · ${esc(o.kpiShort)}</span><span class="v">${kpi(o.value, o.mode)}</span>${deltaChip(o.change, o.mode, o.confidence)}</div>`).join("")}
+      </div>
+      ${main ? `<section class="rsec"><h3>${esc(main.label)}: the last ${tot.length} days</h3><div class="chartbox">${dailyChart({ mode: main.mode, kpiShort: main.kpiShort, kpiLabel: main.kpiLabel, resultLabel: main.resultLabel, days: tot }, v.from, v.to, { h: 190 })}</div></section>` : ""}
+      <section class="rsec"><h3>Goals</h3>${goalsHtml(v)}</section>
+      <section class="rsec"><h3>What changed</h3><ul>${(f.changes.length ? f.changes : ["No comparable earlier period yet."]).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></section>
+      <section class="rsec"><h3>What’s working</h3><ul><li>${esc(f.working ?? "Nothing stands out as a clear winner this period.")}</li>${great ? `<li>Consider more budget for <b>${esc(great.campaign)}</b> (${esc(great.kpi)}).</li>` : ""}${topSeg ? `<li>Best audience for ${esc(main.label.toLowerCase())}: <b>${esc(topSeg.name)}</b>, ${pct(topSeg.resultShare)} of ${esc(a.resultLabel)} on ${pct(topSeg.spendShare)} of spend.</li>` : ""}</ul></section>
+      <section class="rsec"><h3>What I’m doing about it</h3><ul>${(f.doing.length ? f.doing : ["Nothing needs changing right now; keep monitoring."]).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></section>
+      ${f.next.length ? `<section class="rsec"><h3>Next</h3><ul>${f.next.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></section>` : ""}
+      ${f.caveats.length ? `<section class="rsec"><h3>Caveats</h3><ul>${f.caveats.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></section>` : ""}
+      <p class="small-note">Written from your numbers for ${esc(v.label)}${v.compareLabel ? ` vs ${esc(v.compareLabel)}` : ""}. In the app this becomes a share link and a PDF.</p>
+    </div></article></div>`;
+}
+function resetSample() {
+  for (const o of [decided, roles, objectiveOverride]) for (const k of Object.keys(o)) delete o[k];
+  expanded.clear();
+  targets = Object.fromEntries(META.targets.map((t) => [t.objective, { ...t }]));
+  Object.assign(sel, { a: { from: addDays(END, -6), to: END, name: "Last 7 days" }, cmp: "previous", b: null });
+  filter = "problem";
+  toast("Sample account reset: no decisions, original targets, last 7 days");
+  go("overview");
+}
+
+// ---------- events ----------
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button, .scrim, tr[data-row], label[for]");
+  if (!t) { if (pk && !e.target.closest(".picker")) closePicker(); return; }
+  if (t.id === "periodBtn") return pk ? closePicker() : openPicker();
+  if (pk && t.closest(".picker")) {
+    if (t.dataset.pkkind) { const [w, k] = t.dataset.pkkind.split(":"); pk[w === "a" ? "aKind" : "bKind"] = k; return drawPicker(); }
+    if (t.dataset.pkpick) { const [w, i] = t.dataset.pkpick.split(":"); const c = choices(w === "a" ? pk.aKind : pk.bKind)[Number(i)]; pk[w] = { from: c.from, to: c.to, name: c.name }; return drawPicker(); }
+    if (t.hasAttribute("data-pkcancel")) return closePicker();
+    if (t.hasAttribute("data-pkapply")) {
+      if (pk.aKind === "custom") readCustom("a");
+      if (pk.cmp === "pick" && pk.bKind === "custom") readCustom("b");
+      if (pk.cmp === "pick" && !pk.b) return toast("Choose the period to compare with first");
+      Object.assign(sel, { a: pk.a, cmp: pk.cmp, b: pk.cmp === "pick" ? pk.b : null });
+      closePicker(); render();
+      const v = V();
+      return toast(`Showing ${v.label}${v.compareLabel ? ` vs ${v.compareLabel}` : " with no comparison"}`);
+    }
+    return;
+  }
+  if (pk) closePicker();
+  if (t.matches("[data-close]")) return closeOverlay();
+  if (t.dataset.view) return go(t.dataset.view);
+  if (t.hasAttribute("data-reset")) return resetSample();
+  if (t.dataset.filter) { filter = t.dataset.filter; return render(); }
+  if (t.dataset.level) { level = t.dataset.level; return render(); }
+  if (t.matches("[data-obj]")) { objFilter = t.dataset.obj || null; return render(); }
+  if (t.dataset.trend) { trendObj = t.dataset.trend; return drawTrend(); }
+  if (t.dataset.bd) { aud.breakdown = t.dataset.bd; return render(); }
+  if (t.dataset.expand) { e.stopPropagation(); expanded.has(t.dataset.expand) ? expanded.delete(t.dataset.expand) : expanded.add(t.dataset.expand); return render(); }
+  if (t.hasAttribute("data-expandall")) { const camps = V().levels.campaign; const all = camps.every((c) => expanded.has(c.id)); camps.forEach((c) => (all ? expanded.delete(c.id) : expanded.add(c.id))); return render(); }
+  if (t.dataset.key) return openDrawer(detailOf(t.dataset.key));
+  if (t.dataset.entity) { const [lv, id] = t.dataset.entity.split(":"); return openEntity(lv, id); }
+  if (t.matches("tr[data-row]")) { if (e.target.closest("select, .tw")) return; const [lv, id] = t.dataset.row.split(":"); return openEntity(lv, id); }
+  if (t.dataset.act) return act(t.dataset.act, t.dataset.reason ?? t.dataset.days);
+  if (t.hasAttribute("data-openreport")) { Object.assign(sel, { a: { from: MIN, to: END, name: "Whole report" }, cmp: "none", b: null }); go("overview"); return toast("Showing everything in this report, with no comparison"); }
+  if (t.dataset.fake) return toast(t.dataset.fake);
+  if (t.id === "summaryBtn") return openSummary();
+  if (t.id === "copyBtn") {
+    const text = V().summaryReport;
+    const fallback = () => { const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.append(ta); ta.select(); toast("Press Ctrl+C to copy"); setTimeout(() => ta.remove(), 8000); };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast("Copied as text"), fallback); else fallback();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { closeOverlay(); closePicker(); }
+  if (e.key === "Enter" && e.target.matches("tr[data-row]")) e.target.click();
+});
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.name === "pkcmp" && pk) { if (pk.aKind === "custom") readCustom("a"); pk.cmp = t.value; return drawPicker(); }
+  if (t.id?.startsWith("pk-") && pk) { readCustom(t.id.split("-")[1]); return; }
+  if (t.id === "diag") { diag = t.checked; return render(); }
+  if (t.id === "audTarget") { aud.target = t.value; return render(); }
+  if (t.dataset.role) { roles[t.dataset.role] = t.value; return toast(`Funnel role set to ${ROLE[t.value]}`); }
+  if (t.dataset.objsel) { objectiveOverride[t.dataset.objsel] = t.value; return toast(`Objective set to ${META.allObjectives.find((o) => o.objective === t.value).label}. In the app AdMate re-judges it with that objective's result.`); }
+  if (t.id === "fileIn" && t.files?.[0]) { $("#fileName").textContent = t.files[0].name; return toast("In the app, AdMate now shows the detected platform and columns for you to confirm before importing"); }
+});
+document.addEventListener("input", (e) => {
+  const o = e.target.dataset.o;
+  if (!o) return;
+  const draft = { ...targets[o] };
+  $$(`input[data-o="${o}"]`).forEach((i) => { const v = parseFloat(i.value); draft[i.dataset.f] = v > 0 ? v : null; });
+  const be = breakEven(draft), p = $("#be-" + o);
+  p.hidden = be == null;
+  if (be != null) p.querySelector("b").textContent = draft.mode === "roas" ? `ROAS ${be.toFixed(2)}×` : `${draft.kpiShort} ${money(be)}`;
+});
+document.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (e.target.id === "targetsForm") {
+    $$("#targetsForm input[data-o]").forEach((i) => { const v = parseFloat(i.value); targets[i.dataset.o][i.dataset.f] = v > 0 ? v : null; });
+    toast("Targets saved. Overview's goals are re-judged with them.");
+    return render();
+  }
+  if (e.target.id === "addForm") {
+    const name = $("#newName").value.trim();
+    if (!name) { $("#addError").textContent = "Enter your business or brand name first."; return $("#newName").focus(); }
+    toast(`“${name}” created. Next: upload its first report.`);
+    return go("upload");
+  }
+});
+
+try {
+  targets = Object.fromEntries(META.targets.map((t) => [t.objective, { ...t }]));
+  render();
+} catch (err) {
+  $("#pages").innerHTML = `<p class="empty">The AdMate engine couldn't start in this browser (${esc(err.message)}).</p>`;
+}
+</script>

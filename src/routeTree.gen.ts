@@ -15,10 +15,12 @@ import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as StartRouteImport } from './routes/start'
+import { Route as TelegramRouteImport } from './routes/telegram'
 import { Route as AuthCallbackRouteImport } from './routes/auth_.callback'
 import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$campaignId'
 
@@ -52,6 +54,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
@@ -72,6 +79,11 @@ const StartRoute = StartRouteImport.update({
   path: '/start',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TelegramRoute = TelegramRouteImport.update({
+  id: '/telegram',
+  path: '/telegram',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth_/callback',
   path: '/auth/callback',
@@ -90,10 +102,12 @@ export interface FileRoutesByFullPath {
   '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/start': typeof StartRoute
+  '/telegram': typeof TelegramRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
@@ -104,10 +118,12 @@ export interface FileRoutesByTo {
   '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/start': typeof StartRoute
+  '/telegram': typeof TelegramRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
@@ -119,10 +135,12 @@ export interface FileRoutesById {
   '/demo': typeof DemoRoute
   '/home': typeof HomeRoute
   '/login': typeof LoginRoute
+  '/logout': typeof LogoutRoute
   '/onboarding': typeof OnboardingRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/start': typeof StartRoute
+  '/telegram': typeof TelegramRoute
   '/auth_/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
 }
@@ -135,10 +153,12 @@ export interface FileRouteTypes {
     | '/demo'
     | '/home'
     | '/login'
+    | '/logout'
     | '/onboarding'
     | '/reset-password'
     | '/signup'
     | '/start'
+    | '/telegram'
     | '/auth/callback'
     | '/campaigns/$campaignId'
   fileRoutesByTo: FileRoutesByTo
@@ -149,10 +169,12 @@ export interface FileRouteTypes {
     | '/demo'
     | '/home'
     | '/login'
+    | '/logout'
     | '/onboarding'
     | '/reset-password'
     | '/signup'
     | '/start'
+    | '/telegram'
     | '/auth/callback'
     | '/campaigns/$campaignId'
   id:
@@ -163,10 +185,12 @@ export interface FileRouteTypes {
     | '/demo'
     | '/home'
     | '/login'
+    | '/logout'
     | '/onboarding'
     | '/reset-password'
     | '/signup'
     | '/start'
+    | '/telegram'
     | '/auth_/callback'
     | '/campaigns/$campaignId'
   fileRoutesById: FileRoutesById
@@ -178,10 +202,12 @@ export interface RootRouteChildren {
   DemoRoute: typeof DemoRoute
   HomeRoute: typeof HomeRoute
   LoginRoute: typeof LoginRoute
+  LogoutRoute: typeof LogoutRoute
   OnboardingRoute: typeof OnboardingRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   StartRoute: typeof StartRoute
+  TelegramRoute: typeof TelegramRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsCampaignIdRoute: typeof CampaignsCampaignIdRoute
 }
@@ -230,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/onboarding': {
       id: '/onboarding'
       path: '/onboarding'
@@ -258,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StartRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/telegram': {
+      id: '/telegram'
+      path: '/telegram'
+      fullPath: '/telegram'
+      preLoaderRoute: typeof TelegramRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth_/callback': {
       id: '/auth_/callback'
       path: '/auth/callback'
@@ -282,10 +322,12 @@ const rootRouteChildren: RootRouteChildren = {
   DemoRoute: DemoRoute,
   HomeRoute: HomeRoute,
   LoginRoute: LoginRoute,
+  LogoutRoute: LogoutRoute,
   OnboardingRoute: OnboardingRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   StartRoute: StartRoute,
+  TelegramRoute: TelegramRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsCampaignIdRoute: CampaignsCampaignIdRoute,
 }

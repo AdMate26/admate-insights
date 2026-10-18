@@ -1,53 +1,33 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
-import { DashboardScreen } from "@/components/admate/DashboardScreen";
 import { AccountErrorState } from "@/components/auth/AccountErrorState";
 import { AuthPending } from "@/components/auth/AuthLayout";
-import { allAnalysisQueryOptions, fetchWorkspaceAccess } from "@/lib/analysis-query";
-import { isOnboardingComplete, profileQueryOptions } from "@/lib/auth/profile";
+import { supabase } from "@/integrations/supabase/client";
+import { profileQueryOptions } from "@/lib/auth/profile";
 import { requireSession } from "@/lib/auth/session";
-import { decideWorkspaceGate, needsWorkspaceAccessCheck } from "@/lib/auth/workspace-gate";
-import { DEFAULT_BRAND } from "@/lib/brands";
+import { enterDashboard } from "@/lib/dashboard-bridge";
 import { validateWorkspaceSearch } from "@/lib/dashboard-search";
 
 /**
- * /home — the signed-in AdMate workspace. Logged-out visitors go to /login;
- * signed-in users who haven't finished onboarding go to /onboarding, except the
- * server-verified owner, whose setup (the Meta connection) lives on the server.
- * Resolved on the client so nothing private renders before the session is
- * checked.
- * Demo brands show clearly labelled sample data; the live "My Account" brand
- * shows the owner's real Meta data and is only reachable by the verified owner
- * (also enforced on the server, which never returns live data to anyone else).
+ * /home — where sign-in lands. Logged-out visitors go to /login; a missing or
+ * unreadable profile is shown as an account error.
+ *
+ * It then hands the Supabase sign-in to the AdMate dashboard at /app (Project
+ * B, dashboard/): the dashboard verifies the session with Supabase and opens
+ * the user's own workspace (open registration for the submission MVP; created
+ * once, on the first sign-in). If the dashboard refuses or is unavailable the
+ * user goes to /onboarding, never into anyone else's workspace. Resolved on the
+ * client so nothing private renders before the session is checked.
  */
 export const Route = createFileRoute("/home")({
   ssr: false,
+  // Kept so existing links that carry ?brand= stay valid; the dashboard ignores it.
   validateSearch: validateWorkspaceSearch,
-  beforeLoad: async ({ context, search }) => {
+  beforeLoad: async ({ context }) => {
     const session = await requireSession();
-    const profile = await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
-    const onboardingComplete = isOnboardingComplete(profile.onboarding_status);
-    const { liveBrands } = needsWorkspaceAccessCheck({
-      onboardingComplete,
-      requestedBrand: search.brand,
-    })
-      ? await fetchWorkspaceAccess(context.queryClient, session.user.id)
-      : { liveBrands: [] };
-    const gate = decideWorkspaceGate({
-      onboardingComplete,
-      liveBrands,
-      requestedBrand: search.brand,
-    });
-    if (gate === "onboarding") throw redirect({ to: "/onboarding", replace: true });
-    // A live brand is only for the verified owner; anyone else lands on the
-    // default demo brand instead of an error.
-    if (gate === "default-brand") {
-      throw redirect({ to: "/home", search: { brand: DEFAULT_BRAND }, replace: true });
-    }
+    await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
   },
-  loaderDeps: ({ search }) => ({ brand: search.brand }),
-  loader: ({ context, deps }) =>
-    context.queryClient.ensureQueryData(allAnalysisQueryOptions(deps.brand)),
   head: () => ({
     meta: [
       { title: "AdMate — Workspace" },
@@ -60,17 +40,30 @@ export const Route = createFileRoute("/home")({
   }),
   pendingComponent: () => <AuthPending />,
   errorComponent: ({ error, reset }) => <AccountErrorState error={error} reset={reset} />,
-  component: WorkspaceDashboard,
+  component: EnterDashboard,
 });
 
-function WorkspaceDashboard() {
-  const search = Route.useSearch();
+function EnterDashboard() {
   const navigate = useNavigate();
-  return (
-    <DashboardScreen
-      mode="workspace"
-      search={search}
-      onNavigate={(next) => navigate({ to: "/home", search: next })}
-    />
-  );
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void (async () => {
+      const { data } = await supabase.auth.getSession();
+      // `next` is set by the dashboard when it sent a signed-out visitor here;
+      // enterDashboard only ever returns a path inside /app.
+      const next = new URLSearchParams(window.location.search).get("next");
+      const outcome = await enterDashboard({ accessToken: data.session?.access_token, next });
+      if (outcome.kind === "dashboard") window.location.replace(outcome.href);
+      else if (outcome.kind === "login") void navigate({ to: "/login", replace: true });
+      else {
+        // Not admitted (invite-only), or the dashboard is unreachable.
+        void navigate({ to: "/onboarding", search: { access: "pending" }, replace: true });
+      }
+    })();
+  }, [navigate]);
+
+  return <AuthPending label="Opening your dashboard…" />;
 }

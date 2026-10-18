@@ -1,0 +1,259 @@
+import { sql } from "drizzle-orm";
+import {
+  bigserial,
+  boolean,
+  customType,
+  date,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+// People who signed in to try AdMate. Email is stored lower-cased.
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+});
+
+// Signed-in browsers. The cookie holds a random token; only its SHA-256 is stored.
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sessions_user_idx").on(t.userId)],
+);
+
+// One workspace = one ad account (a business or brand), owned by one user.
+export const workspaces = pgTable(
+  "workspaces",
+  {
+    id: text("id").primaryKey(),
+    // null only for accounts created before sign-in existed (old local data).
+    ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    industry: text("industry"),
+    country: text("country"), // stored now so market benchmarks are possible later
+    currency: text("currency").notNull().default("USD"),
+    isSample: boolean("is_sample").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("workspaces_owner_idx").on(t.ownerId)],
+);
+
+// Uploaded export files between preview and commit. Kept in the database (not on
+// disk) because on Vercel the two requests can land on different servers.
+export const uploads = pgTable("uploads", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  bytes: bytea("bytes").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Per-objective targets and optional profit inputs (PRD F2, §7.2).
+export const goals = pgTable(
+  "goals",
+  {
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    objective: text("objective").notNull(),
+    target: doublePrecision("target"), // target cost per result, or target ROAS for sales-by-ROAS
+    marginPct: doublePrecision("margin_pct"), // sales: gross margin → break-even ROAS
+    leadToCustomerPct: doublePrecision("lead_to_customer_pct"), // leads/messages: close rate
+    profitPerCustomer: doublePrecision("profit_per_customer"), // leads/messages: gross profit per customer
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.objective] })],
+);
+
+export const imports = pgTable(
+  "imports",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    fileName: text("file_name").notNull(),
+    level: text("level").notNull(),
+    granularity: text("granularity").notNull(), // daily | snapshot
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    periodEnd: date("period_end", { mode: "string" }).notNull(),
+    rowCount: integer("row_count").notNull(),
+    currency: text("currency"),
+    attribution: text("attribution"),
+    status: text("status").notNull().default("active"), // active | undone
+    // "performance" (campaign numbers) or a breakdown export for Audience insight (age_gender, location, …).
+    kind: text("kind").notNull().default("performance"),
+    diff: jsonb("diff"), // what this import replaced (newest-wins overlap handling)
+    warnings: jsonb("warnings"),
+    // Measure columns the export actually contained. A measure that is not listed
+    // was missing from the file, which is different from a real zero.
+    // null = uploaded before this was recorded (inferred from the data instead).
+    columns: jsonb("columns").$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("imports_ws_idx").on(t.workspaceId)],
+);
+
+// Campaigns, ad groups/ad sets and ads share one table (level + parent).
+export const entities = pgTable(
+  "entities",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    level: text("level").notNull(), // campaign | ad_group | ad
+    parentId: text("parent_id"),
+    externalId: text("external_id"),
+    name: text("name").notNull(),
+    nameKey: text("name_key").notNull(),
+    objective: text("objective").notNull(),
+    objectiveSource: text("objective_source").notNull(),
+    // Funnel role set by the user (campaigns only). null = guessed from names.
+    role: text("role"),
+    status: text("status"),
+    secondaryStatus: text("secondary_status"),
+    budget: doublePrecision("budget"),
+    firstSeen: date("first_seen", { mode: "string" }).notNull(),
+    lastSeen: date("last_seen", { mode: "string" }).notNull(),
+  },
+  (t) => [
+    index("entities_ws_idx").on(t.workspaceId, t.platform, t.level),
+    index("entities_ext_idx").on(t.workspaceId, t.platform, t.level, t.externalId),
+  ],
+);
+
+// Name variants the user confirmed are the same entity (fuzzy match review).
+export const entityAliases = pgTable(
+  "entity_aliases",
+  {
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    level: text("level").notNull(),
+    nameKey: text("name_key").notNull(),
+    entityId: text("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.platform, t.level, t.nameKey] })],
+);
+
+// Additive measures per entity per day (daily) or per period (snapshot).
+export const facts = pgTable(
+  "facts",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    importId: text("import_id").notNull().references(() => imports.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    campaignId: text("campaign_id").notNull(),
+    adGroupId: text("ad_group_id"),
+    adId: text("ad_id"),
+    granularity: text("granularity").notNull(),
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    periodEnd: date("period_end", { mode: "string" }).notNull(),
+    active: boolean("active").notNull().default(true),
+    replacedBy: text("replaced_by"),
+    spend: doublePrecision("spend").notNull().default(0),
+    impressions: doublePrecision("impressions").notNull().default(0),
+    reach: doublePrecision("reach").notNull().default(0),
+    clicksAll: doublePrecision("clicks_all").notNull().default(0),
+    linkClicks: doublePrecision("link_clicks").notNull().default(0),
+    landingPageViews: doublePrecision("landing_page_views").notNull().default(0),
+    engagements: doublePrecision("engagements").notNull().default(0),
+    follows: doublePrecision("follows").notNull().default(0),
+    videoViews: doublePrecision("video_views").notNull().default(0),
+    thruplays: doublePrecision("thruplays").notNull().default(0),
+    leads: doublePrecision("leads").notNull().default(0),
+    messages: doublePrecision("messages").notNull().default(0),
+    installs: doublePrecision("installs").notNull().default(0),
+    registrations: doublePrecision("registrations").notNull().default(0),
+    purchases: doublePrecision("purchases").notNull().default(0),
+    conversions: doublePrecision("conversions").notNull().default(0),
+    conversionValue: doublePrecision("conversion_value").notNull().default(0),
+    leadFormOpens: doublePrecision("lead_form_opens").notNull().default(0),
+  },
+  (t) => [
+    index("facts_ws_period_idx").on(t.workspaceId, t.active, t.periodStart, t.periodEnd),
+    index("facts_import_idx").on(t.importId),
+  ],
+);
+
+// Audience insight: spend and results split by age & gender, location, placement,
+// device or hour, from breakdown exports. Kept apart from `facts` because they
+// add up to the same campaign totals (storing them there would count spend twice).
+export const breakdowns = pgTable(
+  "breakdowns",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    importId: text("import_id").notNull().references(() => imports.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    kind: text("kind").notNull(), // age_gender | location | placement | device | hour
+    segment: text("segment").notNull(), // "Women 25–34", "Phnom Penh", "Instagram Reels", …
+    campaignId: text("campaign_id").notNull(),
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    periodEnd: date("period_end", { mode: "string" }).notNull(),
+    active: boolean("active").notNull().default(true),
+    replacedBy: text("replaced_by"),
+    measures: jsonb("measures").notNull(),
+  },
+  (t) => [index("breakdowns_ws_kind_idx").on(t.workspaceId, t.kind, t.active, t.periodStart, t.periodEnd), index("breakdowns_import_idx").on(t.importId)],
+);
+
+// User decisions on recommendations. Recommendations themselves are recomputed
+// from data; their stable key links them to the user's accept/dismiss/done.
+export const recStatus = pgTable(
+  "rec_status",
+  {
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    status: text("status").notNull(), // accepted | snoozed | dismissed | done
+    dismissReason: text("dismiss_reason"),
+    title: text("title"),
+    snoozeUntil: date("snooze_until", { mode: "string" }),
+    doneAt: date("done_at", { mode: "string" }),
+    // The entity's numbers when the finding was marked done, for the re-check.
+    baseline: jsonb("baseline"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.key] })],
+);
+
+// Cached AI text, keyed by a hash of the facts it was written from (PRD §9.6).
+export const narratives = pgTable(
+  "narratives",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    surface: text("surface").notNull(),
+    factsHash: text("facts_hash").notNull(),
+    tone: text("tone").notNull(),
+    content: jsonb("content").notNull(),
+    model: text("model").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("narratives_key_idx").on(t.workspaceId, t.surface, t.factsHash, t.tone)],
+);
+
+export const aiUsage = pgTable("ai_usage", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  workspaceId: text("workspace_id"),
+  route: text("route").notNull(),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  ok: boolean("ok").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
