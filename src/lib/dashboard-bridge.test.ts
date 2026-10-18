@@ -34,8 +34,10 @@ test("hand-off: the token travels only in the Authorization header of a same-ori
 });
 
 test("hand-off: each answer maps to one destination", async () => {
+  // A refused token is an error, never /login: /login would see the Supabase
+  // session and return to /home, looping (seen on the Preview).
   expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: server(401).fetchImpl })).toEqual({
-    kind: "login",
+    kind: "error",
   });
   expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: server(403).fetchImpl })).toEqual({
     kind: "not_authorized",
@@ -154,6 +156,35 @@ test("route rules: /app and everything under it go to the dashboard", () => {
     "/app": { proxy: "http://localhost:3100/app" },
     "/app/**": { proxy: "http://localhost:3100/app/**" },
   });
+});
+
+test("route rules: a bypass secret becomes a server-side request header", () => {
+  const secret = "AbCdEf0123456789AbCdEf0123456789";
+  expect(dashboardRouteRules("https://admate-dashboard.vercel.app", secret)).toEqual({
+    "/app": {
+      proxy: {
+        to: "https://admate-dashboard.vercel.app/app",
+        headers: { "x-vercel-protection-bypass": secret },
+      },
+    },
+    "/app/**": {
+      proxy: {
+        to: "https://admate-dashboard.vercel.app/app/**",
+        headers: { "x-vercel-protection-bypass": secret },
+      },
+    },
+  });
+  // Never part of a target URL.
+  const rules = JSON.stringify(dashboardRouteRules("https://x.test", secret));
+  expect(rules.match(new RegExp(secret, "g"))?.length).toBe(2);
+  expect(rules).not.toContain(`?${secret}`);
+  expect(rules).not.toContain("x-vercel-protection-bypass=");
+  // Blank means no bypass: the plain edge rewrite.
+  expect(dashboardRouteRules("https://x.test", "  ")).toEqual(
+    dashboardRouteRules("https://x.test"),
+  );
+  expect(() => dashboardRouteRules("https://x.test", "short")).toThrow();
+  expect(() => dashboardRouteRules("https://x.test", "has spaces in it 1234567")).toThrow();
 });
 
 test("route rules: anything but a bare http(s) origin is rejected at build time", () => {
