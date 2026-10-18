@@ -1,0 +1,1 @@
+ALTER TABLE "facts" ADD COLUMN "registrations" double precision DEFAULT 0 NOT NULL;

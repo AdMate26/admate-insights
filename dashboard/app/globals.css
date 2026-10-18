@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+/* AdMate brand tokens (Brand guidelines v1.0 · Blade A)
+   Violet  #7F61FF  brand, mark, actions
+   Signal  #C2E233  needs attention ONLY — at most once per screen
+   Ink     #0A0A13  working surface
+   Paper   #FFFFFF  documents, light UI
+   On light backgrounds both brand colours darken: #6A3FE8 / #8FA82B. No gradients. */
+
+:root {
+  --bg: #ffffff;
+  --surface: #f6f6f9;
+  --surface-2: #eeeef4;
+  --line: #e3e3ec;
+  --fg: #0a0a13;
+  --muted: #5d5d72;
+  --faint: #9696a8;
+  --violet: #6a3fe8;
+  --violet-soft: #efeafe;
+  --signal: #8fa82b;
+  --signal-ink: #0a0a13;
+  --bad: #d23b3b;
+  --bad-soft: #fcecec;
+  --warn: #a8660b;
+  --warn-soft: #fbf1e1;
+  --good: #1f8a5b;
+  --good-soft: #e3f4ec;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0a13;
+    --surface: #12121d;
+    --surface-2: #1a1a28;
+    --line: #262635;
+    --fg: #f1f1f6;
+    --muted: #a0a0b4;
+    --faint: #6c6c80;
+    --violet: #7f61ff;
+    --violet-soft: #1e1838;
+    --signal: #c2e233;
+    --signal-ink: #0a0a13;
+    --bad: #ff6b6b;
+    --bad-soft: #2a1417;
+    --warn: #f2b155;
+    --warn-soft: #2a2012;
+    --good: #4fd19a;
+    --good-soft: #10261d;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0a13;
+  --surface: #12121d;
+  --surface-2: #1a1a28;
+  --line: #262635;
+  --fg: #f1f1f6;
+  --muted: #a0a0b4;
+  --faint: #6c6c80;
+  --violet: #7f61ff;
+  --violet-soft: #1e1838;
+  --signal: #c2e233;
+  --signal-ink: #0a0a13;
+  --bad: #ff6b6b;
+  --bad-soft: #2a1417;
+  --warn: #f2b155;
+  --warn-soft: #2a2012;
+  --good: #4fd19a;
+  --good-soft: #10261d;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --color-signal: var(--signal);
+  --color-signal-ink: var(--signal-ink);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+/* Headings: weight 700, tight tracking (−0.04em). */
+h1,
+h2,
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+/* Metrics and machine labels are set in IBM Plex Mono with aligned figures. */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
+}
+
+/* Printing the summary report prints only the report. */
+@media print {
+  body:has(.print-root) * {
+    visibility: hidden;
+  }
+  body:has(.print-root) .print-root,
+  body:has(.print-root) .print-root * {
+    visibility: visible;
+  }
+  body:has(.print-root) .print-root {
+    position: absolute;
+    inset: 0 auto auto 0;
+    max-height: none;
+    overflow: visible;
+  }
+}
