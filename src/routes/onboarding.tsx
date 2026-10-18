@@ -23,10 +23,14 @@ import { requireSession, useLogout } from "@/lib/auth/session";
  */
 export const Route = createFileRoute("/onboarding")({
   ssr: false,
-  beforeLoad: async ({ context }) => {
+  // `access=pending`: /home sent this user here because the dashboard didn't
+  // admit them (invite-only). Don't send them back to /home (that would loop).
+  validateSearch: (search: Record<string, unknown>): { access?: "pending" } =>
+    search["access"] === "pending" ? { access: "pending" } : {},
+  beforeLoad: async ({ context, search }) => {
     const session = await requireSession();
     const profile = await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
-    if (isOnboardingComplete(profile.onboarding_status)) {
+    if (isOnboardingComplete(profile.onboarding_status) && search.access !== "pending") {
       throw redirect({ to: "/home", replace: true });
     }
     return { email: session.user.email ?? null, userId: session.user.id };

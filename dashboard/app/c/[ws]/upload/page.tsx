@@ -2,6 +2,8 @@ import { UploadFlow } from "@/components/UploadFlow";
 import { Card } from "@/components/ui";
 import { MAX_UPLOAD_MB } from "@/lib/data/uploads";
 import { requireWorkspace } from "@/lib/data/workspaces";
+import { getCurrentUser } from "@/lib/auth/session";
+import { SignInToChange } from "@/lib/integration/read-only";
 
 export const metadata = { title: "Upload report" };
 
@@ -29,6 +31,8 @@ const GUIDES: { platform: string; steps: string[] }[] = [
 export default async function UploadPage({ params }: PageProps<"/c/[ws]/upload">) {
   const { ws } = await params;
   const workspace = await requireWorkspace(ws);
+  // AdMate integration: public demo visitors can't upload; signing up gives them their own account.
+  const readOnly = !!(await getCurrentUser())?.readOnly;
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
@@ -37,7 +41,14 @@ export default async function UploadPage({ params }: PageProps<"/c/[ws]/upload">
       </div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <Card className="min-w-0 p-5">
-          <UploadFlow workspaceId={ws} maxMb={MAX_UPLOAD_MB} newAccount={workspace.isSample} />
+          {readOnly ? (
+            <div className="space-y-3 text-sm">
+              <p>Uploading needs a free AdMate account. Your reports are stored privately and only you can see them.</p>
+              <SignInToChange what="upload your own report" />
+            </div>
+          ) : (
+            <UploadFlow workspaceId={ws} maxMb={MAX_UPLOAD_MB} newAccount={workspace.isSample} />
+          )}
         </Card>
       <aside className="space-y-4">
         <h2 className="text-lg">How to export</h2>

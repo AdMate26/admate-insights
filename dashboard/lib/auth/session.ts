@@ -4,13 +4,19 @@ import { and, eq, gt, lt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { isAuthorized } from "../access/policy";
 import { getDb } from "../db/client";
 import { sessions, users } from "../db/schema";
+import { websiteUrl } from "../integration/paths";
+import { publicDemoVisitor } from "../integration/public-demo";
 import { SESSION_COOKIE, SESSION_DAYS } from "./cookie";
 
 export interface CurrentUser {
   id: string;
   email: string;
+  // AdMate integration: set for a public demo visitor (not signed in). The id is
+  // then the demo's system owner, so only the demo account is visible.
+  readOnly?: true;
 }
 
 // The cookie carries a random token; the database only stores its hash, so a
@@ -46,20 +52,31 @@ export async function endSession() {
 }
 
 // The signed-in user for this request, or null. Cached per request.
+// AdMate integration: a valid session is not enough on its own. The user must
+// still be authorised (lib/access/policy.ts) on every request; a session whose
+// user lost access is deleted and treated as signed out. Without a valid
+// session, a read request that proxy.ts marked gets the read-only public demo
+// visitor (lib/integration/public-demo.ts); never a write or Server Action.
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  const db = await getDb();
-  const [row] = await db
-    .select({ id: users.id, email: users.email })
-    .from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
-    .where(and(eq(sessions.id, sessionId(token)), gt(sessions.expiresAt, new Date())));
-  return row ?? null;
+  if (token) {
+    const db = await getDb();
+    const [row] = await db
+      .select({ id: users.id, email: users.email })
+      .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .where(and(eq(sessions.id, sessionId(token)), gt(sessions.expiresAt, new Date())));
+    if (row) {
+      if (await isAuthorized(row.id)) return row;
+      await db.delete(sessions).where(eq(sessions.id, sessionId(token)));
+    }
+  }
+  return publicDemoVisitor();
 });
 
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  // Sign-in lives on the website: /home re-checks it and re-creates the session.
+  if (!user) redirect(websiteUrl("/home"));
   return user;
 }

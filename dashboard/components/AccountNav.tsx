@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { openAsk } from "./askEvents";
 import { cx } from "./ui";
+import { apiPath } from "@/lib/integration/paths";
 
 type IconName = "dashboard" | "recommendations" | "audience" | "campaigns" | "reports" | "upload" | "settings" | "ask";
 
@@ -27,7 +28,7 @@ export function AccountNav({ workspaceId, counts: initial, askAvailable }: { wor
   const period = ["from", "to", "cmp", "cfrom", "cto", "report", "vs"].map((k) => `${k}=${search.get(k) ?? ""}`).join("&");
   useEffect(() => {
     let live = true;
-    fetch(`/api/counts?ws=${workspaceId}&${period}`)
+    fetch(`${apiPath("/api/counts")}?ws=${workspaceId}&${period}`)
       .then((r) => r.json())
       .then((c) => live && setCounts(c))
       .catch(() => {});

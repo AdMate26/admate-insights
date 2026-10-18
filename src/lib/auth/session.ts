@@ -6,8 +6,8 @@ import type { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
-import { fetchWorkspaceAccess } from "@/lib/analysis-query";
-import { PROFILE_QUERY_KEY, isOnboardingComplete, profileQueryOptions } from "./profile";
+import { endDashboardSession, signOutEverywhere } from "@/lib/dashboard-bridge";
+import { PROFILE_QUERY_KEY, profileQueryOptions } from "./profile";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
@@ -50,7 +50,7 @@ export async function requireSession(): Promise<Session> {
   return data.session;
 }
 
-/** Where to go after sign-in. The verified owner can land on My Account. */
+/** Where to go after sign-in. */
 export type PostLoginTarget =
   { to: "/home"; search?: { brand: "my_account" } } | { to: "/onboarding" };
 
@@ -68,6 +68,10 @@ export class SignInError extends Error {
  * callback and the email-code flow so post-login routing lives in one place.
  */
 export async function completeSignIn(queryClient: QueryClient): Promise<PostLoginTarget> {
+  // A new sign-in never inherits a dashboard session left in this browser by an
+  // earlier user; /home creates a fresh one for this user if they're admitted.
+  await endDashboardSession();
+
   // getSession() waits for the client to finish initialising, which includes
   // picking up tokens from an OAuth / magic-link redirect URL.
   let session = (await supabase.auth.getSession()).data.session;
@@ -90,16 +94,14 @@ export async function completeSignIn(queryClient: QueryClient): Promise<PostLogi
     throw new SignInError("Session could not be validated");
   }
 
-  const profile = await queryClient.fetchQuery(profileQueryOptions(userData.user.id));
-  if (isOnboardingComplete(profile.onboarding_status)) return { to: "/home" };
+  // The user's own profile must exist (a missing or unreadable profile is shown
+  // as an account error, never skipped).
+  await queryClient.fetchQuery(profileQueryOptions(userData.user.id));
 
-  // Onboarding isn't complete. The server decides whether this session belongs
-  // to the owner (Supabase-validated token vs META_OWNER_USER_ID); only then
-  // does the user skip onboarding, straight to their live workspace.
-  const access = await fetchWorkspaceAccess(queryClient, userData.user.id);
-  return access.liveBrands.includes("my_account")
-    ? { to: "/home", search: { brand: "my_account" } }
-    : { to: "/onboarding" };
+  // Open registration (submission MVP): every verified user goes straight to
+  // their own dashboard; /home hands the sign-in to it. The unfinished Early
+  // Access setup is skipped.
+  return { to: "/home" };
 }
 
 /** Real Supabase logout: ends the session and returns to the public landing page. */
@@ -108,7 +110,11 @@ export function useLogout() {
   const queryClient = useQueryClient();
 
   return async function logout() {
-    const { error } = await supabase.auth.signOut();
+    // End the dashboard (/app) session first, then the Supabase session.
+    const { error } = await signOutEverywhere({
+      endDashboard: () => endDashboardSession(),
+      signOutSupabase: () => supabase.auth.signOut(),
+    });
     if (error) {
       if (import.meta.env.DEV) console.warn("[auth] sign-out failed", error);
       toast.error("We couldn't log you out. Please try again.");

@@ -14,6 +14,7 @@ import { kpiLabel, OBJECTIVES, type Objective } from "@/lib/metrics/objectives";
 import { isRole, type Role } from "@/lib/analysis/roles";
 import { createSampleAccount } from "@/lib/sample/load";
 import { addDays, toISO } from "@/lib/dates";
+import { checkAccountLimit } from "@/lib/integration/limits";
 
 // Server actions are public endpoints: every action below signs the user in
 // (requireUser) or checks they own the account (requireWorkspace) first.
@@ -32,6 +33,8 @@ async function insertWorkspace(formData: FormData): Promise<string | null> {
 }
 
 export async function createWorkspace(formData: FormData) {
+  // AdMate integration: MVP limit on accounts per user (lib/integration/limits.ts).
+  if (await checkAccountLimit((await requireUser()).id)) return;
   const id = await insertWorkspace(formData);
   if (!id) return;
   revalidatePath("/", "layout");
@@ -42,6 +45,9 @@ export async function createWorkspace(formData: FormData) {
 // a new account of their own, so the sample stays untouched. No redirect — the
 // upload screen carries on with the new account.
 export async function createWorkspaceForUpload(formData: FormData): Promise<{ id?: string; error?: string }> {
+  // AdMate integration: MVP limit on accounts per user (lib/integration/limits.ts).
+  const limit = await checkAccountLimit((await requireUser()).id);
+  if (limit) return { error: limit };
   const id = await insertWorkspace(formData);
   return id ? { id } : { error: "Enter your business or brand name first." };
 }

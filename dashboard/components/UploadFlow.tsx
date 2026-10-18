@@ -11,6 +11,7 @@ import { PLATFORM_LABEL, PLATFORMS, type Platform } from "@/lib/ingest/headers";
 import type { PreviewResponse } from "@/lib/ingest/preview-types";
 import { OBJECTIVE_DEFS, OBJECTIVES, type Objective } from "@/lib/metrics/objectives";
 import { buttonClass, cx } from "./ui";
+import { apiPath } from "@/lib/integration/paths";
 
 const input = "num rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-violet";
 
@@ -37,7 +38,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/import/preview", { method: "POST", body });
+      const res = await fetch(apiPath("/api/import/preview"), { method: "POST", body });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Upload failed.");
       const p = json as PreviewResponse;
@@ -103,7 +104,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/import/commit", {
+      const res = await fetch(apiPath("/api/import/commit"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ uploadId: preview.uploadId, workspaceId, platform, periodStart: start, periodEnd: end, objectives, matches }),

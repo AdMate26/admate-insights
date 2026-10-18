@@ -1,11 +1,13 @@
 "use client";
 
 import { useTransition } from "react";
+import { useReadOnly } from "@/lib/integration/read-only";
 import { deleteWorkspace } from "@/app/actions";
 import { buttonClass } from "./ui";
 
 export function DeleteClientButton({ workspaceId }: { workspaceId: string }) {
   const [pending, start] = useTransition();
+  if (useReadOnly()) return null; // AdMate integration: public demo is read-only
   return (
     <button
       type="button"

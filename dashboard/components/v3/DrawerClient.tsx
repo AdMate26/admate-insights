@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { setFindingStatus } from "@/app/actions";
 import { addDays, toISO } from "@/lib/dates";
+import { SignInToChange, useReadOnly } from "@/lib/integration/read-only";
 import { buttonClass, cx } from "../ui";
 
 const SELECTION_KEYS = ["from", "to", "cmp", "cfrom", "cto", "report", "vs"] as const;
@@ -51,7 +52,16 @@ export function DecisionBar({ workspaceId, itemKey, title, status, until, dismis
       router.replace(closeHref, { scroll: false });
     });
   const closed = status === "done" || status === "dismissed" || status === "snoozed";
+  // AdMate integration: public demo visitors can read, not decide.
+  const readOnly = useReadOnly();
 
+  if (readOnly)
+    return (
+      <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3">
+        <span className="flex-1 text-xs text-muted">AdMate never changes your ad account.</span>
+        <SignInToChange what="save decisions" />
+      </footer>
+    );
   if (closed)
     return (
       <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3">

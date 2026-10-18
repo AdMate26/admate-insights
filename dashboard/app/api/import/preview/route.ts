@@ -9,6 +9,8 @@ import { nameKey, suggestMatches } from "@/lib/ingest/match";
 import { normalizeTable } from "@/lib/ingest/normalize";
 import type { PreviewResponse } from "@/lib/ingest/preview-types";
 import { resultCount } from "@/lib/metrics/objectives";
+import { getCurrentUser } from "@/lib/auth/session";
+import { checkRowCount, checkUploadFile, checkUploadRate } from "@/lib/integration/limits";
 
 const MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
@@ -20,6 +22,9 @@ export async function POST(request: Request) {
   const reuse = String(form.get("uploadId") ?? "");
   const ws = await getWorkspace(workspaceId);
   if (!ws) return Response.json({ error: "Client not found." }, { status: 404 });
+  // AdMate integration: only signed-in owners upload, within the MVP limits (lib/integration/limits.ts).
+  const user = await getCurrentUser();
+  if (!user || user.readOnly) return Response.json({ error: "Please sign in." }, { status: 401 });
 
   let uploadId: string;
   let fileName: string;
@@ -27,9 +32,13 @@ export async function POST(request: Request) {
   if (file instanceof File) {
     if (file.size > MAX_BYTES) return Response.json({ error: `File is larger than ${MAX_UPLOAD_MB} MB. Export a shorter date range or fewer columns.` }, { status: 413 });
     if (!/\.(csv|tsv|txt|xlsx|xls)$/i.test(file.name)) return Response.json({ error: "Upload a .csv, .tsv or .xlsx export." }, { status: 415 });
+    const rate = await checkUploadRate(user.id);
+    if (rate) return Response.json({ error: rate }, { status: 429 });
     uploadId = randomUUID();
     fileName = file.name;
     bytes = Buffer.from(await file.arrayBuffer());
+    const invalid = checkUploadFile(fileName, bytes);
+    if (invalid) return Response.json({ error: invalid }, { status: 415 });
     await saveUpload(uploadId, fileName, bytes, workspaceId);
   } else if (reuse) {
     // Re-run the preview with a different platform choice.
@@ -48,6 +57,8 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "We couldn't read this file. Export it again as .xlsx or .csv." }, { status: 422 });
   }
+  const tooMany = checkRowCount(preview.rows.length);
+  if (tooMany) return Response.json({ error: tooMany }, { status: 413 });
 
   const db = await getDb();
   const existing = preview.platform

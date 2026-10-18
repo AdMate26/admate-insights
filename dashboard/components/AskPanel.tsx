@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { track } from "@/lib/analytics";
 import { ASK_EVENT, type AskRequest } from "./askEvents";
 import { buttonClass, cx } from "./ui";
+import { apiPath } from "@/lib/integration/paths";
 
 interface Msg {
   role: "user" | "assistant";
@@ -50,7 +51,7 @@ export function AskPanel({ workspaceId, accountName, enabled: hasKey, available 
       const update = (fn: (m: Msg) => Msg) => setMsgs((all) => [...all.slice(0, -1), fn(all[all.length - 1])]);
       try {
         const selection = Object.fromEntries(SELECTION_KEYS.map((k) => [k, search.get(k) ?? undefined]).filter(([, v]) => v));
-        const res = await fetch("/api/ask", {
+        const res = await fetch(apiPath("/api/ask"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ workspaceId, selection, history, question, findingKey: key }),
