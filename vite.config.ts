@@ -7,6 +7,10 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 import { dashboardRouteRules } from "./src/lib/dashboard-route-rules";
+import { assertProductionBuild } from "./src/lib/production-guard";
+
+// Vercel Production builds only: must come from main and serve the dashboard.
+assertProductionBuild(process.env);
 
 // The AdMate dashboard (dashboard/, Next.js) is served at /app only when
 // ADMATE_DASHBOARD_ORIGIN is set at build time; otherwise nothing changes.
