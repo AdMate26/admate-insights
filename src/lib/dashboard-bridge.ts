@@ -56,7 +56,9 @@ export async function enterDashboard(input: {
     return { kind: "error" };
   }
   if (response.ok) return { kind: "dashboard", href: safeDashboardPath(input.next) };
-  if (response.status === 401) return { kind: "login" };
+  // 401 with a Supabase session in hand means the dashboard could not confirm
+  // it (e.g. misconfigured): /login would see the session and send the user
+  // straight back here, looping. Treat it as an error instead.
   if (response.status === 403) return { kind: "not_authorized" };
   return { kind: "error" };
 }

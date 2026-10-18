@@ -34,8 +34,10 @@ test("hand-off: the token travels only in the Authorization header of a same-ori
 });
 
 test("hand-off: each answer maps to one destination", async () => {
+  // A refused token is an error, never /login: /login would see the Supabase
+  // session and return to /home, looping (seen on the Preview).
   expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: server(401).fetchImpl })).toEqual({
-    kind: "login",
+    kind: "error",
   });
   expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: server(403).fetchImpl })).toEqual({
     kind: "not_authorized",
