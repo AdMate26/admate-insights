@@ -30,7 +30,7 @@ throwaway database; nothing real is contacted.
 
 | Piece | Where | What it does |
 | --- | --- | --- |
-| Mount | website `vite.config.ts` (Nitro route rules) | `/app` and `/app/**` go to this app's deployment when `ADMATE_DASHBOARD_ORIGIN` is set at build time. On Vercel this becomes an edge rewrite. |
+| Mount | website `vite.config.ts` (Nitro route rules) | `/app` and `/app/**` go to this app's deployment when `ADMATE_DASHBOARD_ORIGIN` is set at build time. On Vercel this becomes an edge rewrite, unless `ADMATE_DASHBOARD_BYPASS_SECRET` is set (see below). |
 | Base path | `next.config.ts` → `basePath: "/app"` (`lib/integration/paths.ts`) | Links, pages and assets live under `/app`. Raw `fetch()` calls to this app's API use `apiPath()`. |
 | Server Actions | `next.config.ts` → `experimental.serverActions.allowedOrigins` | Requests arrive through the website's rewrite, so the browser's `Origin` (the public host) differs from the host this app sees. Exactly the host of `ADMATE_PUBLIC_ORIGIN` is allowed (with its port locally); Next.js still refuses every other origin. Read when the app starts. |
 | Sign-in | website `/login` (Supabase email OTP) | Unchanged. There is no password sign-in or sign-up here any more. |
@@ -116,3 +116,24 @@ Everything not listed here is byte-identical to the source commit
 | `npm run lint`, `npx tsc --noEmit`, `npm run build` | Clean |
 | Website (repository root) | 128 tests pass; lint and type check identical to `main` apart from the usual `bun:test` types in the new test; build without `ADMATE_DASHBOARD_ORIGIN` has no `/app` routes; landing, login, Supabase client, Meta and Telegram files unchanged against `main` |
 | Real sign-in on localhost (owner, email code) | Refused while not authorised (no data created); admitted when authorised; dashboard, navigation, refresh and back worked; sign-out from the dashboard ended both sessions |
+
+## Dashboard behind Vercel Authentication (2026-10-18)
+
+The dashboard's Vercel project keeps Vercel Authentication on until launch. The
+website reaches it with the dashboard project's "Protection Bypass for
+Automation" secret, set on the **website** project as the sensitive variable
+`ADMATE_DASHBOARD_BYPASS_SECRET` (never in code, URLs or chat). With it set, the
+`/app` route rules send `x-vercel-protection-bypass` as a request header, which
+makes Nitro proxy from the website's server function instead of an edge rewrite
+(a rewrite cannot add request headers). Without it, the edge rewrite is used.
+
+Website Production builds additionally refuse to build unless they come from
+`main` and `ADMATE_DASHBOARD_ORIGIN` is an https origin
+(`src/lib/production-guard.ts`).
+
+Checked locally: unit tests (136); a Vercel-preset build with a made-up secret
+has no `/app` edge rewrite, and the secret is absent from `config.json` and from
+every browser file (present only in the server function); the full end-to-end
+proxy run passed with the secret set; against a stand-in that answers 401
+without the header, `/app` GET and a 1 MB POST went through, a browser-supplied
+bypass header was overridden, and the secret appeared in no response or log.

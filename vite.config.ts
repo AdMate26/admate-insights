@@ -14,7 +14,12 @@ assertProductionBuild(process.env);
 
 // The AdMate dashboard (dashboard/, Next.js) is served at /app only when
 // ADMATE_DASHBOARD_ORIGIN is set at build time; otherwise nothing changes.
-const routeRules = dashboardRouteRules(process.env["ADMATE_DASHBOARD_ORIGIN"]);
+// ADMATE_DASHBOARD_BYPASS_SECRET (optional, server-side only) lets the proxy
+// reach a dashboard kept behind Vercel Authentication.
+const routeRules = dashboardRouteRules(
+  process.env["ADMATE_DASHBOARD_ORIGIN"],
+  process.env["ADMATE_DASHBOARD_BYPASS_SECRET"],
+);
 // The config's `nitro` type only lists preset/output/cloudflare, but the whole
 // object is passed to Nitro, whose routeRules this uses (checked in a Vercel-
 // preset build: they become edge rewrites in .vercel/output/config.json).
