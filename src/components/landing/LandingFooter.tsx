@@ -30,7 +30,7 @@ export function LandingFooter() {
         </div>
 
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm" aria-label="Footer">
-          <a href="#how-it-works" className="text-muted-foreground hover:text-foreground">
+          <a href="/#how-it-works" className="text-muted-foreground hover:text-foreground">
             How it works
           </a>
           <Link to="/demo" className="text-muted-foreground hover:text-foreground">
@@ -38,6 +38,12 @@ export function LandingFooter() {
           </Link>
           <Link to="/login" className="text-muted-foreground hover:text-foreground">
             Login / Sign up
+          </Link>
+          <Link to="/privacy" className="text-muted-foreground hover:text-foreground">
+            Privacy
+          </Link>
+          <Link to="/terms" className="text-muted-foreground hover:text-foreground">
+            Terms
           </Link>
         </nav>
       </div>
