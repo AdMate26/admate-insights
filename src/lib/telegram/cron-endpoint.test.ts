@@ -3,7 +3,7 @@ import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 /* -------------------------------------------------------------------------- */
 /* The scheduled cron endpoint keeps working WITHOUT a user session            */
 /* -------------------------------------------------------------------------- */
-// api/cron/run-schedules.ts is authorised by CRON_SECRET only. The schedule
+// The cron endpoint (cron-endpoint.ts) is authorised by CRON_SECRET only. The schedule
 // runner is mocked, so no database is read and no Telegram message is sent.
 
 let runs: Date[] = [];
@@ -22,7 +22,7 @@ mock.module("./schedules.server", () => ({
   setScheduleEnabled: unused("setScheduleEnabled"),
 }));
 
-const { GET, POST } = await import("../../../api/cron/run-schedules");
+const { GET, POST } = await import("./cron-endpoint");
 
 const SECRET = "test-cron-secret-value";
 const ORIGINAL = process.env["CRON_SECRET"];

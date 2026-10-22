@@ -1,31 +1,30 @@
 /**
- * "Run due Telegram schedules" endpoint (Vercel Function, Hobby-friendly).
+ * "Run due Telegram schedules" endpoint logic.
  *
- * Triggered by SUPABASE CRON (pg_cron + pg_net), NOT Vercel Cron — the Vercel
- * Hobby plan cannot run a frequent cron, so the periodic trigger lives in
- * Supabase and calls this endpoint every few minutes (see
- * supabase/migrations/*_telegram_cron.sql and docs/telegram-scheduling.md).
+ * Triggered by SUPABASE CRON (pg_cron + pg_net) every few minutes, not Vercel
+ * Cron (see supabase/migrations/*_telegram_cron.sql and
+ * docs/telegram-scheduling.md). Served by the app itself at
+ * /api/cron/run-schedules (src/routes/api/cron/run-schedules.ts) so it is
+ * bundled with the code it imports; the old standalone Vercel function under
+ * /api could not load that code and crashed on every call.
  *
  * The caller must send `Authorization: Bearer <CRON_SECRET>`; unauthenticated
  * calls are rejected. Delivery reuses the shared dispatcher + schedule store
  * (same briefing content as Preview and Send Now). Telegram/Supabase secrets
  * stay server-side. Accepts GET or POST so either net.http_get or net.http_post
  * works from Postgres.
- *
- * This lives in /api (a Vercel platform Function) so it is a stable, callable
- * URL on the Hobby plan, independent of the framework build.
  */
 
-import { runDueSchedules } from "../../src/lib/telegram/schedules.server";
+import { runDueSchedules } from "./schedules.server";
 
 function authorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
+  const secret = process.env["CRON_SECRET"];
   if (!secret) return false;
   const auth = request.headers.get("authorization");
   return auth === `Bearer ${secret}`;
 }
 
-async function handle(request: Request): Promise<Response> {
+export async function handleCronRequest(request: Request): Promise<Response> {
   if (!authorized(request)) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
@@ -38,12 +37,5 @@ async function handle(request: Request): Promise<Response> {
   }
 }
 
-export async function GET(request: Request): Promise<Response> {
-  return handle(request);
-}
-
-export async function POST(request: Request): Promise<Response> {
-  return handle(request);
-}
-
-export const config = { runtime: "nodejs" };
+export const GET = handleCronRequest;
+export const POST = handleCronRequest;
