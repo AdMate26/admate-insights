@@ -10,7 +10,7 @@ every 5 minutes and calls the existing Vercel endpoint, which does the real work
 ```
 Supabase pg_cron (every 5 min)
   → public.run_due_telegram_schedules()   (pg_net POST, Bearer CRON_SECRET)
-    → https://YOUR-APP.vercel.app/api/cron/run-schedules   (Vercel Function, Hobby-OK)
+    → https://www.admate.site/api/cron/run-schedules   (app server route, src/routes/api/cron)
       → runDueSchedules(): reads public.telegram_schedules where enabled and
         next_send_at <= now(), builds the briefing (shared generator), sends via
         the existing Telegram logic, then advances last_sent_at / next_send_at.

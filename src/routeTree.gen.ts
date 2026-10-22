@@ -25,6 +25,7 @@ import { Route as TelegramRouteImport } from './routes/telegram'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as AuthCallbackRouteImport } from './routes/auth_.callback'
 import { Route as CampaignsCampaignIdRouteImport } from './routes/campaigns.$campaignId'
+import { Route as ApiCronRunSchedulesRouteImport } from './routes/api/cron/run-schedules'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -106,6 +107,11 @@ const CampaignsCampaignIdRoute = CampaignsCampaignIdRouteImport.update({
   path: '/campaigns/$campaignId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronRunSchedulesRoute = ApiCronRunSchedulesRouteImport.update({
+  id: '/api/cron/run-schedules',
+  path: '/api/cron/run-schedules',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
+  '/api/cron/run-schedules': typeof ApiCronRunSchedulesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
+  '/api/cron/run-schedules': typeof ApiCronRunSchedulesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/auth_/callback': typeof AuthCallbackRoute
   '/campaigns/$campaignId': typeof CampaignsCampaignIdRoute
+  '/api/cron/run-schedules': typeof ApiCronRunSchedulesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/auth/callback'
     | '/campaigns/$campaignId'
+    | '/api/cron/run-schedules'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/auth/callback'
     | '/campaigns/$campaignId'
+    | '/api/cron/run-schedules'
   id:
     | '__root__'
     | '/'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/auth_/callback'
     | '/campaigns/$campaignId'
+    | '/api/cron/run-schedules'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -236,6 +248,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsCampaignIdRoute: typeof CampaignsCampaignIdRoute
+  ApiCronRunSchedulesRoute: typeof ApiCronRunSchedulesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CampaignsCampaignIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/run-schedules': {
+      id: '/api/cron/run-schedules'
+      path: '/api/cron/run-schedules'
+      fullPath: '/api/cron/run-schedules'
+      preLoaderRoute: typeof ApiCronRunSchedulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -372,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsCampaignIdRoute: CampaignsCampaignIdRoute,
+  ApiCronRunSchedulesRoute: ApiCronRunSchedulesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
