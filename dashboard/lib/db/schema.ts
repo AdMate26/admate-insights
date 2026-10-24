@@ -38,6 +38,54 @@ export const sessions = pgTable(
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
+// Each person's own settings. level is the view they use (beginner | intermediate |
+// advanced); no row yet means they haven't answered the welcome question.
+export const userSettings = pgTable("user_settings", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  level: text("level").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One-time links for "Forgot password?". The id is the SHA-256 of the token in the
+// link, so a leaked database copy can't be used to reset anyone's password.
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("password_resets_user_idx").on(t.userId)],
+);
+
+// Sign-in providers linked to an account (e.g. Google), by the provider's own user id.
+export const userIdentities = pgTable(
+  "user_identities",
+  {
+    provider: text("provider").notNull(),
+    subject: text("subject").notNull(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.subject] }), index("user_identities_user_idx").on(t.userId)],
+);
+
+// Explorer views a person saved (level, columns, filters, grouping, sort), so they
+// follow them to every account and device.
+export const savedViews = pgTable(
+  "saved_views",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    config: jsonb("config").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("saved_views_user_idx").on(t.userId)],
+);
+
 // One workspace = one ad account (a business or brand), owned by one user.
 export const workspaces = pgTable(
   "workspaces",
@@ -257,3 +305,71 @@ export const aiUsage = pgTable("ai_usage", {
   ok: boolean("ok").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
 });
+
+// Alerts (Advanced → Alerts): automatic alert settings per ad account, including
+// which automatic checks the user switched off.
+export const alertSettings = pgTable("alert_settings", {
+  workspaceId: text("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  // { on, past, target, sens: "auto" | "pct", pct, good, muted: string[] }
+  config: jsonb("config").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// The user's own KPI alerts: a metric, a limit and the campaigns it applies to.
+export const alertRules = pgTable(
+  "alert_rules",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    metric: text("metric").notNull(), // worse | kpi | ctr | cpm | frequency | spend | results
+    op: text("op").notNull(), // by | above | below
+    value: doublePrecision("value").notNull(),
+    scope: text("scope").notNull(), // all | obj:<objective> | c:<campaign id>
+    on: boolean("on").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("alert_rules_ws_idx").on(t.workspaceId)],
+);
+
+// A campaign's own target, kept with the unit it is judged by (cost per result, ROAS or CPM).
+export const campaignTargets = pgTable(
+  "campaign_targets",
+  {
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id").notNull(),
+    mode: text("mode").notNull(), // cost | roas | cpm
+    value: doublePrecision("value").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.campaignId] })],
+);
+
+// Where a person's alerts go on Telegram, and when. The chat is linked by a
+// one-time code the person sends to the AdMate bot.
+export const telegramLinks = pgTable("telegram_links", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  chatId: text("chat_id"),
+  username: text("username"),
+  linkCode: text("link_code"),
+  linkCodeExpires: timestamp("link_code_expires", { withTimezone: true }),
+  on: boolean("on").notNull().default(false),
+  when: text("when").notNull().default("now"), // now | daily | days
+  time: text("time").notNull().default("09:00"),
+  days: jsonb("days").notNull().default([1, 2, 3, 4, 5]),
+  tz: text("tz").notNull().default("Asia/Phnom_Penh"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Alert messages already sent, so the same message is never sent twice.
+export const alertSends = pgTable(
+  "alert_sends",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    digest: text("digest").notNull(), // SHA-256 of the message's alert lines
+    kind: text("kind").notNull(), // now | scheduled | test
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("alert_sends_user_idx").on(t.userId, t.workspaceId, t.sentAt)],
+);

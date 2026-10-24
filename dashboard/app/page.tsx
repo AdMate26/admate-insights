@@ -1,8 +1,8 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loadSampleData } from "./actions";
 import { Shell } from "@/components/Shell";
 import { AppIcon } from "@/components/Logo";
-import { ButtonLink, buttonClass } from "@/components/ui";
 import { listWorkspaces } from "@/lib/data/workspaces";
 
 export const metadata = { title: "Welcome" };
@@ -17,23 +17,27 @@ export default async function StartPage() {
 
   return (
     <Shell>
-      <div className="mx-auto flex max-w-xl flex-col items-start gap-6 px-6 py-20">
+      <div className="page" style={{ maxWidth: 620, paddingBlock: 40 }}>
         <AppIcon size={56} />
-        <div>
-          <p className="label">AdMate · AI marketing analyst</p>
-          <h1 className="mt-2 text-4xl">Know what needs your attention in your ads — and what to do about it.</h1>
-          <p className="mt-3 text-muted">
-            Upload an export from Meta, TikTok, Google Ads or LinkedIn. AdMate compares it with the period before, judges each campaign by its own goal, and tells you what to
-            look at first, why, and what to do next — with the numbers behind every suggestion.
+        <div style={{ display: "grid", gap: 10 }}>
+          <span className="label">AdMate · AI marketing analyst</span>
+          <h1 style={{ fontSize: 34 }}>Know what needs your attention in your ads — and what to do about it.</h1>
+          <p className="muted" style={{ fontSize: 15 }}>
+            Upload an export from Meta, TikTok, Google Ads or LinkedIn. AdMate compares it with the period before, judges each campaign by its own goal, and tells you what to look
+            at first, why, and what to do next — with the numbers behind every suggestion.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <ButtonLink href="/accounts/new">Add my ad account</ButtonLink>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <Link className="btn primary" href="/accounts/new">
+            Add my ad account
+          </Link>
           <form action={loadSampleData}>
-            <button className={buttonClass.ghost}>Explore a sample account</button>
+            <button className="btn" type="submit">
+              Explore a sample account
+            </button>
           </form>
         </div>
-        <p className="text-xs text-muted">Your reports are stored privately in your AdMate account. AdMate never connects to or changes your ad accounts.</p>
+        <p className="small-note">Your reports are stored privately in your AdMate account. AdMate never connects to or changes your ad accounts.</p>
       </div>
     </Shell>
   );

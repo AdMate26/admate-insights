@@ -25,6 +25,14 @@
   --warn-soft: #fbf1e1;
   --good: #1f8a5b;
   --good-soft: #e3f4ec;
+  /* Categories in charts (campaigns, goals): no red, amber or green, which mean good or bad. */
+  --cat1: #6a3fe8;
+  --cat2: #0f7c8c;
+  --cat3: #3b67d6;
+  --cat4: #b0388a;
+  --cat5: #6d7a12;
+  --cat6: #7a5c3e;
+  --cat7: #8a8a9e;
   color-scheme: light;
 }
 
@@ -47,6 +55,13 @@
     --warn-soft: #2a2012;
     --good: #4fd19a;
     --good-soft: #10261d;
+    --cat1: #9b82ff;
+    --cat2: #3cc3d6;
+    --cat3: #6f97ff;
+    --cat4: #e46bbf;
+    --cat5: #b9c94a;
+    --cat6: #c49a6c;
+    --cat7: #8f8fa6;
     color-scheme: dark;
   }
 }
@@ -69,6 +84,13 @@
   --warn-soft: #2a2012;
   --good: #4fd19a;
   --good-soft: #10261d;
+  --cat1: #9b82ff;
+  --cat2: #3cc3d6;
+  --cat3: #6f97ff;
+  --cat4: #e46bbf;
+  --cat5: #b9c94a;
+  --cat6: #c49a6c;
+  --cat7: #8f8fa6;
   color-scheme: dark;
 }
 

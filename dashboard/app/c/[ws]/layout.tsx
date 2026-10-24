@@ -1,54 +1,69 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
-import { Shell } from "@/components/Shell";
-import { AskPanel } from "@/components/AskPanel";
-import { AskAvailabilityProvider } from "@/components/AskAvailability";
-import { aiEnabled, ASK_AVAILABLE } from "@/lib/ai/client";
-import { getCurrentUser } from "@/lib/auth/session";
-import { getCoverage, getWorkspace } from "@/lib/data/workspaces";
-import { BASE_PATH, websiteUrl } from "@/lib/integration/paths";
+import { V5Provider } from "@/components/v5/ctx";
+import { Side } from "@/components/v5/Side";
+import { aiEnabled } from "@/lib/ai/client";
+import { getCurrentUser, requireUser } from "@/lib/auth/session";
+import { getAlertConfig } from "@/lib/data/alerts";
+import { getLevel } from "@/lib/data/settings";
+import { getCoverage, getWorkspace, listWorkspaces } from "@/lib/data/workspaces";
 import { shortDate } from "@/lib/format";
+import { BASE_PATH, websiteUrl } from "@/lib/integration/paths";
+import { DEFAULT_LEVEL } from "@/lib/levels";
 
+// The frame of every ad-account page (prototype v5.1): the sidebar with the account
+// and view pickers and the view's menu, the sample-account banner, then the page.
 export default async function AccountLayout({ children, params }: LayoutProps<"/c/[ws]">) {
   const { ws } = await params;
-  const workspace = await getWorkspace(ws);
   // AdMate integration: someone who is not signed in can only see the public
-  // demo; any other account sends them to sign in (e.g. their own bookmark).
+  // demo; any other account sends them to sign in on the website (e.g. their
+  // own bookmark). Writes are refused server-side for read-only visitors.
   const viewer = await getCurrentUser();
+  const workspace = await getWorkspace(ws);
   if (!workspace && (!viewer || viewer.readOnly)) redirect(websiteUrl(`/home?next=${encodeURIComponent(`${BASE_PATH}/c/${ws}`)}`));
+  const user = await requireUser();
   if (!workspace) notFound();
   const readOnly = !!viewer?.readOnly;
-  // The sample's reference date ("Sample data through …").
-  const sampleThrough = workspace.isSample ? (await getCoverage(ws)).maxDate : null;
+  const [accounts, coverage, saved, alerts] = await Promise.all([listWorkspaces(), getCoverage(ws), getLevel(), getAlertConfig(ws)]);
+  const level = saved ?? DEFAULT_LEVEL;
+  const end = coverage.dailyTo ?? coverage.maxDate;
+  const min = coverage.dailyFrom ?? coverage.minDate;
   return (
-    <Shell current={ws}>
-      {workspace.isSample && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-violet-soft px-4 py-2.5 text-sm md:px-8">
-          <span>
-            <span className="font-medium">{readOnly ? "You’re exploring AdMate’s public demo." : "You’re exploring a sample account."}</span> {workspace.name} is a made-up skincare brand with a few planted problems for AdMate to find.
-            {sampleThrough && <span className="text-muted"> Sample data through {shortDate(sampleThrough)}.</span>}
-          </span>
-          {readOnly ? (
-            <a href="/login" className="font-medium text-violet hover:underline">
-              Sign up free to upload your own report →
-            </a>
-          ) : (
-            <Link href={`/c/${ws}/upload`} className="font-medium text-violet hover:underline">
-              Upload your own report →
-            </Link>
-          )}
+    <div className="v5" id="v5root">
+      <V5Provider
+        value={{
+          ws,
+          name: workspace.name,
+          level,
+          cur: workspace.currency,
+          end,
+          min,
+          accounts: accounts.map((a) => ({ id: a.id, name: a.name, industry: a.industry, country: a.country, isSample: a.isSample })),
+          isSample: workspace.isSample,
+          muted: alerts.muted,
+          email: user.email,
+          askReady: aiEnabled(),
+        }}
+      >
+        <div className="frame">
+          <Suspense>
+            <Side counts={{ actions: 0, alerts: 0 }} answered={!!saved} userId={user.id} />
+          </Suspense>
+          <main className="main">
+            {workspace.isSample && (
+              <div className="banner">
+                <span>
+                  <b>{readOnly ? "AdMate’s public demo." : "Sample account."}</b> {workspace.name} is made up, so you can explore safely.
+                  {coverage.maxDate && <> Sample data through {shortDate(coverage.maxDate)}.</>}
+                </span>
+                {readOnly ? <a href="/login">Sign up free to upload your own report →</a> : <Link href={`/c/${ws}/upload`}>Upload your own report →</Link>}
+              </div>
+            )}
+            <div className="content">{children}</div>
+          </main>
         </div>
-      )}
-      <AskAvailabilityProvider available={ASK_AVAILABLE && aiEnabled()}>
-        <div className="px-4 py-6 md:px-8">{children}</div>
-      </AskAvailabilityProvider>
-      {/* Hidden entirely until Ask AdMate is switched on (ADMATE_ASK_ENABLED). */}
-      {ASK_AVAILABLE && (
-        <Suspense>
-          <AskPanel workspaceId={ws} accountName={workspace.name} enabled={aiEnabled()} available={ASK_AVAILABLE} />
-        </Suspense>
-      )}
-    </Shell>
+      </V5Provider>
+    </div>
   );
 }

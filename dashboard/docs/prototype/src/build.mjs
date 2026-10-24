@@ -1,8 +1,9 @@
-﻿// Rebuilds docs/prototype/v3-overview.html: bundles the repo's real engine
-// (entry.ts → lib/) for the browser and inlines it into template.html.
-// Run from the repo root:  node docs/prototype/src/build.mjs
+﻿// Rebuilds docs/prototype/admate-prototype.html: bundles the repo's real engine
+// (entry.ts → lib/) for the browser, joins the UI scripts in ui/ (in file-name
+// order: core, shared pieces, one file per level, assistant, app), and inlines both
+// into template.html. Run from the repo root:  node docs/prototype/src/build.mjs
 // Node-only imports get tiny shims: node:crypto (AI-summary cache keys) and xlsx (file reading).
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -25,6 +26,21 @@ const shims = {
 };
 const out = await build({ entryPoints: [path.join(here, "entry.ts")], bundle: true, format: "iife", globalName: "AdMateEngine", platform: "browser", target: "es2020", minify: true, write: false, plugins: [shims], logLevel: "warning" });
 const engine = out.outputFiles[0].text.replace(/<\/script/g, "<\\/script");
-const html = readFileSync(path.join(here, "template.html"), "utf8").replace("/*ENGINE*/", () => engine);
-writeFileSync(path.join(here, "..", "v3-overview.html"), html);
-console.log("wrote docs/prototype/v3-overview.html");
+
+const uiDir = path.join(here, "ui");
+const ui = readdirSync(uiDir)
+  .filter((f) => f.endsWith(".js"))
+  .sort()
+  .map((f) => `// ===== ui/${f} =====\n${readFileSync(path.join(uiDir, f), "utf8")}`)
+  .join("\n");
+try {
+  new Function(ui); // parse only: fail the build on a syntax error
+} catch (e) {
+  console.error("UI script has a syntax error:", e.message);
+  process.exit(1);
+}
+const html = readFileSync(path.join(here, "template.html"), "utf8")
+  .replace("/*ENGINE*/", () => engine)
+  .replace("/*UI*/", () => ui.replace(/<\/script/g, "<\\/script"));
+writeFileSync(path.join(here, "..", "admate-prototype.html"), html);
+console.log(`wrote docs/prototype/admate-prototype.html (${Math.round(html.length / 1024)} KB)`);

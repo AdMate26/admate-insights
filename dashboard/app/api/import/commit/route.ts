@@ -1,4 +1,7 @@
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { getCurrentUser } from "@/lib/auth/session";
+import { sendAfterUpload } from "@/lib/telegram";
 import { getDb } from "@/lib/db/client";
 import { commitImport } from "@/lib/data/imports";
 import { readUpload } from "@/lib/data/uploads";
@@ -8,7 +11,6 @@ import { PLATFORMS } from "@/lib/ingest/headers";
 import { normalizeTable } from "@/lib/ingest/normalize";
 import type { CommitRequest } from "@/lib/ingest/preview-types";
 import { OBJECTIVES } from "@/lib/metrics/objectives";
-import { getCurrentUser } from "@/lib/auth/session";
 import { checkImportLimit, checkRowCount, checkUploadFile } from "@/lib/integration/limits";
 
 export async function POST(request: Request) {
@@ -58,5 +60,7 @@ export async function POST(request: Request) {
     breakdown: preview.breakdown,
   });
   revalidatePath("/", "layout");
+  // Telegram "right away": the account's alerts on the new data, after the response.
+  after(() => sendAfterUpload(user.id, ws.id).catch((err) => console.warn("[admate] telegram after upload failed:", err)));
   return Response.json({ importId, diff });
 }

@@ -43,6 +43,34 @@
       "when": 1792243983573,
       "tag": "0005_breakdowns",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792639488177,
+      "tag": "0006_user_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792643374867,
+      "tag": "0007_password_reset_and_google",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792649828710,
+      "tag": "0008_saved_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792654624257,
+      "tag": "0009_alerts_and_telegram",
+      "breakpoints": true
     }
   ]
 }

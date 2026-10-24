@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { UndoImportButton } from "@/components/UndoImportButton";
-import { ButtonLink, Card } from "@/components/ui";
+import { PageHead } from "@/components/v5/PageHead";
+import { V5Page } from "@/components/v5/page";
 import { previousReport } from "@/lib/analysis/periods";
 import { getCoverage, listImports, requireWorkspace } from "@/lib/data/workspaces";
 import type { ImportDiff } from "@/lib/data/imports";
@@ -10,72 +11,82 @@ import { BREAKDOWN_LABEL, type BreakdownKind } from "@/lib/ingest/breakdown";
 
 export const metadata = { title: "Reports" };
 
-// Every uploaded report: open it on the dashboard, compare it with the one
-// before, or undo it.
+// Every uploaded report (prototype reportsHtml): open it with no comparison, compare
+// it with the report before it, or undo it.
 export default async function ReportsPage({ params }: PageProps<"/c/[ws]/reports">) {
   const { ws } = await params;
   const workspace = await requireWorkspace(ws);
   const [history, coverage] = await Promise.all([listImports(ws), getCoverage(ws)]);
   const cur = workspace.currency;
   const live = new Map(coverage.reports.map((r) => [r.importId, r]));
+  const active = history.filter((h) => h.status === "active").length;
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="label">Reports</p>
-          <h1 className="mt-1 text-2xl">Your uploaded reports</h1>
-          <p className="mt-1 text-sm text-muted">Open a report to see its alerts and recommendations, or compare it with the report before it.</p>
-        </div>
-        <ButtonLink href={`/c/${ws}/upload`}>Upload report</ButtonLink>
-      </div>
-      {history.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-line p-6 text-center text-muted">No reports yet.</p>
-      ) : (
-        <Card className="p-5">
-          <ul className="divide-y divide-line">
-            {history.map((h) => {
-              const diff = h.diff as ImportDiff | null;
-              const report = live.get(h.id);
-              const bd = h.kind !== "performance" ? BREAKDOWN_LABEL[h.kind as BreakdownKind] : null;
-              const prev = report ? previousReport(report, coverage.reports) : null;
-              return (
-                <li key={h.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{h.fileName}</div>
-                    <div className="text-xs text-muted">
-                      {PLATFORM_LABEL[h.platform as Platform]} · {rangeLabel(h.periodStart, h.periodEnd)} · {h.granularity === "daily" ? "daily rows" : "period totals"} · {h.rowCount} rows
-                      {h.status === "undone" && " · undone"}
-                      {bd && ` · breakdown: ${bd} (Audience insight)`}
-                      {h.status === "active" && !report && !bd && " · replaced by a newer upload"}
+    <V5Page vm={null} page="reports">
+      <PageHead title="Reports" withPeriod={false} />
+      <div className="page">
+        <section className="section">
+          <header>
+            <h2>Reports</h2>
+            <span className="hint">
+              {active} {active === 1 ? "report" : "reports"} uploaded for this account
+            </span>
+            <span className="more">
+              <Link className="btn primary" href={`/c/${ws}/upload`}>
+                Upload report
+              </Link>
+            </span>
+          </header>
+          {history.length === 0 ? (
+            <div className="empty">
+              <b>No reports yet</b>Upload an export from your ads manager to start.
+            </div>
+          ) : (
+            <div className="list">
+              {history.map((h) => {
+                const diff = h.diff as ImportDiff | null;
+                const report = live.get(h.id);
+                const bd = h.kind !== "performance" ? BREAKDOWN_LABEL[h.kind as BreakdownKind] : null;
+                const prev = report ? previousReport(report, coverage.reports) : null;
+                return (
+                  <div key={h.id} className="li">
+                    <div className="grow">
+                      <b>{h.fileName}</b>
+                      <span>
+                        {PLATFORM_LABEL[h.platform as Platform]} · {rangeLabel(h.periodStart, h.periodEnd)} · {h.granularity === "daily" ? "daily rows" : "period totals"} · {h.rowCount} rows
+                        {h.status === "undone" && " · undone"}
+                        {bd && ` · breakdown: ${bd} (Audience insight)`}
+                        {h.status === "active" && !report && !bd && " · replaced by a newer upload"}
+                      </span>
+                      {diff && h.status === "active" && (
+                        <span>
+                          Replaced {diff.replaced.map((r) => r.fileName).join(", ")} for the overlapping dates (spend {money(diff.before.spend, cur)} → {money(diff.after.spend, cur)}).
+                        </span>
+                      )}
                     </div>
-                    {diff && h.status === "active" && (
-                      <div className="text-xs text-muted">
-                        Replaced {diff.replaced.map((r) => r.fileName).join(", ")} for the overlapping dates (spend {money(diff.before.spend, cur)} → {money(diff.after.spend, cur)}).
-                      </div>
+                    {report && (
+                      <Link className="btn small" href={`/c/${ws}?report=${h.id}&vs=none`}>
+                        Open this report
+                      </Link>
                     )}
+                    {report && prev && (
+                      <Link className="btn small" href={`/c/${ws}?report=${h.id}&vs=${prev.importId}`}>
+                        Compare with {rangeLabel(prev.from, prev.to)}
+                      </Link>
+                    )}
+                    {bd && h.status === "active" && (
+                      <Link className="btn small" href={`/c/${ws}/audience?bd=${h.kind}`}>
+                        Open in Audience insight
+                      </Link>
+                    )}
+                    {h.status === "active" && <UndoImportButton workspaceId={ws} importId={h.id} />}
                   </div>
-                  {report && (
-                    <Link href={`/c/${ws}?report=${h.id}&vs=none`} className="text-xs font-medium text-violet hover:underline">
-                      Open
-                    </Link>
-                  )}
-                  {report && prev && (
-                    <Link href={`/c/${ws}?report=${h.id}&vs=${prev.importId}`} className="text-xs font-medium text-violet hover:underline">
-                      Compare with {rangeLabel(prev.from, prev.to)}
-                    </Link>
-                  )}
-                  {bd && h.status === "active" && (
-                    <Link href={`/c/${ws}/audience?bd=${h.kind}`} className="text-xs font-medium text-violet hover:underline">
-                      Open in Audience insight
-                    </Link>
-                  )}
-                  {h.status === "active" && <UndoImportButton workspaceId={ws} importId={h.id} />}
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-      )}
-    </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="small-note">“Open” shows everything in the report with no comparison. “Undo” removes an upload; anything it replaced comes back.</p>
+        </section>
+      </div>
+    </V5Page>
   );
 }
