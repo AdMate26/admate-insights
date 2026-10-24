@@ -14,7 +14,7 @@ export const Route = createFileRoute("/terms")({
 
 function TermsPage() {
   return (
-    <LegalPage title="Terms of Service">
+    <LegalPage title="Terms of Service" effectiveDate="October 24, 2026">
       <section>
         <p>
           These terms apply when you use AdMate at www.admate.site. By creating an account or using
@@ -25,9 +25,9 @@ function TermsPage() {
       <section>
         <h2>The service</h2>
         <p>
-          AdMate analyses advertising reports and suggests what to look at and what to do next.
-          AdMate is in Early Access: features may change, and the service may sometimes be
-          unavailable.
+          AdMate analyses advertising reports and suggests what to look at and what to do next. We
+          continually improve AdMate, so features may change over time. We work to keep the service
+          available, but we cannot guarantee it will always be uninterrupted.
         </p>
       </section>
 

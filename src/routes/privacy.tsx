@@ -30,15 +30,12 @@ const SECTIONS = [
   ["changes", "Changes and contact"],
 ] as const;
 
-const PROVIDERS = [
-  ["Supabase", "Account sign-in, email verification codes and data storage"],
-  ["Vercel", "Website and dashboard hosting; website visit statistics"],
-  ["Google", "Google sign-in (if you choose it) and cloud hosting"],
-  ["Meta", "Meta Ads connection and reporting you authorize"],
-  ["Anthropic", "AI analysis of uploaded reports and your questions"],
-  ["Lovable (Google Gemini models)", "AI-written explanations in the AdMate demo"],
-  ["PostHog", "Product analytics and session recordings"],
-  ["Telegram", "Delivery of briefings, if you turn them on"],
+const PROVIDER_CATEGORIES = [
+  "Cloud hosting and data storage",
+  "Account sign-in and email delivery",
+  "AI services that write explanations, summaries and answers",
+  "Website and product analytics",
+  "Integrations you choose to connect, such as Meta, Google sign-in and Telegram",
 ] as const;
 
 function Heading({ n }: { n: number }) {
@@ -85,8 +82,7 @@ function PrivacyPage() {
         <p>
           AdMate is an AI-powered marketing analytics service based in Phnom Penh, Cambodia. This
           Privacy Policy explains how we collect, use and protect information when you use our
-          website, dashboard and related services, including Meta Ads connections. Some features are
-          available only to approved users.
+          website, dashboard and related services, including Meta Ads connections.
         </p>
       </section>
 
@@ -131,8 +127,8 @@ function PrivacyPage() {
           We use information to sign you in, provide your workspace, process uploaded reports,
           retrieve the advertising information you authorize, show reports and analysis, deliver
           briefings you request, keep the service secure and working, fix errors and respond to
-          support or privacy requests. Where product analytics is enabled, we also use it to
-          understand how AdMate is used so we can improve it.
+          support or privacy requests. We also use analytics to understand how AdMate is used so we
+          can improve it.
         </p>
         <p>
           We do not sell your personal information. We do not use your information, including
@@ -170,8 +166,8 @@ function PrivacyPage() {
         <p>
           When you use AI features with uploaded reports, the relevant report information, your
           questions and relevant conversation history are sent to our AI provider to generate that
-          text. AdMate does not currently send information retrieved through the Meta connection to
-          AI features. If this changes, we will update this policy before it happens.
+          text. AdMate does not send information retrieved through the Meta connection to AI
+          features. If this changes, we will update this policy before it happens.
         </p>
       </section>
 
@@ -180,50 +176,38 @@ function PrivacyPage() {
         <p>
           If you turn on Telegram briefings, AdMate sends summaries of campaign findings to the
           Telegram chat you choose, on the schedule you set. Messages are delivered through Telegram
-          and are also handled under Telegram's own privacy policy. AdMate does not currently
-          include information retrieved through the Meta connection in Telegram briefings. You can
-          turn briefings off at any time.
+          and are also handled under Telegram's own privacy policy. AdMate does not include
+          information retrieved through the Meta connection in Telegram briefings. You can turn
+          briefings off at any time.
         </p>
       </section>
 
       <section id="providers">
         <Heading n={6} />
         <p>
-          We use the following service providers to run AdMate. They process information only as
-          needed to provide their service to us.
+          We work with trusted service providers that help us run AdMate. They fall into these
+          categories:
         </p>
-        <div className="mt-3 overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-left">
-            <thead className="bg-muted/50 text-foreground">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Provider</th>
-                <th className="px-3 py-2 font-semibold">What it does for AdMate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {PROVIDERS.map(([name, role]) => (
-                <tr key={name} className="border-t border-border">
-                  <td className="px-3 py-2 text-foreground">{name}</td>
-                  <td className="px-3 py-2">{role}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="mt-2">
+          {PROVIDER_CATEGORIES.map((category) => (
+            <li key={category}>{category}</li>
+          ))}
+        </ul>
         <p>
-          These providers may process information outside Cambodia, including in Singapore and the
-          United States, depending on the service.
+          These providers process information on our behalf only as needed to provide their
+          services, under their own security and confidentiality commitments. Some of them process
+          information in countries other than Cambodia.
         </p>
       </section>
 
       <section id="cookies">
         <Heading n={7} />
         <p>
-          We use browser storage and session cookies to keep you signed in. Website statistics and,
-          where enabled, product analytics help us understand how the service is used. Product
-          analytics may link page interactions and session recordings to your AdMate user ID and
-          email. Session recordings may include content shown on a page; anything you type into
-          forms is masked. You can limit analytics with your browser's privacy settings.
+          We use browser storage and session cookies to keep you signed in. Website statistics and
+          product analytics help us understand how the service is used. Product analytics may link
+          page interactions and session recordings to your AdMate user ID and email. Session
+          recordings may include content shown on a page; anything you type into forms is masked.
+          You can limit analytics with your browser's privacy settings.
         </p>
       </section>
 
@@ -232,8 +216,8 @@ function PrivacyPage() {
         <p>
           All connections to AdMate use HTTPS. Meta access tokens are encrypted before they are
           stored and are never sent to your browser. Each saved Meta connection is linked to the
-          AdMate account that authorized it, and using it requires sign-in and approved access.
-          Access to stored information is limited to the people who operate AdMate.
+          AdMate account that authorized it, and using it requires you to be signed in. Access to
+          stored information is limited to authorized AdMate personnel.
         </p>
         <p>
           Reports retrieved through the Meta connection are shown in your signed-in account without
