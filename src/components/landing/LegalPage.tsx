@@ -29,7 +29,7 @@ export function LegalPage({
       <main className="mx-auto w-full max-w-3xl px-5 py-12">
         <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">Effective {effectiveDate}</p>
-        <div className="mt-8 space-y-8 text-sm leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-foreground [&_li]:ml-5 [&_li]:list-disc [&_ul]:space-y-1 [&_p+p]:mt-3 [&_section]:scroll-mt-6">
+        <div className="mt-8 space-y-8 text-sm leading-relaxed text-muted-foreground [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-foreground [&_li]:ml-5 [&_li]:list-disc [&_ul]:space-y-1 [&_p+p]:mt-3 [&_ul+p]:mt-3 [&_section]:scroll-mt-6">
           {children}
         </div>
       </main>

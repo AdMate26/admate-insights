@@ -51,7 +51,7 @@ export function LandingFooter() {
       <div className="border-t border-border/70">
         <div className="mx-auto w-full max-w-6xl px-5 py-4">
           <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} AdMate. Early Access.
+            © {new Date().getFullYear()} AdMate. All rights reserved.
           </p>
         </div>
       </div>
