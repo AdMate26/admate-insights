@@ -12,104 +12,315 @@ export const Route = createFileRoute("/privacy")({
   component: PrivacyPage,
 });
 
+const SECTIONS = [
+  ["who-we-are", "Who we are"],
+  ["information", "Information we collect"],
+  ["use", "How we use information"],
+  ["meta", "Signing in and connecting Meta Ads"],
+  ["ai", "AI features"],
+  ["telegram", "Telegram briefings"],
+  ["providers", "Service providers"],
+  ["cookies", "Cookies and analytics"],
+  ["security", "How we protect information"],
+  ["retention", "How long we keep information"],
+  ["disconnect", "Disconnecting Meta Ads"],
+  ["rights", "Your choices and rights"],
+  ["data-deletion", "Data deletion"],
+  ["children", "Children"],
+  ["changes", "Changes and contact"],
+] as const;
+
+const PROVIDERS = [
+  ["Supabase", "Account sign-in, email verification codes and data storage"],
+  ["Vercel", "Website and dashboard hosting; website visit statistics"],
+  ["Google", "Google sign-in (if you choose it) and cloud hosting"],
+  ["Meta", "Meta Ads connection and reporting you authorize"],
+  ["Anthropic", "AI analysis of uploaded reports and your questions"],
+  ["Lovable (Google Gemini models)", "AI-written explanations in the AdMate demo"],
+  ["PostHog", "Product analytics and session recordings"],
+  ["Telegram", "Delivery of briefings, if you turn them on"],
+] as const;
+
+function Heading({ n }: { n: number }) {
+  return (
+    <h2>
+      {n + 1}. {SECTIONS[n][1]}
+    </h2>
+  );
+}
+
 function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy">
-      <section>
-        <p>
-          AdMate is an AI marketing analyst for ad managers. This policy explains what information
-          AdMate collects when you use www.admate.site, why, and the choices you have. Questions:{" "}
-          <ContactLink />.
-        </p>
-      </section>
-
-      <section>
-        <h2>Information we collect</h2>
-        <ul>
+    <LegalPage title="Privacy Policy" effectiveDate="October 24, 2026">
+      <section className="rounded-xl border border-border bg-muted/40 p-5">
+        <p className="font-semibold text-foreground">The short version</p>
+        <ul className="mt-2">
+          <li>We use your information only to run AdMate for you.</li>
+          <li>We do not sell your personal information or use it for advertising.</li>
           <li>
-            <strong className="text-foreground">Account information:</strong> your email address. If
-            you sign in with Google, we also receive your name and profile picture from Google.
+            Our Meta Ads connection is read-only. AdMate never creates, edits or deletes your ads.
           </li>
           <li>
-            <strong className="text-foreground">Data you upload:</strong> the ad reports you upload
-            (for example Meta, TikTok, Google Ads or LinkedIn exports), the analysis AdMate creates
-            from them, and the decisions you record in the app.
-          </li>
-          <li>
-            <strong className="text-foreground">Technical information:</strong> sign-in session
-            cookies, basic server logs, and anonymous page-view statistics.
+            You can disconnect Meta or ask us to delete your data at any time by emailing{" "}
+            <ContactLink />.
           </li>
         </ul>
       </section>
 
-      <section>
-        <h2>How we use it</h2>
-        <ul>
-          <li>To create your account and sign you in.</li>
-          <li>To analyse your reports and show you results, recommendations and summaries.</li>
-          <li>To keep the service secure and working, and to answer your questions.</li>
-        </ul>
-        <p className="mt-2">
-          We do not sell your information and do not use it for advertising. We do not use your
-          uploaded data to train AI models.
+      <nav aria-label="Contents">
+        <p className="font-semibold text-foreground">Contents</p>
+        <ol className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+          {SECTIONS.map(([id, label], i) => (
+            <li key={id} className="!ml-0 !list-none">
+              <a className="hover:text-foreground hover:underline" href={`#${id}`}>
+                {i + 1}. {label}
+              </a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <section id="who-we-are">
+        <Heading n={0} />
+        <p>
+          AdMate is an AI-powered marketing analytics service based in Phnom Penh, Cambodia. This
+          Privacy Policy explains how we collect, use and protect information when you use our
+          website, dashboard and related services, including Meta Ads connections. Some features are
+          available only to approved users.
         </p>
       </section>
 
-      <section>
-        <h2>Google user data</h2>
-        <p>
-          When you choose “Continue with Google”, AdMate receives only your basic profile (name,
-          email address and profile picture) to create and sign in to your account. We do not access
-          your Gmail, Drive, contacts or any other Google data. AdMate’s use of information received
-          from Google APIs adheres to the Google API Services User Data Policy, including the
-          Limited Use requirements.
-        </p>
-      </section>
-
-      <section>
-        <h2>Service providers</h2>
-        <p>
-          We use trusted providers to run AdMate. They process data only to provide the service:
-        </p>
+      <section id="information">
+        <Heading n={1} />
         <ul>
-          <li>Supabase: sign-in and database.</li>
-          <li>Vercel and Google Cloud: hosting.</li>
           <li>
-            Anthropic (Claude): when AI wording is enabled, it receives figures AdMate has already
-            calculated, not your original files.
+            <strong className="text-foreground">Account information:</strong> your email address,
+            account identifier and sign-in records. If you sign in with Google, we also receive your
+            name and profile picture from Google.
           </li>
-          <li>Google: sign-in, if you choose “Continue with Google”.</li>
+          <li>
+            <strong className="text-foreground">Workspace and uploaded information:</strong>{" "}
+            workspace settings, report files you upload, campaign names and identifiers, advertising
+            figures, analysis results and decisions you save in AdMate. When you use AI features, we
+            also process your questions and relevant conversation history.
+          </li>
+          <li>
+            <strong className="text-foreground">Connected Meta information:</strong> Meta user,
+            business and advertising-account identifiers; account names, currency and time zone
+            where returned; granted permissions; authorization dates and expiry information; and an
+            access token. Authorized reporting requests may also return campaign names, identifiers,
+            objectives, status, dates and performance figures such as spend, impressions, clicks and
+            reach. Availability depends on Meta's response and your access.
+          </li>
+          <li>
+            <strong className="text-foreground">Telegram information:</strong> if you turn on
+            Telegram briefings, the Telegram chat that receives them and your delivery schedule.
+          </li>
+          <li>
+            <strong className="text-foreground">Technical and support information:</strong> IP
+            address, browser and device information, page interactions, request times and error
+            diagnostics processed by our hosting and analytics services, and messages you send to
+            us.
+          </li>
         </ul>
       </section>
 
-      <section>
-        <h2>Keeping your data safe</h2>
+      <section id="use">
+        <Heading n={2} />
         <p>
-          Connections are encrypted, and every request is checked so that each account can only see
-          its own data. No method of storage or transmission is completely secure, but we work to
-          protect your information.
+          We use information to sign you in, provide your workspace, process uploaded reports,
+          retrieve the advertising information you authorize, show reports and analysis, deliver
+          briefings you request, keep the service secure and working, fix errors and respond to
+          support or privacy requests. Where product analytics is enabled, we also use it to
+          understand how AdMate is used so we can improve it.
+        </p>
+        <p>
+          We do not sell your personal information. We do not use your information, including
+          information received from Meta, for advertising or to build advertising profiles.
         </p>
       </section>
 
-      <section>
-        <h2>How long we keep it, and your choices</h2>
+      <section id="meta">
+        <Heading n={3} />
         <p>
-          We keep your information while your account exists. You can remove uploaded reports in the
-          app at any time. To delete your account and all of its data, or to ask for a copy of your
-          data, email <ContactLink />. We respond within 30 days.
+          You sign in to AdMate with an email verification code or, if you choose, with Google.
+          Connecting Meta Ads requires a separate authorization through Facebook Login for Business,
+          which is linked to your AdMate account.
+        </p>
+        <p>
+          When you choose <strong className="text-foreground">Connect Meta Ads</strong>, Meta asks
+          you to authorize AdMate. The connection requests <code>ads_read</code> and{" "}
+          <code>ads_mcp_management</code> to retrieve advertising account information and available
+          reporting through Meta's Ads MCP service. Access depends on the permissions you grant,
+          your advertising account access and Meta's availability. AdMate uses this connection only
+          to read information; it does not create, edit, publish or delete advertisements.
+        </p>
+        <p>
+          Meta handles your Facebook sign-in and consent. AdMate never asks for your Facebook
+          password.
         </p>
       </section>
 
-      <section>
-        <h2>Children</h2>
-        <p>AdMate is meant for business use and is not directed to anyone under 16.</p>
+      <section id="ai">
+        <Heading n={4} />
+        <p>
+          AdMate's numbers, scores and alerts are calculated by our own software. AI is used only to
+          write explanations, summaries and suggested next steps.
+        </p>
+        <p>
+          When you use AI features with uploaded reports, the relevant report information, your
+          questions and relevant conversation history are sent to our AI provider to generate that
+          text. AdMate does not currently send information retrieved through the Meta connection to
+          AI features. If this changes, we will update this policy before it happens.
+        </p>
       </section>
 
-      <section>
-        <h2>Changes</h2>
+      <section id="telegram">
+        <Heading n={5} />
         <p>
-          If we change this policy, we will update it on this page and change the effective date
-          above.
+          If you turn on Telegram briefings, AdMate sends summaries of campaign findings to the
+          Telegram chat you choose, on the schedule you set. Messages are delivered through Telegram
+          and are also handled under Telegram's own privacy policy. AdMate does not currently
+          include information retrieved through the Meta connection in Telegram briefings. You can
+          turn briefings off at any time.
+        </p>
+      </section>
+
+      <section id="providers">
+        <Heading n={6} />
+        <p>
+          We use the following service providers to run AdMate. They process information only as
+          needed to provide their service to us.
+        </p>
+        <div className="mt-3 overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-left">
+            <thead className="bg-muted/50 text-foreground">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Provider</th>
+                <th className="px-3 py-2 font-semibold">What it does for AdMate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PROVIDERS.map(([name, role]) => (
+                <tr key={name} className="border-t border-border">
+                  <td className="px-3 py-2 text-foreground">{name}</td>
+                  <td className="px-3 py-2">{role}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p>
+          These providers may process information outside Cambodia, including in Singapore and the
+          United States, depending on the service.
+        </p>
+      </section>
+
+      <section id="cookies">
+        <Heading n={7} />
+        <p>
+          We use browser storage and session cookies to keep you signed in. Website statistics and,
+          where enabled, product analytics help us understand how the service is used. Product
+          analytics may link page interactions and session recordings to your AdMate user ID and
+          email. Session recordings may include content shown on a page; anything you type into
+          forms is masked. You can limit analytics with your browser's privacy settings.
+        </p>
+      </section>
+
+      <section id="security">
+        <Heading n={8} />
+        <p>
+          All connections to AdMate use HTTPS. Meta access tokens are encrypted before they are
+          stored and are never sent to your browser. Each saved Meta connection is linked to the
+          AdMate account that authorized it, and using it requires sign-in and approved access.
+          Access to stored information is limited to the people who operate AdMate.
+        </p>
+        <p>
+          Reports retrieved through the Meta connection are shown in your signed-in account without
+          being added to your saved uploaded reports. Reports you upload separately are stored as
+          workspace data.
+        </p>
+        <p>
+          No online service is perfectly secure. If we become aware of a security incident that
+          affects your personal information, we will notify you without undue delay.
+        </p>
+      </section>
+
+      <section id="retention">
+        <Heading n={9} />
+        <p>
+          We keep account and workspace information until you delete it in AdMate or we complete
+          your deletion request. Removing an imported report in AdMate may leave some import records
+          and uploaded files in storage; email us and we will remove them completely.
+        </p>
+        <p>
+          We keep saved Meta connection information, including its encrypted access token, until you
+          disconnect it or we complete your deletion request. If a token expires or is revoked, it
+          can no longer be used, but the saved connection stays until you disconnect it.
+        </p>
+        <p>
+          Copies in backups and service logs may remain for a limited time after deletion, under our
+          providers' retention practices. When we respond to a deletion request, we will tell you
+          about any records that must remain and why.
+        </p>
+      </section>
+
+      <section id="disconnect">
+        <Heading n={10} />
+        <p>
+          Choose <strong className="text-foreground">Disconnect from AdMate</strong> on the Meta
+          connection page to remove your saved connection, including its stored access token,
+          account information and any unfinished connection requests. AdMate then can no longer
+          retrieve information through that connection.
+        </p>
+        <p>
+          Disconnecting does not delete your AdMate account or uploaded reports, and it does not
+          change your Meta campaigns. It also does not automatically remove AdMate on Meta's side;
+          you can do that in Meta's Business Integrations settings.
+        </p>
+      </section>
+
+      <section id="rights">
+        <Heading n={11} />
+        <p>
+          You can ask us to access, correct, export or delete your personal information, or to stop
+          a particular use of it, by emailing <ContactLink />. We may ask you to confirm that you
+          control the account first. We aim to respond within 30 days.
+        </p>
+      </section>
+
+      <section id="data-deletion">
+        <Heading n={12} />
+        <p>
+          To request deletion of your AdMate account, workspace or uploaded data, or saved Meta
+          connection, email <ContactLink /> with the subject{" "}
+          <strong className="text-foreground">AdMate data deletion request</strong>. Send it from
+          your account email where possible and say what you want removed. Never send passwords,
+          verification codes, access tokens or App Secrets.
+        </p>
+        <p>
+          We may ask you to confirm that you control the account. We will then process the request,
+          aiming to complete it within 30 days, and confirm the outcome to you, including any
+          records that must remain and why.
+        </p>
+      </section>
+
+      <section id="children">
+        <Heading n={13} />
+        <p>
+          AdMate is intended for business use and is not directed to children under 16. Contact us
+          if you believe a child has given us personal information.
+        </p>
+      </section>
+
+      <section id="changes">
+        <Heading n={14} />
+        <p>
+          When this policy changes, we will update this page and its effective date. For important
+          changes, we will also let signed-in users know.
+        </p>
+        <p>
+          Questions and requests: <ContactLink />
         </p>
       </section>
     </LegalPage>
