@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { chooseLevel, loadSampleData } from "@/app/actions";
 import { signOut } from "@/app/(auth)/actions";
-import { KEEPS_PERIOD, LEVEL_INFO, LEVELS, MENUS, PAGE_HREF, PERIOD_KEYS, type MenuIcon } from "@/lib/levels";
+import { DEMO_LEVEL_COOKIE, KEEPS_PERIOD, LEVEL_INFO, LEVELS, MENUS, PAGE_HREF, PERIOD_KEYS, levelTarget, type MenuIcon } from "@/lib/levels";
 import { Portal, useV5 } from "./ctx";
 import { apiPath } from "@/lib/integration/paths";
 
@@ -31,7 +31,7 @@ const IC: Record<MenuIcon, string> = {
 };
 
 export function Side({ counts: initial, answered, userId }: { counts: { actions: number; alerts: number }; answered: boolean; userId: string }) {
-  const { ws, level, accounts, isAdv, email } = useV5();
+  const { ws, level, accounts, isAdv, email, readOnly } = useV5();
   const path = usePathname();
   const search = useSearchParams();
   const router = useRouter();
@@ -79,6 +79,14 @@ export function Side({ counts: initial, answered, userId }: { counts: { actions:
     start(async () => {
       setWelcome(null);
       setPop(null);
+      // AdMate integration: a public demo visitor's view is kept in this browser only.
+      if (readOnly) {
+        document.cookie = `${DEMO_LEVEL_COOKIE}=${l}; path=/; max-age=2592000; samesite=lax`;
+        const to = levelTarget(l, path, search.toString());
+        if (to) router.push(to);
+        router.refresh();
+        return;
+      }
       await chooseLevel(l, path, search.toString());
       router.refresh();
     });
@@ -203,16 +211,23 @@ export function Side({ counts: initial, answered, userId }: { counts: { actions:
         <button type="button" onClick={() => setWelcome("compare")}>
           Show the welcome question again
         </button>
-        <form action={loadSampleData}>
-          <button type="submit">{accounts.some((a) => a.isSample) ? "Reset the sample account" : "Explore the sample account"}</button>
-        </form>
-        <span className="user" title={email}>
-          {email}
-        </span>
-        <form action={signOut} onSubmit={() => posthog.__loaded && posthog.reset()}>
-          <button type="submit">Sign out</button>
-        </form>
-        <Identify userId={userId} email={email} />
+        {readOnly ? (
+          // AdMate integration: public demo visitors aren't signed in. /login is on the website.
+          <a href="/login">Log in or sign up free</a>
+        ) : (
+          <>
+            <form action={loadSampleData}>
+              <button type="submit">{accounts.some((a) => a.isSample) ? "Reset the sample account" : "Explore the sample account"}</button>
+            </form>
+            <span className="user" title={email}>
+              {email}
+            </span>
+            <form action={signOut} onSubmit={() => posthog.__loaded && posthog.reset()}>
+              <button type="submit">Sign out</button>
+            </form>
+            <Identify userId={userId} email={email} />
+          </>
+        )}
       </div>
       {welcome && <Portal><Welcome compare={welcome === "compare"} pending={pending} onPick={(k) => (k === level && welcome === "compare" ? setWelcome(null) : choose(k))} onClose={answered || welcome === "compare" ? () => setWelcome(null) : null} /></Portal>}
     </aside>

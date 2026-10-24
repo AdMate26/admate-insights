@@ -56,7 +56,7 @@ function md(t: string): ReactNode {
 }
 
 export function Assistant({ open, about, current, onOpen, onClose }: { open: boolean; about: string | null; current: string | null; onOpen: () => void; onClose: () => void }) {
-  const { ws, level, isBeg, name, askReady } = useV5();
+  const { ws, level, isBeg, name, askReady, readOnly, nudge } = useV5();
   const { vm, page } = usePage();
   const { params } = usePeriodQuery();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -98,6 +98,7 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
   async function send(q: string) {
     q = q.trim();
     if (!q || busy) return;
+    if (readOnly) return nudge("ask the Assistant about your own ads");
     const history = turns.filter((t) => t.role !== "error").slice(-10).map((t) => ({ role: t.role as "user" | "assistant", text: t.content }));
     setTurns((t) => [...t, { role: "user", content: q }]);
     setInput("");

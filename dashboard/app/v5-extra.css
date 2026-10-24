@@ -15,6 +15,8 @@
   .pop .popitem small { color: var(--muted); font-size: 12px; }
   .side-foot form { display: contents; }
   .side-foot .user { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side-foot > a { border-radius: 6px; padding: 5px 10px; color: var(--violet); font-size: 12.5px; font-weight: 500; }
+  .side-foot > a:hover { background: var(--bg); }
   .lvlcard:disabled { opacity: 0.7; cursor: progress; }
   a.btn { cursor: pointer; }
   a.stat:hover { border-color: var(--faint); }

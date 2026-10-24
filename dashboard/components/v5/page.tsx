@@ -63,7 +63,7 @@ function patch(vm: VM, local: Record<string, Status>): VM {
 }
 
 export function V5Page({ vm: serverVm, page, askAvailable = false, children }: { vm: VM | null; page: string; askAvailable?: boolean; children: ReactNode }) {
-  const { ws, level } = useV5();
+  const { ws, level, readOnly } = useV5();
   const { params } = usePeriodQuery();
   const [local, setLocal] = useState<Record<string, Status>>({});
   // New numbers from the server replace the optimistic decisions.
@@ -117,6 +117,7 @@ export function V5Page({ vm: serverVm, page, askAvailable = false, children }: {
         toast(
           kind === "restore" ? "Back on the list" : kind === "remind" ? `We’ll remind you on ${new Date(`${s.until}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })}` : kind === "done" ? "Noted. AdMate checks whether it worked after your next upload." : "Dismissed",
         );
+      if (readOnly) return; // AdMate integration: the public demo shows it but saves nothing
       try {
         await setFindingStatus(ws, key, kind === "restore" ? "todo" : kind === "remind" ? "snoozed" : kind === "dismissed" ? "dismissed" : "done", title, params, kind === "dismissed" ? String(extra ?? "Not relevant") : undefined, kind === "remind" ? Number(extra ?? 1) : undefined);
       } catch {
@@ -128,7 +129,7 @@ export function V5Page({ vm: serverVm, page, askAvailable = false, children }: {
         toast("That couldn’t be saved. Please try again.");
       }
     },
-    [vm, ws, params, toast],
+    [vm, ws, params, toast, readOnly],
   );
   const decideMany = useCallback(
     async (keys: string[], kind: string, extra?: string | number, titles?: Record<string, string>) => {
@@ -136,6 +137,7 @@ export function V5Page({ vm: serverVm, page, askAvailable = false, children }: {
       const s = statusOf(kind, extra);
       setLocal((m) => ({ ...m, ...Object.fromEntries(keys.map((k) => [k, s])) }));
       const items = keys.map((k) => ({ key: k, title: (vm ? detailOf(vm, k)?.title : null) ?? titles?.[k] ?? k }));
+      if (readOnly) return; // AdMate integration: the public demo shows it but saves nothing
       try {
         await setFindingStatuses(ws, items, kind === "restore" ? "todo" : kind === "remind" ? "snoozed" : kind === "dismissed" ? "dismissed" : "done", params, kind === "dismissed" ? String(extra ?? "Not relevant") : undefined, kind === "remind" ? Number(extra ?? 3) : undefined);
       } catch {
@@ -143,7 +145,7 @@ export function V5Page({ vm: serverVm, page, askAvailable = false, children }: {
         toast("Those couldn’t be saved. Please try again.");
       }
     },
-    [vm, ws, params, toast],
+    [vm, ws, params, toast, readOnly],
   );
   const ask = useCallback((about?: string | null) => setAsst({ open: true, about: about ?? null }), []);
 

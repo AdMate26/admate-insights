@@ -10,6 +10,7 @@ import { getLevel } from "@/lib/data/settings";
 import { getCoverage, getWorkspace, listWorkspaces } from "@/lib/data/workspaces";
 import { shortDate } from "@/lib/format";
 import { BASE_PATH, websiteUrl } from "@/lib/integration/paths";
+import { ReadOnlyProvider } from "@/lib/integration/read-only";
 import { DEFAULT_LEVEL } from "@/lib/levels";
 
 // The frame of every ad-account page (prototype v5.1): the sidebar with the account
@@ -44,8 +45,10 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
           muted: alerts.muted,
           email: user.email,
           askReady: aiEnabled(),
+          readOnly,
         }}
       >
+        <ReadOnlyProvider value={readOnly}>
         <div className="frame">
           <Suspense>
             <Side counts={{ actions: 0, alerts: 0 }} answered={!!saved} userId={user.id} />
@@ -63,6 +66,7 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
             <div className="content">{children}</div>
           </main>
         </div>
+        </ReadOnlyProvider>
       </V5Provider>
     </div>
   );

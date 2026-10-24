@@ -22,7 +22,7 @@ const AUTO = Object.entries(DETECTOR_NAME).filter(([k]) => k !== "plan");
 const DAYNAME = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function AdvAlerts({ config: cfg0, rules: rules0, targets: targets0, tg: tg0, tgEnabled }: { config: AlertConfig; rules: Rule[]; targets: CampaignTargets; tg: Tg; tgEnabled: boolean }) {
-  const { f, ws, name } = useV5();
+  const { f, ws, name, readOnly, nudge } = useV5();
   const { vm, open, toast } = usePage();
   const v = vm!;
   // Local copies so switches respond at once; the server's answer replaces them.
@@ -32,7 +32,9 @@ export function AdvAlerts({ config: cfg0, rules: rules0, targets: targets0, tg: 
   const [tg, setTg] = useSynced(tg0);
   const [tab, setTab] = useState<"auto" | "own">("auto");
   const [preview, setPreview] = useState(false);
-  const [, start] = useTransition();
+  const [, startSave] = useTransition();
+  // AdMate integration: every change here goes through start; public demo visitors get the sign-up note instead.
+  const start: React.TransitionStartFunction = readOnly ? () => nudge("set up your own alerts") : startSave;
   const auto = autoAlerts(v, cfg, targets);
   const fired = alertsFired(v, rules);
   const badN = auto.filter((a) => !a.good).length;

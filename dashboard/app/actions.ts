@@ -17,7 +17,7 @@ import { createSampleAccount } from "@/lib/sample/load";
 import { addDays, toISO } from "@/lib/dates";
 import { checkAccountLimit } from "@/lib/integration/limits";
 import { saveLevel } from "@/lib/data/settings";
-import { isLevel, KEEPS_PERIOD, PAGE_HREF, PERIOD_KEYS, pageFor, parseAccountPath } from "@/lib/levels";
+import { isLevel, levelTarget } from "@/lib/levels";
 
 // Server actions are public endpoints: every action below signs the user in
 // (requireUser) or checks they own the account (requireWorkspace) first.
@@ -232,19 +232,8 @@ export async function chooseLevel(level: string, path: string, query: string) {
   if (!isLevel(level)) return;
   await saveLevel(user.id, level);
   revalidatePath("/", "layout");
-  const here = parseAccountPath(path);
-  if (!here) return;
-  const page = pageFor(level, here.page);
-  if (page === here.page) return;
-  const from = new URLSearchParams(query);
-  const keep = new URLSearchParams();
-  if (KEEPS_PERIOD.has(page))
-    for (const k of PERIOD_KEYS) {
-      const v = from.get(k);
-      if (v) keep.set(k, v);
-    }
-  const qs = keep.toString();
-  redirect(`/c/${here.ws}${PAGE_HREF[page]}${qs ? `?${qs}` : ""}`);
+  const to = levelTarget(level, path, query);
+  if (to) redirect(to);
 }
 
 // Explorer views follow the person to every account. At most 30, names up to 60 characters.

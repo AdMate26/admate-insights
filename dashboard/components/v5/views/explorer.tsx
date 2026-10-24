@@ -43,7 +43,7 @@ const COLS: Record<ExCol, Col> = {
 };
 
 export function Explorer({ saved: initialSaved }: { saved: { id: string; name: string; config: ExState }[] }) {
-  const { f, name: account, shown } = useV5();
+  const { f, name: account, shown, readOnly, nudge } = useV5();
   const { vm, open, decideMany, toast } = usePage();
   const v = vm!;
   const [e, setE] = useState<ExState>(DEFAULT_EX);
@@ -192,6 +192,7 @@ export function Explorer({ saved: initialSaved }: { saved: { id: string; name: s
       toast("Give the view a name first");
       return nameRef.current?.focus();
     }
+    if (readOnly) return nudge("save Explorer views");
     start(async () => {
       const r = await saveView(nm, e);
       if (r.error) return toast(r.error);

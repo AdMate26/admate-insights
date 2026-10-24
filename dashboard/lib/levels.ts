@@ -135,3 +135,26 @@ export function parseAccountPath(pathname: string): { ws: string; page: PageId }
   const page = (Object.keys(PAGE_HREF) as PageId[]).find((p) => PAGE_HREF[p] === (m[2] ? `/${m[2]}` : ""));
   return page ? { ws: m[1], page } : null;
 }
+
+// Where choosing a view takes the person: the page on the same subject when the
+// current page isn't in that view (e.g. Explorer → My ads), keeping the selected
+// period. Built from known page names only; null means stay on this page.
+export function levelTarget(level: Level, path: string, query: string): string | null {
+  const here = parseAccountPath(path);
+  if (!here) return null;
+  const page = pageFor(level, here.page);
+  if (page === here.page) return null;
+  const from = new URLSearchParams(query);
+  const keep = new URLSearchParams();
+  if (KEEPS_PERIOD.has(page))
+    for (const k of PERIOD_KEYS) {
+      const v = from.get(k);
+      if (v) keep.set(k, v);
+    }
+  const qs = keep.toString();
+  return `/c/${here.ws}${PAGE_HREF[page]}${qs ? `?${qs}` : ""}`;
+}
+
+// AdMate integration: public demo visitors can't save settings, so their view
+// lives in this browser cookie instead (read by lib/data/settings.ts getLevel).
+export const DEMO_LEVEL_COOKIE = "admate_demo_view";

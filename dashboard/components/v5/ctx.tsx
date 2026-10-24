@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { PERIOD_KEYS, type Level as View } from "@/lib/levels";
@@ -28,12 +28,60 @@ export interface Shared {
   muted: string[];
   email: string;
   askReady: boolean; // the Assistant has its API key (ANTHROPIC_API_KEY)
+  readOnly: boolean; // AdMate integration: a public demo visitor (nothing is saved)
 }
 
 const SharedCtx = createContext<Shared | null>(null);
+const NudgeCtx = createContext<(what: string) => void>(() => {});
 
 export function V5Provider({ value, children }: { value: Shared; children: ReactNode }) {
-  return <SharedCtx.Provider value={value}>{children}</SharedCtx.Provider>;
+  const [nudge, setNudge] = useState<string | null>(null);
+  return (
+    <SharedCtx.Provider value={value}>
+      <NudgeCtx.Provider value={setNudge}>
+        {children}
+        {nudge && (
+          <Portal>
+            <SignUpNudge what={nudge} onClose={() => setNudge(null)} />
+          </Portal>
+        )}
+      </NudgeCtx.Provider>
+    </SharedCtx.Provider>
+  );
+}
+
+// AdMate integration: what a public demo visitor sees instead of a change being
+// saved. The server refuses visitor changes regardless; this keeps the page usable.
+function SignUpNudge({ what, onClose }: { what: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="nudge-t" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div className="onboard" style={{ maxWidth: 460 }}>
+          <div>
+            <span className="label">Public demo</span>
+            <h2 id="nudge-t" style={{ marginTop: 6 }}>
+              Sign up free to {what}
+            </h2>
+          </div>
+          <p>This demo is read-only, so changes here aren’t saved. With a free account you can upload your own report and keep everything you set.</p>
+          <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <a className="btn primary" href="/login">
+              Sign up free
+            </a>
+            <button className="btn" type="button" onClick={onClose}>
+              Keep exploring
+            </button>
+          </p>
+        </div>
+      </div>
+    </>
+  );
 }
 
 export function useV5() {
@@ -42,7 +90,8 @@ export function useV5() {
   const f = useMemo(() => makeFmt(s.cur), [s.cur]);
   const muted = useMemo(() => new Set(s.muted), [s.muted]);
   const shown = useCallback((d: Pick<Item, "detector">) => !muted.has(d.detector), [muted]);
-  return { ...s, f, shown, isBeg: s.level === "beginner", isAdv: s.level === "advanced" };
+  const nudge = useContext(NudgeCtx);
+  return { ...s, f, shown, nudge, isBeg: s.level === "beginner", isAdv: s.level === "advanced" };
 }
 
 // The selected period from the address bar (from, to, cmp, …), kept when moving between pages.

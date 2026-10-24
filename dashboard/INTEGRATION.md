@@ -63,22 +63,28 @@ Everything not listed here is byte-identical to the source commit
 | --- | --- | --- |
 | `.env.example` | modified | New integration settings (placeholders) |
 | `app/(auth)/actions.ts` | modified | Only sign-out remains (continues to the website's `/logout`); sign-in, sign-up, password reset and Google live on the website |
-| `app/actions.ts` | modified | Account limit before creating an account (2 calls) |
+| `app/actions.ts` | modified | Account limit before creating an account (2 calls); `chooseLevel` uses the shared `levelTarget` |
 | `app/api/import/commit/route.ts` | modified | Signed-in owners only; report, file and row limits (v5 Telegram-after-upload kept) |
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
-| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts |
+| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`) |
+| `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link |
 | `app/c/[ws]/upload/page.tsx` | modified | v5 page kept; visitors see "sign up to upload" instead of the upload form |
 | `components/DeleteClientButton.tsx` | modified | Hidden for visitors |
 | `components/SettingsForm.tsx` | modified | Read-only fields and a sign-in prompt for visitors |
 | `components/UndoImportButton.tsx` | modified | Hidden for visitors |
 | `components/UploadFlow.tsx` | modified | `fetch` paths under `/app` (`apiPath`) |
-| `components/v5/Assistant.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
+| `components/v5/Assistant.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitors get the sign-up note instead of a question |
 | `components/v5/Drawer.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
+| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); a visitor's view is kept in a browser cookie; visitor footer shows sign-up instead of sample reset and sign-out |
+| `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
+| `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved |
+| `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving |
+| `components/v5/views/campaigns.tsx` | modified | Visitors get the sign-up note instead of changing a goal or funnel role |
+| `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
 | `lib/auth/session.ts` | modified | Per-request access check in `getCurrentUser()`; sign-in redirect goes to the website |
+| `lib/data/settings.ts` | modified | A visitor's view comes from the browser cookie, not the shared demo user's settings |
+| `lib/levels.ts` | modified | `levelTarget` (shared by the server action and the visitor path) and the visitor view cookie name |
 | `next.config.ts` | modified | `basePath: "/app"`; Server Actions accept exactly the public host (`serverActions.allowedOrigins`) |
 | `proxy.ts` | modified | Public: session bridge, demo refresh, `/api/cron` (own secret). Visitor read-only mark on demo pages incl. v5 Portfolio/Explorer/Budget and `/api/v5/*`; signed-out visitors go to the website's `/home` |
 | `vercel.json` | modified | `buildCommand: "next build"` (no migrations during builds) |
@@ -153,7 +159,7 @@ bypass header was overridden, and the secret appeared in no response or log.
 
 Brought the teammate's v5 work (Neat88/admate-app `2c8b653`, 11 commits after
 `690a8de`) into `dashboard/` with a file-by-file three-way merge. Her screens,
-analysis and data code are taken as written (175 of 213 files byte-identical).
+analysis and data code are taken as written (169 of 213 files byte-identical).
 Kept from the integration: website sign-in and the session bridge, the `/app`
 base path (`apiPath` for her five new `fetch` calls), the public demo read-only
 rules (now also covering Portfolio, Explorer, Budget and `/api/v5/*` reads),
@@ -161,6 +167,13 @@ upload and account limits. Removed: her own password, reset and Google sign-in
 (the website already does this through Supabase). Her per-user Telegram alerts
 are included but stay off until the dashboard gets its own `TELEGRAM_BOT_TOKEN`
 and the `/api/cron/alerts` trigger is set up.
+
+Public demo visitors: her screens had no read-only mode, so choosing a view or
+any save crashed the demo page (a visitor's Server Action is sent to sign-in).
+Now the v5 frame passes `readOnly`; a visitor's view is kept in a browser
+cookie (`admate_demo_view`), decisions show on screen without being saved, and
+other changes (goals, funnel roles, Explorer views, alerts, the Assistant) show
+a "Sign up free" note. The server still refuses every visitor write.
 
 Database: migrations 0006-0009 add nine tables (no existing table changes).
 They must be applied to the dashboard database before this code goes live.

@@ -85,7 +85,7 @@ export function BegMyAds() {
 }
 
 export function Campaigns() {
-  const { f, ws, isAdv: adv } = useV5();
+  const { f, ws, isAdv: adv, readOnly, nudge } = useV5();
   const { vm, open, toast } = usePage();
   const v = vm!;
   const [lvl, setLvl] = useState<Level>("campaign");
@@ -148,6 +148,7 @@ export function Campaigns() {
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => {
                     const o = e.target.value as Objective;
+                    if (readOnly) return nudge("set campaign goals");
                     start(async () => {
                       await setCampaignObjective(ws, r.id, o);
                       toast(`Goal set to ${OBJECTIVE_DEFS[o].label}. AdMate re-judges it with that goal’s result.`);
@@ -166,6 +167,7 @@ export function Campaigns() {
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => {
                     const role = e.target.value as Role;
+                    if (readOnly) return nudge("set funnel roles");
                     start(async () => {
                       await setCampaignRole(ws, r.id, role);
                       toast(`Funnel role set to ${ROLE[role]}. AdMate now compares it only with ${ROLE[role].toLowerCase()} campaigns.`);
