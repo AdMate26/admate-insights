@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { AuthLayout, AuthPending, GoogleMark } from "@/components/auth/AuthLayout";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
@@ -47,6 +48,8 @@ function LoginPage() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  // Both sign-in methods require accepting the Terms and Privacy Policy first.
+  const [accepted, setAccepted] = useState(false);
 
   // Resend countdown.
   useEffect(() => {
@@ -58,6 +61,10 @@ function LoginPage() {
   async function handleEmailContinue(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (!accepted) {
+      setError(AUTH_MESSAGES.termsRequired);
+      return;
+    }
     const normalized = normalizeEmail(email);
     if (!isValidEmail(normalized)) {
       setError(AUTH_MESSAGES.invalidEmail);
@@ -121,6 +128,10 @@ function LoginPage() {
 
   async function handleGoogle() {
     if (busy) return;
+    if (!accepted) {
+      setError(AUTH_MESSAGES.termsRequired);
+      return;
+    }
     setBusy("google");
     setError(null);
     const result = await startGoogleSignIn();
@@ -160,6 +171,26 @@ function LoginPage() {
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? "auth-error" : undefined}
               />
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Checkbox
+                id="accept-terms"
+                className="mt-0.5"
+                checked={accepted}
+                onCheckedChange={(value) => {
+                  setAccepted(value === true);
+                  if (error === AUTH_MESSAGES.termsRequired) setError(null);
+                }}
+                disabled={busy !== null}
+                aria-invalid={error === AUTH_MESSAGES.termsRequired ? true : undefined}
+              />
+              <Label
+                htmlFor="accept-terms"
+                className="text-sm font-normal leading-snug text-muted-foreground"
+              >
+                I accept AdMate&apos;s <LegalLink to="/terms">Terms of Service</LegalLink> and{" "}
+                <LegalLink to="/privacy">Privacy Policy</LegalLink>
+              </Label>
             </div>
             {error ? <AuthError message={error} /> : null}
             <Button type="submit" className="w-full" disabled={busy !== null}>
@@ -286,6 +317,20 @@ function LoginPage() {
         </Link>
       </p>
     </AuthLayout>
+  );
+}
+
+/** Opens in a new tab so the email typed on this page is kept. */
+function LegalLink({ to, children }: { to: "/terms" | "/privacy"; children: React.ReactNode }) {
+  return (
+    <a
+      href={to}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-medium text-foreground underline underline-offset-2"
+    >
+      {children}
+    </a>
   );
 }
 
