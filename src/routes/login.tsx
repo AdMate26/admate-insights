@@ -43,7 +43,7 @@ type Busy = null | "sending" | "resending" | "verifying" | "google";
 function LoginPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(takeEmailDraft);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
@@ -188,8 +188,14 @@ function LoginPage() {
                 htmlFor="accept-terms"
                 className="text-sm font-normal leading-snug text-muted-foreground"
               >
-                I accept AdMate&apos;s <LegalLink to="/terms">Terms of Service</LegalLink> and{" "}
-                <LegalLink to="/privacy">Privacy Policy</LegalLink>
+                I accept AdMate&apos;s{" "}
+                <LegalLink to="/terms" email={email}>
+                  Terms of Service
+                </LegalLink>{" "}
+                and{" "}
+                <LegalLink to="/privacy" email={email}>
+                  Privacy Policy
+                </LegalLink>
               </Label>
             </div>
             {error ? <AuthError message={error} /> : null}
@@ -320,17 +326,44 @@ function LoginPage() {
   );
 }
 
-/** Opens in a new tab so the email typed on this page is kept. */
-function LegalLink({ to, children }: { to: "/terms" | "/privacy"; children: React.ReactNode }) {
+// The typed email survives a visit to /terms or /privacy (same tab, "Back to
+// login"). Session storage only; it may be unavailable, so failures are ignored.
+const EMAIL_DRAFT_KEY = "admate-login-email";
+
+function takeEmailDraft(): string {
+  try {
+    const draft = sessionStorage.getItem(EMAIL_DRAFT_KEY) ?? "";
+    sessionStorage.removeItem(EMAIL_DRAFT_KEY);
+    return draft;
+  } catch {
+    return "";
+  }
+}
+
+function LegalLink({
+  to,
+  email,
+  children,
+}: {
+  to: "/terms" | "/privacy";
+  email: string;
+  children: React.ReactNode;
+}) {
   return (
-    <a
-      href={to}
-      target="_blank"
-      rel="noopener noreferrer"
+    <Link
+      to={to}
+      search={{ from: "login" }}
+      onClick={() => {
+        try {
+          if (email.trim()) sessionStorage.setItem(EMAIL_DRAFT_KEY, email);
+        } catch {
+          // Storage unavailable: the email is simply not restored.
+        }
+      }}
       className="font-medium text-foreground underline underline-offset-2"
     >
       {children}
-    </a>
+    </Link>
   );
 }
 
