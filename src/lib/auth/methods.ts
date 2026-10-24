@@ -18,6 +18,7 @@ export const AUTH_MESSAGES = {
   signInFailed: "We couldn't sign you in. Please try again.",
   googleUnavailable: "Google sign-in isn't available yet. Please continue with your email.",
   googleFailed: "We couldn't start Google sign-in. Please try again.",
+  termsRequired: "Accept the Terms of Service and Privacy Policy to continue.",
 } as const;
 
 export type AuthResult = { error: string | null };

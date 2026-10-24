@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { ContactLink, LegalPage } from "@/components/landing/LegalPage";
+import { validateLegalSearch } from "@/lib/legal-search";
 
 export const Route = createFileRoute("/privacy")({
+  validateSearch: validateLegalSearch,
   head: () => ({
     meta: [
       { title: "Privacy Policy — AdMate" },
@@ -41,7 +43,7 @@ const PROVIDER_CATEGORIES = [
 function Heading({ n }: { n: number }) {
   return (
     <h2>
-      {n + 1}. {SECTIONS[n][1]}
+      {n + 1}. {SECTIONS[n]?.[1]}
     </h2>
   );
 }

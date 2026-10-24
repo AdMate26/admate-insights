@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { AuthLayout, AuthPending, GoogleMark } from "@/components/auth/AuthLayout";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
@@ -42,11 +43,13 @@ type Busy = null | "sending" | "resending" | "verifying" | "google";
 function LoginPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(takeEmailDraft);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  // Both sign-in methods require accepting the Terms and Privacy Policy first.
+  const [accepted, setAccepted] = useState(false);
 
   // Resend countdown.
   useEffect(() => {
@@ -58,6 +61,10 @@ function LoginPage() {
   async function handleEmailContinue(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (!accepted) {
+      setError(AUTH_MESSAGES.termsRequired);
+      return;
+    }
     const normalized = normalizeEmail(email);
     if (!isValidEmail(normalized)) {
       setError(AUTH_MESSAGES.invalidEmail);
@@ -121,6 +128,10 @@ function LoginPage() {
 
   async function handleGoogle() {
     if (busy) return;
+    if (!accepted) {
+      setError(AUTH_MESSAGES.termsRequired);
+      return;
+    }
     setBusy("google");
     setError(null);
     const result = await startGoogleSignIn();
@@ -160,6 +171,32 @@ function LoginPage() {
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? "auth-error" : undefined}
               />
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Checkbox
+                id="accept-terms"
+                className="mt-0.5"
+                checked={accepted}
+                onCheckedChange={(value) => {
+                  setAccepted(value === true);
+                  if (error === AUTH_MESSAGES.termsRequired) setError(null);
+                }}
+                disabled={busy !== null}
+                aria-invalid={error === AUTH_MESSAGES.termsRequired ? true : undefined}
+              />
+              <Label
+                htmlFor="accept-terms"
+                className="text-sm font-normal leading-snug text-muted-foreground"
+              >
+                I accept AdMate&apos;s{" "}
+                <LegalLink to="/terms" email={email}>
+                  Terms of Service
+                </LegalLink>{" "}
+                and{" "}
+                <LegalLink to="/privacy" email={email}>
+                  Privacy Policy
+                </LegalLink>
+              </Label>
             </div>
             {error ? <AuthError message={error} /> : null}
             <Button type="submit" className="w-full" disabled={busy !== null}>
@@ -286,6 +323,47 @@ function LoginPage() {
         </Link>
       </p>
     </AuthLayout>
+  );
+}
+
+// The typed email survives a visit to /terms or /privacy (same tab, "Back to
+// login"). Session storage only; it may be unavailable, so failures are ignored.
+const EMAIL_DRAFT_KEY = "admate-login-email";
+
+function takeEmailDraft(): string {
+  try {
+    const draft = sessionStorage.getItem(EMAIL_DRAFT_KEY) ?? "";
+    sessionStorage.removeItem(EMAIL_DRAFT_KEY);
+    return draft;
+  } catch {
+    return "";
+  }
+}
+
+function LegalLink({
+  to,
+  email,
+  children,
+}: {
+  to: "/terms" | "/privacy";
+  email: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      to={to}
+      search={{ from: "login" }}
+      onClick={() => {
+        try {
+          if (email.trim()) sessionStorage.setItem(EMAIL_DRAFT_KEY, email);
+        } catch {
+          // Storage unavailable: the email is simply not restored.
+        }
+      }}
+      className="font-medium text-foreground underline underline-offset-2"
+    >
+      {children}
+    </Link>
   );
 }
 

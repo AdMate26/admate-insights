@@ -1,8 +1,10 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { ContactLink, LegalPage } from "@/components/landing/LegalPage";
+import { validateLegalSearch } from "@/lib/legal-search";
 
 export const Route = createFileRoute("/terms")({
+  validateSearch: validateLegalSearch,
   head: () => ({
     meta: [
       { title: "Terms of Service — AdMate" },
@@ -13,6 +15,7 @@ export const Route = createFileRoute("/terms")({
 });
 
 function TermsPage() {
+  const search = Route.useSearch();
   return (
     <LegalPage title="Terms of Service" effectiveDate="October 24, 2026">
       <section>
@@ -80,7 +83,7 @@ function TermsPage() {
         <h2>Privacy and changes</h2>
         <p>
           Our{" "}
-          <Link to="/privacy" className="text-foreground underline">
+          <Link to="/privacy" search={search} className="text-foreground underline">
             Privacy Policy
           </Link>{" "}
           explains how we handle your information. If we change these terms, we will update this
