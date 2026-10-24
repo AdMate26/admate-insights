@@ -10,7 +10,8 @@ import { websiteUrl } from "./lib/integration/paths";
 // visitors go to its /home, which re-checks the sign-in and comes back here. The
 // only public endpoints are the session bridge (app/api/session) and the
 // secret-protected public demo refresh (app/api/internal/public-demo).
-const PUBLIC = ["/api/session", "/api/internal/public-demo"];
+// /api/cron/* (v5 alert digests) checks its own secret (CRON_SECRET) instead of a session.
+const PUBLIC = ["/api/session", "/api/internal/public-demo", "/api/cron"];
 
 // Public demo (lib/integration/public-demo.ts): READ requests to these paths are
 // marked so that, without a valid session, they get the read-only visitor
@@ -18,8 +19,8 @@ const PUBLIC = ["/api/session", "/api/internal/public-demo"];
 // sent by the browser is always removed first. The dashboard root (/app) is not
 // included: signed-out visitors there still go to sign-in.
 const VISITOR_HEADER = "x-admate-public-demo";
-const VISITOR_PAGES = /^\/(demo|c\/[^/]+(\/(actions|campaigns|audience|reports|settings|upload|alerts|recommendations|compare|data))?)$/;
-const VISITOR_API = ["/api/counts"];
+const VISITOR_PAGES = /^\/(demo|c\/[^/]+(\/(actions|campaigns|audience|reports|settings|upload|alerts|recommendations|compare|data|portfolio|explorer|budget))?)$/;
+const VISITOR_API = ["/api/counts", "/api/v5/daily", "/api/v5/detail"];
 
 export function proxy(request: NextRequest) {
   const { pathname, search, basePath } = request.nextUrl;

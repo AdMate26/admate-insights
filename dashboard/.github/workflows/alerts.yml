@@ -1,0 +1,20 @@
+# Sends AdMate's scheduled Telegram alerts: every hour it asks AdMate to send the
+# messages people scheduled for that hour. Needs two repository secrets:
+#   ADMATE_URL   the live address, e.g. https://admate-alpha.vercel.app
+#   CRON_SECRET  the same value as CRON_SECRET in Vercel's environment variables
+name: Scheduled alerts
+on:
+  schedule:
+    - cron: "2 * * * *"
+  workflow_dispatch:
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask AdMate to send this hour's alerts
+        env:
+          ADMATE_URL: ${{ secrets.ADMATE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$ADMATE_URL" ] || [ -z "$CRON_SECRET" ]; then echo "ADMATE_URL or CRON_SECRET not set: nothing to do."; exit 0; fi
+          curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$ADMATE_URL/api/cron/alerts"

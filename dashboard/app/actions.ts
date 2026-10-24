@@ -6,7 +6,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
-import { entities, goals, recStatus, workspaces } from "@/lib/db/schema";
+import { entities, goals, recStatus, savedViews, workspaces } from "@/lib/db/schema";
+import { parseExState } from "@/lib/explorer";
 import { undoImport } from "@/lib/data/imports";
 import { baselineFor, loadAnalysis, requireWorkspace } from "@/lib/data/workspaces";
 import type { SelectionParams } from "@/lib/analysis/periods";
@@ -15,6 +16,8 @@ import { isRole, type Role } from "@/lib/analysis/roles";
 import { createSampleAccount } from "@/lib/sample/load";
 import { addDays, toISO } from "@/lib/dates";
 import { checkAccountLimit } from "@/lib/integration/limits";
+import { saveLevel } from "@/lib/data/settings";
+import { isLevel, levelTarget } from "@/lib/levels";
 
 // Server actions are public endpoints: every action below signs the user in
 // (requireUser) or checks they own the account (requireWorkspace) first.
@@ -106,6 +109,53 @@ export async function setFindingStatus(
   revalidatePath("/", "layout");
 }
 
+// Advanced → Actions and Explorer: one decision on several items at once (at most 200).
+export async function setFindingStatuses(
+  workspaceId: string,
+  items: { key: string; title: string }[],
+  status: "done" | "dismissed" | "snoozed" | "todo",
+  selection: SelectionParams,
+  reason?: string,
+  remindDays?: number,
+) {
+  await requireWorkspace(workspaceId);
+  const list = (Array.isArray(items) ? items : []).slice(0, 200).filter((x) => x && typeof x.key === "string" && x.key.length <= 300);
+  if (!list.length) return;
+  const db = await getDb();
+  if (status === "todo") {
+    for (const x of list) await db.delete(recStatus).where(and(eq(recStatus.workspaceId, workspaceId), eq(recStatus.key, x.key)));
+    revalidatePath("/", "layout");
+    return;
+  }
+  const today = toISO(new Date());
+  // "Action taken" stores each item's numbers for the re-check, from one analysis.
+  const a = status === "done" ? await loadAnalysis(workspaceId, selection) : null;
+  for (const x of list) {
+    let baseline: unknown = null;
+    if (a) {
+      const f = a.findings.find((y) => y.key === x.key);
+      if (f) {
+        const b = baselineFor(f, a);
+        baseline = b ? { ...b, recheckDays: f.recheckDays } : { recheckDays: f.recheckDays };
+      } else if (x.key.startsWith("plan:")) {
+        const [, level, id] = x.key.split(":");
+        const row = (level === "campaign" ? a.campaigns : level === "ad_group" || level === "ad" ? a.byLevel[level] : []).find((r) => r.info.id === id);
+        if (row && row.kpiB !== null) baseline = { level, entityId: row.info.id, objective: row.info.objective, mode: row.mode, kpiLabel: kpiLabel(row.info.objective, row.mode), kpi: row.kpiB, periodEnd: a.selection.b.to, recheckDays: 7 };
+      }
+    }
+    const values = {
+      workspaceId, key: x.key, status, title: String(x.title ?? x.key).slice(0, 300),
+      dismissReason: status === "dismissed" ? reason ?? null : null,
+      snoozeUntil: status === "snoozed" ? addDays(today, remindDays && remindDays >= 1 && remindDays <= 30 ? Math.round(remindDays) : 7) : null,
+      doneAt: status === "done" ? today : null,
+      baseline,
+      updatedAt: new Date(),
+    };
+    await db.insert(recStatus).values(values).onConflictDoUpdate({ target: [recStatus.workspaceId, recStatus.key], set: values });
+  }
+  revalidatePath("/", "layout");
+}
+
 // "Use this as your target" from the goal status card.
 export async function setTarget(workspaceId: string, objective: Objective, value: number) {
   if (!OBJECTIVES.includes(objective) || !(value > 0)) return;
@@ -172,4 +222,42 @@ export async function deleteWorkspace(workspaceId: string) {
   await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
   revalidatePath("/", "layout");
   redirect("/");
+}
+
+// Saves the person's view. When the page they're on isn't in that view, go to the
+// page on the same subject (e.g. Explorer → My ads), keeping the selected period.
+// The redirect is rebuilt from known page names, never taken from the request.
+export async function chooseLevel(level: string, path: string, query: string) {
+  const user = await requireUser();
+  if (!isLevel(level)) return;
+  await saveLevel(user.id, level);
+  revalidatePath("/", "layout");
+  const to = levelTarget(level, path, query);
+  if (to) redirect(to);
+}
+
+// Explorer views follow the person to every account. At most 30, names up to 60 characters.
+export async function saveView(name: string, config: unknown): Promise<{ error?: string; id?: string }> {
+  const user = await requireUser();
+  const clean = parseExState(config);
+  const n = String(name ?? "").trim().slice(0, 60);
+  if (!clean || !n) return { error: "That view couldn't be saved." };
+  const db = await getDb();
+  const mine = await db.select({ id: savedViews.id, name: savedViews.name }).from(savedViews).where(eq(savedViews.userId, user.id));
+  const same = mine.find((v) => v.name === n);
+  let id = same?.id;
+  if (same) await db.update(savedViews).set({ config: clean }).where(eq(savedViews.id, same.id));
+  else {
+    if (mine.length >= 30) return { error: "You have 30 saved views. Delete one first." };
+    id = randomUUID();
+    await db.insert(savedViews).values({ id, userId: user.id, name: n, config: clean });
+  }
+  return { id };
+}
+
+export async function deleteView(id: string) {
+  const user = await requireUser();
+  const db = await getDb();
+  await db.delete(savedViews).where(and(eq(savedViews.id, String(id)), eq(savedViews.userId, user.id)));
+  revalidatePath("/", "layout");
 }

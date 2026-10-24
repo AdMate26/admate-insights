@@ -250,6 +250,19 @@ export async function loadLowerEntities(workspaceId: string): Promise<CampaignIn
 export async function loadAnalysis(workspaceId: string, params: SelectionParams = {}): Promise<Analysis | null> {
   const ws = await getWorkspace(workspaceId);
   if (!ws) return null;
+  return analysisOf(ws, params);
+}
+
+// Server-side jobs only (scheduled alerts): the account without a signed-in user.
+// Never call this with an id that came from a request.
+export async function loadAnalysisTrusted(workspaceId: string, params: SelectionParams = {}): Promise<Analysis | null> {
+  const db = await getDb();
+  const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+  return ws ? analysisOf(ws, params) : null;
+}
+
+async function analysisOf(ws: typeof workspaces.$inferSelect, params: SelectionParams): Promise<Analysis | null> {
+  const workspaceId = ws.id;
   const coverage = await getCoverage(workspaceId);
   const selection = resolveSelection(params, coverage);
   if (!selection) return null;
@@ -302,7 +315,7 @@ export async function loadAnalysis(workspaceId: string, params: SelectionParams 
     f.status = s.status as FindingStatus;
     f.dismissReason = s.dismissReason;
   }
-  analysis.done = await loadDoneItems(workspaceId, statuses, coverage, columns);
+  analysis.done = await loadDoneItems(workspaceId, ws.currency, statuses, coverage, columns);
   return analysis;
 }
 
@@ -327,9 +340,7 @@ export function baselineFor(f: Finding, a: Analysis): Baseline | null {
 
 // "Did it work?": compare the item's KPI in data after the day it was marked
 // done with its KPI when it was marked done.
-async function loadDoneItems(workspaceId: string, statuses: (typeof recStatus.$inferSelect)[], coverage: Coverage, columns: Map<string, Avail>): Promise<DoneItem[]> {
-  const ws = await getWorkspace(workspaceId);
-  const cur = ws?.currency ?? "USD";
+async function loadDoneItems(workspaceId: string, cur: string, statuses: (typeof recStatus.$inferSelect)[], coverage: Coverage, columns: Map<string, Avail>): Promise<DoneItem[]> {
   const fmt = (v: number, mode: KpiMode) => (mode === "roas" ? `${v.toFixed(2)}×` : money(v, cur));
   const out: DoneItem[] = [];
   const done = statuses.filter((s) => s.status === "done" && s.doneAt).sort((x, y) => (y.doneAt! > x.doneAt! ? 1 : -1)).slice(0, 10);

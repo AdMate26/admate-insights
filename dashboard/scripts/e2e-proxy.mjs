@@ -166,6 +166,12 @@ function clientActionNames() {
   walk(path.join(DASHBOARD, ".next/static"));
   return names;
 }
+// A decision's key from a page: an ?open= link, or the v5 page data ("key":"detector:…").
+function findingKeyIn(html) {
+  const link = /[?&;]open=([^&"]+)/.exec(html)?.[1];
+  if (link) return decodeURIComponent(link);
+  return /\\?"key\\?":\\?"([a-z_]+:[^"\\]+)\\?"/.exec(html)?.[1] ?? "";
+}
 const idsIn = (html) => new Set([...html.matchAll(/[0-9a-f]{40,44}/g)].map((m) => m[0]).filter((x) => actionIds.has(x)));
 
 /* -------------------------------- database ------------------------------ */
@@ -216,17 +222,16 @@ async function main() {
   ok(r.status === 200 && overview.includes("Lotus Skincare (sample)"), "Overview renders through the proxy");
 
   // Server Actions referenced by the server-rendered pages.
-  const resetIds = [...idsIn(overview)].filter((x) => !Object.values(names).includes(x));
-  ok(resetIds.length === 1, "found the reset-sample Server Action (sidebar form)");
-  const resetId = resetIds[0];
+  // v5 calls these from client components, so their ids come from the build.
+  const resetId = names.loadSampleData ?? [...idsIn(overview)].filter((x) => !Object.values(names).includes(x))[0];
+  ok(!!resetId, "found the reset-sample Server Action");
   ids.reset = resetId;
   const settingsHtml = await (await get(`/app/c/${ws}/settings`)).text();
-  const settingsIds = [...idsIn(settingsHtml)].filter((x) => x !== resetId && !Object.values(names).includes(x));
-  ok(settingsIds.length === 1, "found the save-settings Server Action (settings form)");
-  const settingsId = settingsIds[0];
+  const settingsId = names.saveSettings ?? [...idsIn(settingsHtml)].filter((x) => x !== resetId && !Object.values(names).includes(x))[0];
+  ok(!!settingsId, "found the save-settings Server Action");
   ids.settings = settingsId;
   const actionsHtml = await (await get(`/app/c/${ws}/actions`)).text();
-  const findingKey = decodeURIComponent(/[?&;]open=([^&"]+)/.exec(actionsHtml)?.[1] ?? "");
+  const findingKey = findingKeyIn(actionsHtml);
   ok(!!findingKey, "found a decision on the Actions page");
 
   console.log("\n# Server Actions from a foreign origin are refused");
@@ -374,7 +379,7 @@ async function mvp() {
   const resetId = ids.reset;
   const settingsId = ids.settings;
   for (const [label, id] of Object.entries({ reset: resetId, settings: settingsId, ...names })) if (!id) throw new Error(`missing Server Action id: ${label}`);
-  const key = decodeURIComponent(/[?&;]open=([^&"]+)/.exec(await (await get(`/app/c/${demo}/actions`)).text())?.[1] ?? "");
+  const key = findingKeyIn(await (await get(`/app/c/${demo}/actions`)).text());
 
   console.log("\n# Public demo is read-only (correct origin, even with a forged mark)");
   const form = new FormData();

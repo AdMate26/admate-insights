@@ -10,6 +10,9 @@ const Body = z.object({
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(8000) })).max(40).default([]),
   question: z.string().min(1).max(2000),
   findingKey: z.string().optional(),
+  aboutTitle: z.string().max(300).optional(),
+  level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  page: z.string().max(40).optional(),
 });
 
 // Streams the assistant's answer as newline-delimited JSON events.
@@ -38,6 +41,9 @@ export async function POST(request: Request) {
           history: body.history,
           question: body.question,
           findingKey: body.findingKey,
+          aboutTitle: body.aboutTitle,
+          page: body.page,
+          style: body.level,
           onUsage: (u) => {
             usage.input_tokens += u.input_tokens;
             usage.output_tokens += u.output_tokens;
