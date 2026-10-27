@@ -371,7 +371,7 @@ async function mvp() {
   ok(r.status === 307 && !!demo, "/app/demo (website /demo) -> the shared demo account, without login");
   let html = await (await get(`/app/c/${demo}`)).text();
   ok(html.includes("public demo") && html.includes("Lotus Skincare (sample)") && html.includes("Sample data through"), "public demo renders: B's dashboard, Lotus Skincare, labelled as public demo with its date");
-  for (const page of ["actions", "campaigns", "audience", "reports", "settings"]) ok((await get(`/app/c/${demo}/${page}`)).status === 200, `public demo ${page} page renders`);
+  for (const page of ["actions", "campaigns", "audience", "reports", "settings", "alerts", "portfolio", "explorer", "budget", "geography", "report"]) ok((await get(`/app/c/${demo}/${page}`)).status === 200, `public demo ${page} page renders`);
   html = await (await get(`/app/c/${demo}/upload`)).text();
   ok(html.includes("Uploading needs a free AdMate account") && !html.includes("Choose a file"), "public demo upload page offers sign-up, not an upload");
   ok(!/Northlane|Olive|Kite/.test(html), "no old demo brands");
@@ -400,6 +400,11 @@ async function mvp() {
   ok((await upload(demo, "meta.csv", new TextEncoder().encode(metaExport().csv))).status === 401, "visitor can't upload a report");
   ok((await get(`/app/api/summary?ws=${demo}`)).status === 401, "visitor can't reach the paid-AI summary");
   ok((await fetch(`${A}/app/api/ask`, { method: "POST", headers: { origin: A } })).status === 401, "visitor can't reach Ask AdMate");
+  ok((await get("/app/api/credits")).status === 401, "visitor can't read AI credits");
+  for (const api of ["credits/checkout", "credits/test-pay", "telegram/card"]) {
+    const res = await fetch(`${A}/app/api/${api}`, { method: "POST", headers: { origin: A, "content-type": "application/json", "x-admate-public-demo": "1" }, body: "{}" });
+    ok(res.status === 401 || res.status === 404, `visitor can't use /api/${api} (HTTP ${res.status})`);
+  }
 
   console.log("\n# Two users sign up (open registration)");
   const a = await signInAs("a.e2e.sig");

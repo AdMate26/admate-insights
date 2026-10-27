@@ -59,7 +59,7 @@ export default async function PortfolioPage({ params, searchParams }: PageProps<
   if (!data) return <NoData title="Portfolio" />;
   return (
     <V5Page vm={data.vm} page="portfolio" askAvailable={ask}>
-      <PageHead title="Portfolio" eyebrow={`${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`} summary={false} />
+      <PageHead title="Portfolio" eyebrow={`${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}`} />
       <div className="page">
         <Portfolio accounts={all.sort((a, b) => (b.data?.atStake ?? -1) - (a.data?.atStake ?? -1))} />
       </div>

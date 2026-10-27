@@ -1,7 +1,8 @@
 # AdMate integration of this dashboard
 
 This folder is Project B (`Neat88/admate-app`) at commit
-`690a8de76d06248be5c55fdf4c5bb93b23042e22`, brought into the AdMate website
+`7d96593e735fc08e0b7efec31fa2c7a11e132974` (2026-10-27; first brought in at
+`690a8de`, see the merge logs at the end), brought into the AdMate website
 repository (`Linna420/admate-insights`) unchanged except for the files listed
 below. It is served at **www.admate.site/app**. The landing page, sign-in and
 public pages stay on the website.
@@ -73,9 +74,10 @@ Everything not listed here is byte-identical to the source commit
 | `components/SettingsForm.tsx` | modified | Read-only fields and a sign-in prompt for visitors |
 | `components/UndoImportButton.tsx` | modified | Hidden for visitors |
 | `components/UploadFlow.tsx` | modified | `fetch` paths under `/app` (`apiPath`) |
-| `components/v5/Assistant.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitors get the sign-up note instead of a question |
+| `components/v5/Assistant.tsx` | modified | `fetch` paths under `/app` (`apiPath`: ask, credits, checkout, test checkout); visitors get the sign-up note instead of a question |
 | `components/v5/Drawer.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); a visitor's view is kept in a browser cookie; visitor footer shows sign-up instead of sample reset and sign-out |
+| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages |
+| `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved |
 | `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving |
@@ -83,10 +85,10 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
 | `lib/auth/session.ts` | modified | Per-request access check in `getCurrentUser()`; sign-in redirect goes to the website |
-| `lib/data/settings.ts` | modified | A visitor's view comes from the browser cookie, not the shared demo user's settings |
+| `lib/telegram.ts` | modified | Message buttons open `ADMATE_PUBLIC_ORIGIN` + `/app` (the website), not this app's protected deployment address |
 | `lib/levels.ts` | modified | `levelTarget` (shared by the server action and the visitor path) and the visitor view cookie name |
 | `next.config.ts` | modified | `basePath: "/app"`; Server Actions accept exactly the public host (`serverActions.allowedOrigins`) |
-| `proxy.ts` | modified | Public: session bridge, demo refresh, `/api/cron` (own secret). Visitor read-only mark on demo pages incl. v5 Portfolio/Explorer/Budget and `/api/v5/*`; signed-out visitors go to the website's `/home` |
+| `proxy.ts` | modified | Public: session bridge, demo refresh, `/api/cron` (own secret). Visitor read-only mark on demo pages incl. v5 Portfolio/Explorer/Budget/Geography/Report and `/api/v5/*`; signed-out visitors go to the website's `/home` |
 | `vercel.json` | modified | `buildCommand: "next build"` (no migrations during builds) |
 | `.claude/launch.json` | deleted | Local tool config, not needed in this repository |
 | `app/(auth)/AuthForm.tsx` | deleted | Only used by the removed pages |
@@ -183,3 +185,40 @@ skipped, `scripts/check-integration.mjs` (passes), and `scripts/e2e-proxy.mjs`
 92 of 92 checks through the website's `/app` proxy (the script now reads the
 reset/settings action ids from the build and finds decision keys in v5 page
 data).
+
+## Calm v5 update (2026-10-27)
+
+Brought Neat88/admate-app `2c8b653` → `7d96593` (her 4 commits of 2026-10-27:
+calmer v5 design with Advanced only, Madgicx-style dates, Geography, the
+Performance report with PDF, Telegram alerts as pictures, AdMate Assistant with
+beta credits) into `dashboard/`. 44 of her 49 changed files applied as written;
+the other 5 were merged by hand:
+
+- `app/c/[ws]/layout.tsx`, `components/v5/Drawer.tsx`: her change applied, the
+  integration changes kept.
+- `components/v5/Assistant.tsx`: her credits version, with `apiPath` for the new
+  credits, checkout and test-checkout calls.
+- `components/v5/Side.tsx`: her sidebar without the view picker, the visitor
+  footer kept, plus Privacy and Terms links.
+- `lib/data/settings.ts`: her version as written. Everyone has the Advanced view,
+  so the visitor view cookie is no longer read (now byte-identical).
+
+Also: `TelegramPreview.tsx` uses `apiPath`; `lib/telegram.ts` buttons point at the
+website's `/app`; `proxy.ts` lets demo visitors read Geography and Report.
+
+Switches (all off unless set): `ADMATE_ASK_ENABLED=true` plus `ANTHROPIC_API_KEY`
+turns on the Assistant (report data then goes to Anthropic). `ADMATE_TEST_PAYMENTS`
+must never be set in Production: with it on, anyone signed in can add credits
+for free. Buying credits with real money does not exist yet.
+
+Database: migration `0010_ai_credits` adds two tables (`credit_ledger`,
+`credit_purchases`) and two columns with defaults to `ai_usage`. No existing data
+changes. Apply it to the dashboard database before this code goes live.
+
+
+Checked locally: `next build` and `tsc --noEmit` (clean), `vitest` 129 passed / 3
+skipped, `scripts/check-integration.mjs` (passes: 187 of 232 files byte-identical
+to `7d96593`), and `scripts/e2e-proxy.mjs` 102 of 102 checks (now also: the demo's
+Alerts, Portfolio, Explorer, Budget, Geography and Report pages render for
+visitors; visitors can't reach credits, checkout, test checkout or the Telegram
+picture).

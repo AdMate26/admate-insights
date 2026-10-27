@@ -1,12 +1,32 @@
 "use client";
 
-import { digestIcon, SEV_ICON, type Digest } from "@/lib/analysis/alerts";
+import { useEffect, useState } from "react";
+import { digestIcon, type Digest } from "@/lib/analysis/alerts";
+import { apiPath } from "@/lib/integration/paths";
 
-// How the alert digest looks on a phone: the lock-screen notification (only its first
-// two lines show there), then the message in the chat with its buttons. Rendered from
-// the same digest that lib/telegram.ts sends as Telegram HTML.
+// How the alert looks on a phone: the lock-screen notification, then the one message
+// in the chat: a picture (drawn by the server, exactly what lib/telegram.ts sends), a
+// short caption and the buttons that open AdMate for the details.
 export function TelegramPreview({ d, when }: { d: Digest; when: string }) {
-  let n = 0;
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const key = JSON.stringify(d);
+  useEffect(() => {
+    let url: string | null = null;
+    let live = true;
+    fetch(apiPath("/api/telegram/card"), { method: "POST", headers: { "content-type": "application/json" }, body: key })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => {
+        if (!live) return;
+        url = URL.createObjectURL(b);
+        setSrc(url);
+      })
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [key]);
   return (
     <div className="tgx">
       <div className="tgx-notif" aria-label="Phone notification">
@@ -19,60 +39,21 @@ export function TelegramPreview({ d, when }: { d: Digest; when: string }) {
         <b>
           {digestIcon(d)} {d.headline}
         </b>
-        <span>{d.sub}</span>
+        <span>📷 Photo · {d.sub}</span>
       </div>
       <div className="tgx-chat">
-        <div className="tgx-msg">
+        <div className="tgx-msg tgx-photo">
+          {src ? (
+            // A blob: URL of the server-drawn PNG; next/image can't optimise it.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={src} alt={`${d.headline}. ${d.sub}`} width={1080} height={1350} />
+          ) : (
+            <div className="tgx-ph">{failed ? "The picture couldn’t be drawn. The text version would be sent instead." : "Drawing the picture…"}</div>
+          )}
           <p>
-            {digestIcon(d)} <b>{d.headline}</b>
+            <b>{d.headline}</b>
             <br />
             {d.sub}
-          </p>
-          {d.groups.map((g) => (
-            <div key={g.sev} className="tgx-group">
-              <p className="tgx-gt">
-                {SEV_ICON[g.sev]} <b>{g.title.toUpperCase()}</b>
-              </p>
-              {g.items.map((i) => {
-                n++;
-                return (
-                  <p key={i.name + n} className="tgx-item">
-                    <b>
-                      {n}. {i.name}
-                    </b>
-                    {i.early && <i> (early sign)</i>}
-                    <br />
-                    {i.metric} · {i.vs.join(" · ")}
-                    {i.money && (
-                      <>
-                        <br />💸 {i.money}
-                      </>
-                    )}
-                    {i.next && (
-                      <>
-                        <br />👉 {i.next}
-                      </>
-                    )}
-                  </p>
-                );
-              })}
-            </div>
-          ))}
-          {d.rules.length > 0 && (
-            <div className="tgx-group">
-              <p className="tgx-gt">
-                📌 <b>YOUR ALERTS</b>
-              </p>
-              {d.rules.map((r, k) => (
-                <p key={k} className="tgx-item">
-                  • <b>{r.name}</b>: {r.text} <i>({r.limit})</i>
-                </p>
-              ))}
-            </div>
-          )}
-          {d.more > 0 && <p>+{d.more} more in AdMate</p>}
-          <p>
-            <i>Looking back only, not a forecast. AdMate never changes your ads.</i>
           </p>
           <span className="tgx-time">{when}</span>
         </div>

@@ -302,8 +302,46 @@ export const aiUsage = pgTable("ai_usage", {
   inputTokens: integer("input_tokens").notNull().default(0),
   outputTokens: integer("output_tokens").notNull().default(0),
   cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+  // What the answer cost at Anthropic's list prices, priced by the model that served it.
+  costUsd: doublePrecision("cost_usd").notNull().default(0),
   ok: boolean("ok").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().default(sql`now()`),
+});
+
+// AdMate Assistant credits, one balance per person (lib/ai/credits.ts). Every change is
+// a ledger row, so the balance is the sum and can always be explained: the beta grant,
+// purchases (ref = purchase:<id>, so a purchase is credited once) and each answer's cost.
+// Amounts are in hundredths of a credit.
+export const creditLedger = pgTable(
+  "credit_ledger",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    units: integer("units").notNull(), // + added, − used; 100 units = 1 credit
+    kind: text("kind").notNull(), // grant | purchase | usage | adjust
+    ref: text("ref"),
+    workspaceId: text("workspace_id"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("credit_ledger_user_idx").on(t.userId, t.createdAt), uniqueIndex("credit_ledger_ref_idx").on(t.userId, t.ref)],
+);
+
+// Credit pack purchases. provider "test" is the test checkout; a real provider fills
+// providerRef and confirms payment the same way (completePurchase).
+export const creditPurchases = pgTable("credit_purchases", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  pack: text("pack").notNull(),
+  credits: integer("credits").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  provider: text("provider").notNull(),
+  providerRef: text("provider_ref"),
+  status: text("status").notNull().default("pending"), // pending | paid | canceled
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
 });
 
 // Alerts (Advanced → Alerts): automatic alert settings per ad account, including

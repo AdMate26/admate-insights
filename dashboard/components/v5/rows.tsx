@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useV5, usePeriodQuery } from "./ctx";
 import { usePage } from "./page";
-import { ConfLabel, DriverChip, ImpactChip, KindTag, PathCrumbs, Plat, PrioChip } from "./bits";
-import { firstSentence, isOpen, kindOf, plain, PRIO_PLAIN, rowOf, statusText, stepsOf, type Item } from "./core";
+import { ConfLabel, Dot, DriverChip, ImpactChip, PrioText } from "./bits";
+import { firstSentence, isOpen, KIND, kindOf, plain, PLATFORM, PRIO_PLAIN, rowOf, statusText, stepsOf, type Item } from "./core";
 import { PAGE_HREF, type PageId } from "@/lib/levels";
 
 // Links to another page of this account, keeping the selected period.
@@ -19,33 +19,49 @@ export function useHref() {
   };
 }
 
-// One problem or opportunity, ranked (prototype orow).
+// One problem or opportunity, ranked (prototype orow): the title, then one quiet
+// line (priority, kind, platform, campaign, main driver). The rest is in the panel.
 export function ORow({ d, i }: { d: Item; i: number }) {
   const { vm, open } = usePage();
   const r = rowOf(vm!, d.entity as never);
   const closed = !isOpen(d);
+  const camp = String(d.where ?? "").split(" › ")[0];
   return (
     <button className={`irow orow ${d.priority}${closed ? " closed" : ""}`} type="button" onClick={() => open(d.key)}>
       <span className="n">{i + 1}</span>
       <span className="body">
-        <span className="tags">
-          <PrioChip p={d.priority} />
-          <KindTag kind={kindOf(d)} />
-          <Plat p={d.platform} />
-          <DriverChip drivers={r?.drivers} />
-        </span>
         <span className="t">{d.title}</span>
-        {d.where && (
-          <span className="path">
-            <PathCrumbs where={d.where} />
-          </span>
-        )}
-        {closed && <span className="sub">{statusText(d)}</span>}
+        <span className="meta">
+          <PrioText p={d.priority} />
+          <Dot />
+          <span>{KIND[kindOf(d)]?.[0]}</span>
+          {d.platform && (
+            <>
+              <Dot />
+              <span>{PLATFORM[d.platform] ?? d.platform}</span>
+            </>
+          )}
+          {camp && !d.title.includes(camp) && (
+            <>
+              <Dot />
+              <span>in {camp}</span>
+            </>
+          )}
+          <DriverChip drivers={r?.drivers} />
+          {d.confidence === "low" && <ConfLabel c={d.confidence} />}
+          {closed && (
+            <>
+              <Dot />
+              <span>{statusText(d)}</span>
+            </>
+          )}
+        </span>
       </span>
-      <span className="side-r">
+      <span className="side-r" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <ImpactChip impact={d.impact} />
-        <ConfLabel c={d.confidence} />
-        <span className="link small">Investigate →</span>
+        <span className="go" aria-hidden="true">
+          ›
+        </span>
       </span>
     </button>
   );

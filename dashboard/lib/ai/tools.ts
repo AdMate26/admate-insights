@@ -13,7 +13,8 @@ import { computePlan } from "../analysis/plan";
 import { advantage } from "../analysis/wording";
 import type { Analysis, CampaignRow, EntityLevel, Finding } from "../analysis/types";
 import { rangeDays } from "../dates";
-import { loadFacts } from "../data/workspaces";
+import { getWorkspace, loadFacts } from "../data/workspaces";
+import { loadGeography } from "../data/geography";
 
 // Read-only tools the assistant uses to look at the account. Every number they
 // return is computed and formatted by AdMate's engine, so the answer can quote
@@ -92,6 +93,16 @@ const DEFS: Anthropic.Beta.BetaTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "get_locations",
+    description:
+      "Where the money went by location (country, region or city) across all campaigns: spend and share of spend per location. Then, for one objective (default: the biggest with enough results), each location's spend, results, share of results, cost per result (or ROAS) and AdMate's verdict (best value, costly, as expected, too little data). Says when the numbers are a simulated split (the sample account) or when no location export was uploaded. Use for questions about places, regions or cities.",
+    input_schema: {
+      type: "object",
+      properties: { objective: { type: "string", enum: [...OBJECTIVES] } },
+      additionalProperties: false,
+    },
+  },
 ];
 
 // Tool inputs stream as they are generated; runTool validates each one.
@@ -111,6 +122,7 @@ const Inputs = {
   get_item: z.object({ level: z.enum(LEVELS), id: z.string() }),
   compare_items: z.object({ level: z.enum(LEVELS), id_a: z.string(), id_b: z.string() }),
   get_daily: z.object({ campaign_id: z.string().optional(), objective: z.enum(OBJECTIVES).optional() }),
+  get_locations: z.object({ objective: z.enum(OBJECTIVES).optional() }),
 };
 export type ToolName = keyof typeof Inputs;
 
@@ -384,6 +396,30 @@ const TOOLS: { [K in ToolName]: (a: Analysis, input: z.infer<(typeof Inputs)[K]>
         const kpi = mode === "roas" ? (m.spend > 0 ? m.conversionValue / m.spend : null) : mode === "cpm" ? (m.impressions > 0 ? (m.spend / m.impressions) * 1000 : null) : results > 0 ? (m.spend / results) * (OBJECTIVE_DEFS[obj!].perThousand ? 1000 : 1) : null;
         return { date, spend: money(m.spend, cur), results: num(results), kpi: fk(kpi, mode, cur) ?? "no results" };
       }),
+    };
+  },
+  // The same numbers as the Geography page.
+  async get_locations(a, input) {
+    const cur = a.workspace.currency;
+    const ws = await getWorkspace(a.workspace.id);
+    const g = await loadGeography(a, !!ws?.isSample, input.objective ? `obj:${input.objective}` : undefined);
+    if (g.unavailable) return { available: false, note: "No location breakdown export was uploaded for these campaigns and dates, so AdMate can't say where the money went by location. It can be exported from the ads manager (by country, region or city) and uploaded under Upload report." };
+    const d = g.goal.data;
+    return {
+      available: true,
+      basis: g.basis,
+      ...(g.simulated ? { simulated: "Sample account: this is a simulated split of the real totals, not real location data. Say so when you use it." } : {}),
+      total_spend: money(g.total, cur),
+      spend_by_location: g.places.map((p) => ({ location: p.name, spend: money(p.spend, cur), share_of_spend: pct(p.share) })),
+      results_by_location:
+        d && !d.unavailable
+          ? {
+              objective: d.objectiveLabel,
+              result: d.resultLabel,
+              average: `${d.kpiShort} ${fk(d.avg, d.mode, cur) ?? "no results"}`,
+              rows: d.rows.map((r) => ({ location: r.name, spend: money(r.spend, cur), share_of_spend: pct(r.spendShare), results: num(r.results), share_of_results: pct(r.resultShare), [d.kpiShort]: fk(r.cost, d.mode, cur) ?? "no results", verdict: r.verdict })),
+            }
+          : null,
     };
   },
 };

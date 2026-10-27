@@ -36,7 +36,7 @@ export default async function AlertsPage({ params, searchParams }: PageProps<"/c
   };
   return (
     <V5Page vm={data.vm} page="alerts" askAvailable={ask}>
-      <PageHead title="Alerts" summary={false} />
+      <PageHead title="Alerts" />
       <div className="page">
         <AdvAlerts config={st.config} rules={st.rules} targets={st.targets} tg={tg} tgEnabled={telegramEnabled()} />
       </div>

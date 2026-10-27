@@ -4,13 +4,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useV5 } from "./ctx";
 import { usePage } from "./page";
-import { choices, days, fmtDate, fmtDay, guessKind, iso, plural, presetName, prevOf, range, type Period } from "./core";
+import { compareRange, days, fmtDate, fmtDay, iso, plural, presetName, presets, prevOf, range, type CompareMode, type Period } from "./core";
 
 // The page header (prototype renderHead): the account above the page title, the date
-// picker and the summary report on the right, and the line saying what is compared.
-export function PageHead({ title, eyebrow, withPeriod = true, summary = true, right }: { title: string; eyebrow?: string; withPeriod?: boolean; summary?: boolean; right?: ReactNode }) {
+// picker on the right, and the line saying what is compared. The summary report is its
+// own page now (Performance report).
+export function PageHead({ title, eyebrow, withPeriod = true, right }: { title: string; eyebrow?: string; withPeriod?: boolean; right?: ReactNode }) {
   const { name, isBeg, isAdv, end, min } = useV5();
-  const { vm: v, openSummary } = usePage();
+  const { vm: v } = usePage();
   const search = useSearchParams();
   const [explain, setExplain] = useState(false);
   const showPeriod = withPeriod && !!v && !!end && !!min;
@@ -58,11 +59,6 @@ export function PageHead({ title, eyebrow, withPeriod = true, summary = true, ri
         </div>
         <div className="meta">
           {showPeriod && v && <PeriodButton label={name0 ?? v.label} compareLabel={v.compareLabel} />}
-          {showPeriod && summary && (
-            <button className="btn" type="button" onClick={openSummary}>
-              {isBeg ? "Share a summary" : "Summary report"}
-            </button>
-          )}
           {right}
         </div>
       </div>
@@ -71,7 +67,29 @@ export function PageHead({ title, eyebrow, withPeriod = true, summary = true, ri
   );
 }
 
-type Pk = { aKind: string; a: Period | null; cmp: string; bKind: string; b: Period | null; cal: Record<string, { month: string; anchor: string | null }> };
+// The date picker, laid out like Madgicx's: quick ranges and the comparison on the
+// left; start and end dates, the comparison's dates and a calendar on the right.
+// It writes the same URL settings as before (from, to, cmp, cfrom, cto).
+type Pk = {
+  preset: string | null; // a quick range's id, or null for dates picked by hand
+  a: Period | null;
+  cmpOn: boolean;
+  mode: CompareMode;
+  b: Period | null; // the comparison when it is picked by hand
+  editing: "a" | "b"; // which range a calendar click sets
+  anchor: string | null; // first day clicked, waiting for the last
+  month: string; // yyyy-mm on the calendar
+};
+const CMP: [CompareMode, string][] = [
+  ["previous", "Previous period"],
+  ["weekday", "Previous period (match day of week)"],
+  ["year", "Previous year"],
+  ["custom", "Custom"],
+];
+const shiftMonth = (ym: string, n: number) => {
+  const [y, m] = ym.split("-").map(Number);
+  return iso(new Date(Date.UTC(y, m - 1 + n, 1))).slice(0, 7);
+};
 
 function PeriodButton({ label, compareLabel }: { label: string; compareLabel: string | null }) {
   const { end, min } = useV5();
@@ -94,145 +112,154 @@ function PeriodButton({ label, compareLabel }: { label: string; compareLabel: st
       document.removeEventListener("keydown", onKey);
     };
   }, [pk]);
+  const list = presets(E, MIN);
   const openPicker = () => {
     const a = { from: v!.from, to: v!.to };
-    const cmpP = search.get("cmp") === "none" ? "none" : search.get("cmp") === "custom" ? "pick" : "previous";
-    const b = cmpP === "pick" && search.get("cfrom") && search.get("cto") ? { from: search.get("cfrom")!, to: search.get("cto")! } : null;
-    setPk({ aKind: guessKind(a, E, MIN), a, cmp: cmpP, bKind: b ? guessKind(b, E, MIN) : guessKind(a, E, MIN), b, cal: {} });
+    const c = search.get("cmp");
+    const b = c === "custom" && search.get("cfrom") && search.get("cto") ? { from: search.get("cfrom")!, to: search.get("cto")! } : null;
+    // A hand-picked comparison that matches a rule shows as that rule.
+    const same = (m: CompareMode) => {
+      const r = compareRange(a, m);
+      return !!r && !!b && r.from === b.from && r.to === b.to;
+    };
+    const mode: CompareMode = !b ? "previous" : same("weekday") ? "weekday" : same("year") ? "year" : "custom";
+    setPk({ preset: list.find((p) => p.from === a.from && p.to === a.to)?.id ?? null, a, cmpOn: c !== "none", mode, b: mode === "custom" ? b : null, editing: "a", anchor: null, month: a.to.slice(0, 7) });
   };
+  const set = (patch: Partial<Pk>) => setPk((p) => (p ? { ...p, ...patch } : p));
+  const cmp = pk?.a && pk.cmpOn ? (pk.mode === "custom" ? pk.b : compareRange(pk.a, pk.mode)) : null;
   const apply = () => {
     if (!pk) return;
-    if (pk.cmp === "pick" && !pk.b) return toast("Choose the period to compare with first");
-    if (!pk.a || pk.cal.a?.anchor) return toast("Click a first and a last day on the calendar");
+    if (!pk.a || pk.anchor) return toast("Click a first and a last day on the calendar");
+    if (pk.cmpOn && !cmp) return toast("Choose the dates to compare with first");
     const q = new URLSearchParams();
     // Keep anything that isn't the period (e.g. a tab), drop the item panel and report mode.
     for (const [k, val] of search.entries()) if (!["from", "to", "cmp", "cfrom", "cto", "report", "vs", "open"].includes(k)) q.set(k, val);
     q.set("from", pk.a.from);
     q.set("to", pk.a.to);
-    if (pk.cmp === "none") q.set("cmp", "none");
-    else if (pk.cmp === "pick" && pk.b) {
+    const prev = prevOf(pk.a);
+    if (!pk.cmpOn) q.set("cmp", "none");
+    else if (cmp && (cmp.from !== prev.from || cmp.to !== prev.to)) {
       q.set("cmp", "custom");
-      q.set("cfrom", pk.b.from);
-      q.set("cto", pk.b.to);
+      q.set("cfrom", cmp.from);
+      q.set("cto", cmp.to);
     }
     setPk(null);
     router.push(`${path}?${q}`, { scroll: false });
   };
-  const set = (patch: Partial<Pk>) => setPk((p) => (p ? { ...p, ...patch } : p));
 
-  function chooser(which: "a" | "b") {
+  // Typing a date: the other end follows when the range would turn inside out.
+  const typed = (which: "a" | "b", k: "from" | "to", val: string) => {
+    if (!pk || !val) return;
+    const d = val < MIN && which === "a" ? MIN : val > E ? E : val;
+    const cur = (which === "a" ? pk.a : (pk.b ?? cmp)) ?? { from: d, to: d };
+    let { from, to } = cur;
+    if (k === "from") {
+      from = d;
+      if (to < from) to = from;
+    } else {
+      to = d;
+      if (from > to) from = to;
+    }
+    set(which === "a" ? { a: { from, to }, preset: null, editing: "a", anchor: null, month: d.slice(0, 7) } : { b: { from, to }, mode: "custom", editing: "b", anchor: null, month: d.slice(0, 7) });
+  };
+  // Calendar: the first click starts a range, the second ends it.
+  const clickDay = (ds: string) => {
+    if (!pk) return;
+    const w = pk.editing;
+    if (!pk.anchor) {
+      set(w === "a" ? { anchor: ds, a: { from: ds, to: ds }, preset: null } : { anchor: ds, b: { from: ds, to: ds }, mode: "custom" });
+      return;
+    }
+    const r = { from: ds < pk.anchor ? ds : pk.anchor, to: ds < pk.anchor ? pk.anchor : ds };
+    set(w === "a" ? { anchor: null, a: r } : { anchor: null, b: r });
+  };
+
+  function calendar() {
     const p = pk!;
-    const kind = which === "a" ? p.aKind : p.bKind;
-    const cur = p[which];
-    const list = kind === "custom" ? [] : choices(kind, E, MIN);
-    return (
-      <>
-        <div className="seg" role="group" aria-label="Period type">
-          {["day", "week", "month", "custom"].map((k) => (
-            <button key={k} type="button" aria-pressed={k === kind} onClick={() => set(which === "a" ? { aKind: k } : { bKind: k })}>
-              {({ day: "Day", week: "Week", month: "Month", custom: "Calendar" } as Record<string, string>)[k]}
-            </button>
-          ))}
-        </div>
-        {kind === "custom" ? (
-          calendar(which)
-        ) : (
-          <div className="choices">
-            {list.map((c, i) => (
-              <button key={i} type="button" aria-pressed={!!cur && cur.from === c.from && cur.to === c.to} onClick={() => set({ [which]: { from: c.from, to: c.to, name: c.name } })}>
-                {c.name}
-                {c.small && <small>{c.small}</small>}
-              </button>
-            ))}
-          </div>
-        )}
-      </>
-    );
-  }
-  // Two months side by side; click the first day, then the last day.
-  function calendar(which: "a" | "b") {
-    const p = pk!;
-    const cur = p[which];
-    const c = p.cal[which] ?? { month: (cur?.to && cur.to <= E ? cur.to : E).slice(0, 7), anchor: null };
-    const shown = c.anchor ? { from: c.anchor, to: c.anchor } : cur;
-    const shift = (ym: string, n: number) => {
-      const [y, m] = ym.split("-").map(Number);
-      return iso(new Date(Date.UTC(y, m - 1 + n, 1))).slice(0, 7);
-    };
-    const setCal = (cal: { month: string; anchor: string | null }) => set({ cal: { ...p.cal, [which]: cal } });
-    const click = (ds: string) => {
-      if (!c.anchor) set({ cal: { ...p.cal, [which]: { ...c, anchor: ds } }, [which]: { from: ds, to: ds, name: fmtDay(ds) } });
-      else {
-        const from = ds < c.anchor ? ds : c.anchor;
-        const to = ds < c.anchor ? c.anchor : ds;
-        set({ cal: { ...p.cal, [which]: { ...c, anchor: null } }, [which]: { from, to, name: range(from, to) } });
-      }
-    };
-    const month = (ym: string) => {
-      const [y, m] = ym.split("-").map(Number);
-      const first = new Date(Date.UTC(y, m - 1, 1));
-      const n = new Date(Date.UTC(y, m, 0)).getUTCDate();
-      const cells: ReactNode[] = [];
-      for (let i = 0; i < (first.getUTCDay() + 6) % 7; i++) cells.push(<span key={`e${i}`} />);
-      for (let dd = 1; dd <= n; dd++) {
-        const ds = `${ym}-${String(dd).padStart(2, "0")}`;
-        const inR = !!shown && ds >= shown.from && ds <= shown.to;
-        const edge = !!shown && (ds === shown.from || ds === shown.to);
-        cells.push(
-          <button key={ds} type="button" className={`cd${inR ? " in" : ""}${edge ? " edge" : ""}${ds === E ? " today" : ""}`} aria-label={`${fmtDay(ds)}${ds === E ? " (latest data)" : ""}`} aria-pressed={edge} disabled={ds < MIN || ds > E} onClick={() => click(ds)}>
-            {dd}
-          </button>,
-        );
-      }
-      return (
-        <div className="cal-m" key={ym}>
-          <b>{first.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}</b>
-          <div className="cal-g">
-            {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map((x) => (
-              <span key={x}>{x}</span>
-            ))}
-            {cells}
-          </div>
-        </div>
+    const [y, m] = p.month.split("-").map(Number);
+    const first = new Date(Date.UTC(y, m - 1, 1));
+    const n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const a = p.a;
+    const cells: ReactNode[] = [];
+    for (let i = 0; i < (first.getUTCDay() + 6) % 7; i++) cells.push(<span key={`e${i}`} />);
+    for (let dd = 1; dd <= n; dd++) {
+      const ds = `${p.month}-${String(dd).padStart(2, "0")}`;
+      const inA = !!a && ds >= a.from && ds <= a.to;
+      const inB = !!cmp && ds >= cmp.from && ds <= cmp.to;
+      const cls = [
+        "dp-d",
+        inA && "in",
+        inA && ds === a!.from && "start",
+        inA && ds === a!.to && "end",
+        inB && "cmp",
+        inB && ds === cmp!.from && "cstart",
+        inB && ds === cmp!.to && "cend",
+        ds === E && "latest",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      cells.push(
+        <button key={ds} type="button" className={cls} aria-label={`${fmtDay(ds)}${ds === E ? " (latest data)" : ""}`} aria-pressed={inA && (ds === a!.from || ds === a!.to)} disabled={ds < MIN || ds > E} onClick={() => clickDay(ds)}>
+          <span>{dd}</span>
+        </button>,
       );
-    };
-    const left = shift(c.month, -1);
+    }
     return (
-      <div className="cal">
-        <div className="cal-nav">
-          <button type="button" aria-label="Earlier months" disabled={left <= MIN.slice(0, 7)} onClick={() => setCal({ ...c, month: shift(c.month, -1) })}>
+      <div className="dp-cal">
+        <div className="dp-calnav">
+          <button type="button" aria-label="Earlier month" disabled={p.month <= MIN.slice(0, 7)} onClick={() => set({ month: shiftMonth(p.month, -1) })}>
             ‹
           </button>
-          <span>{c.anchor ? "Now click the last day" : "Click the first day, then the last day"}</span>
-          <button type="button" aria-label="Later months" disabled={c.month >= E.slice(0, 7)} onClick={() => setCal({ ...c, month: shift(c.month, 1) })}>
+          <b>{first.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}</b>
+          <button type="button" aria-label="Later month" disabled={p.month >= E.slice(0, 7)} onClick={() => set({ month: shiftMonth(p.month, 1) })}>
             ›
           </button>
         </div>
-        <div className="cal-ms">
-          {month(left)}
-          {month(c.month)}
+        <div className="dp-grid">
+          {["M", "T", "W", "T", "F", "S", "S"].map((x, i) => (
+            <span key={i} className="dp-wd">
+              {x}
+            </span>
+          ))}
+          {cells}
         </div>
-        <p className="cal-sum">
-          {cur && !c.anchor ? (
-            <>
-              Selected: <b>{range(cur.from, cur.to)}</b> · {plural(days(cur.from, cur.to), "day")}
-            </>
-          ) : c.anchor ? (
-            <>
-              Starts <b>{fmtDay(c.anchor)}</b>…
-            </>
-          ) : (
-            "Nothing selected yet."
-          )}{" "}
-          <span className="small-note">
-            Data from {fmtDate(MIN)} to {fmtDate(E)}.
-          </span>
+        <p className="dp-help">
+          {p.anchor ? "Now click the last day." : p.editing === "b" ? "Clicks set the comparison dates." : "Click a first and a last day."} Data from {fmtDate(MIN)} to {fmtDate(E)}.
         </p>
       </div>
     );
   }
 
-  const prev = pk?.a ? prevOf(pk.a) : null;
+  const dateField = (which: "a" | "b", k: "from" | "to", r: Period | null, locked = false) => (
+    <label className="dp-field">
+      <span>{k === "from" ? "Start date" : "End date"}</span>
+      <input
+        type="date"
+        value={r?.[k] ?? ""}
+        min={which === "a" ? MIN : undefined}
+        max={E}
+        readOnly={locked}
+        onFocus={() => !locked && set({ editing: which })}
+        onClick={() => locked && set({ mode: "custom", b: cmp, editing: "b" })}
+        onChange={(e) => typed(which, k, e.target.value)}
+      />
+    </label>
+  );
+
+  let summary = "";
+  if (pk?.a) {
+    const n = days(pk.a.from, pk.a.to);
+    const prev = prevOf(pk.a);
+    summary = !pk.cmpOn
+      ? `${plural(n, "day")}, no comparison`
+      : !cmp
+        ? `${plural(n, "day")} vs …`
+        : pk.mode === "previous" && days(prev.from, prev.to) === n
+          ? `${plural(n, "day")} vs the ${plural(n, "day")} before`
+          : `${range(pk.a.from, pk.a.to)} vs ${range(cmp.from, cmp.to)}`;
+  }
+  const early = !!cmp && cmp.from < MIN;
+
   return (
     <div ref={root} style={{ position: "relative", display: "contents" }}>
       <button className="periodbtn" type="button" aria-expanded={!!pk} aria-haspopup="dialog" onClick={() => (pk ? setPk(null) : openPicker())}>
@@ -245,45 +272,74 @@ function PeriodButton({ label, compareLabel }: { label: string; compareLabel: st
         <span aria-hidden="true">▾</span>
       </button>
       {pk && (
-        <div className="picker" role="dialog" aria-label="Choose periods">
-          <div className="pk">
-            <h4>1. Show</h4>
-            {chooser("a")}
-          </div>
-          <div className="pk">
-            <h4>2. Compare with</h4>
-            <div className="radios">
-              <label>
-                <input type="radio" name="pkcmp" value="previous" checked={pk.cmp === "previous"} onChange={() => set({ cmp: "previous" })} />
-                <span>
-                  The period right before
-                  {prev && (
-                    <small>
-                      {range(prev.from, prev.to)}
-                      {prev.from < MIN ? " · partly before your first upload" : ""}
-                    </small>
-                  )}
-                </span>
-              </label>
-              <label>
-                <input type="radio" name="pkcmp" value="pick" checked={pk.cmp === "pick"} onChange={() => set({ cmp: "pick" })} />
-                <span>
-                  Another period I choose<small>e.g. this Tuesday vs last Tuesday, or October vs August</small>
-                </span>
-              </label>
-              <label>
-                <input type="radio" name="pkcmp" value="none" checked={pk.cmp === "none"} onChange={() => set({ cmp: "none" })} />
-                <span>
-                  Don’t compare<small>Judged against each campaign’s own past and your targets</small>
-                </span>
-              </label>
+        <div className="dp" role="dialog" aria-label="Choose dates">
+          <div className="dp-left">
+            <div className="dp-list" role="group" aria-label="Quick ranges">
+              {list.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="dp-opt"
+                  aria-pressed={pk.preset === p.id}
+                  disabled={!p.ok}
+                  title={p.ok ? range(p.from, p.to) : `Needs data from ${fmtDate(p.from)}; your uploads start ${fmtDate(MIN)}`}
+                  onClick={() => set({ preset: p.id, a: { from: p.from, to: p.to }, anchor: null, editing: "a", month: p.to.slice(0, 7) })}
+                >
+                  <span>{p.name}</span>
+                  {!p.ok && <span className="dp-tag">Not enough data</span>}
+                </button>
+              ))}
+              <button type="button" className="dp-opt" aria-pressed={pk.preset === null} onClick={() => set({ preset: null, editing: "a" })}>
+                <span>Custom</span>
+                <span className="dp-note">pick on the calendar</span>
+              </button>
             </div>
-            {pk.cmp === "pick" && chooser("b")}
+            <div className="dp-cmp">
+              {/* Off: just the chosen dates, judged against each campaign's own past and your targets. */}
+              <label className="dp-switch">
+                <span>Compare</span>
+                <input type="checkbox" role="switch" checked={pk.cmpOn} onChange={(e) => set({ cmpOn: e.target.checked, editing: "a", anchor: null })} />
+              </label>
+              {pk.cmpOn &&
+                CMP.map(([m, name]) => {
+                  const r = pk.a ? compareRange(pk.a, m) : null;
+                  const off = m === "year" && !!r && r.to < MIN;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      className="dp-opt"
+                      aria-pressed={pk.cmpOn && pk.mode === m}
+                      disabled={off}
+                      title={r ? range(r.from, r.to) : "Pick the dates on the calendar"}
+                      onClick={() => set(m === "custom" ? { cmpOn: true, mode: m, b: pk.b ?? (pk.a ? compareRange(pk.a, "previous") : null), editing: "b", anchor: null } : { cmpOn: true, mode: m, editing: "a", anchor: null })}
+                    >
+                      <span>{name}</span>
+                      {off && <span className="dp-tag">Not enough data</span>}
+                    </button>
+                  );
+                })}
+            </div>
           </div>
-          <div className="pickfoot">
-            <span>
-              Data from {fmtDate(MIN)} to {fmtDate(E)}
-            </span>
+          <div className="dp-right">
+            <div className="dp-fields">
+              {dateField("a", "from", pk.a)}
+              {dateField("a", "to", pk.a)}
+            </div>
+            {pk.cmpOn && (
+              <>
+                <span className="dp-sub">Compare</span>
+                <div className="dp-fields">
+                  {dateField("b", "from", cmp, pk.mode !== "custom")}
+                  {dateField("b", "to", cmp, pk.mode !== "custom")}
+                </div>
+                {early && <p className="dp-help">Partly before your first upload ({fmtDate(MIN)}).</p>}
+              </>
+            )}
+            {calendar()}
+          </div>
+          <div className="dp-foot">
+            <span>{summary}</span>
             <button className="btn" type="button" onClick={() => setPk(null)}>
               Cancel
             </button>

@@ -184,6 +184,42 @@ export function driverSentence(drivers: Driver[] | null | undefined) {
 // ---------- the period ----------
 export type Period = { from: string; to: string; name?: string };
 // Calendar days, weeks (Mon–Sun) and months that have data, ending on the latest day (end).
+// The date picker's quick ranges (laid out like Madgicx's), counted back from the
+// latest day in the uploads, not from today: reports arrive with a delay. A range
+// that starts before the first upload can't be chosen.
+export type Preset = Period & { id: string; name: string; ok: boolean };
+export function presets(end: string, min: string): Preset[] {
+  const mon = addDays(end, -((D0(end).getUTCDay() + 6) % 7));
+  const e = D0(end);
+  const m1 = iso(new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), 1)));
+  const pm1 = iso(new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth() - 1, 1)));
+  const back = (n: number) => ({ from: addDays(end, -(n - 1)), to: end });
+  const list: (Period & { id: string; name: string })[] = [
+    { id: "latest", name: "Latest day", from: end, to: end },
+    { id: "daybefore", name: "Day before", from: addDays(end, -1), to: addDays(end, -1) },
+    { id: "thisweek", name: "This week (Mon – latest)", from: mon, to: end },
+    { id: "last7", name: "Last 7 days", ...back(7) },
+    { id: "lastweek", name: "Last week (Mon – Sun)", from: addDays(mon, -7), to: addDays(mon, -1) },
+    { id: "last14", name: "Last 14 days", ...back(14) },
+    { id: "last28", name: "Last 28 days", ...back(28) },
+    { id: "last30", name: "Last 30 days", ...back(30) },
+    { id: "thismonth", name: "This month", from: m1, to: end },
+    { id: "lastmonth", name: "Last month", from: pm1, to: addDays(m1, -1) },
+    { id: "last90", name: "Last 90 days", ...back(90) },
+  ];
+  return list.map((p) => ({ ...p, ok: p.from >= min }));
+}
+// What a period is compared with. "previous" is the engine's own rule (prevOf).
+export type CompareMode = "previous" | "weekday" | "year" | "custom";
+export function compareRange(a: Period, mode: CompareMode): Period | null {
+  if (mode === "previous") return prevOf(a);
+  if (mode === "weekday") {
+    const n = Math.ceil(days(a.from, a.to) / 7) * 7;
+    return { from: addDays(a.from, -n), to: addDays(a.to, -n) };
+  }
+  if (mode === "year") return { from: addDays(a.from, -364), to: addDays(a.to, -364) };
+  return null;
+}
 export function choices(kind: string, end: string, min: string): (Period & { small: string })[] {
   if (kind === "day") return Array.from({ length: 21 }, (_, i) => addDays(end, -i)).filter((d) => d >= min).map((d, i) => ({ from: d, to: d, name: fmtDay(d), small: i === 0 ? "latest day" : "" }));
   if (kind === "week") {
@@ -232,6 +268,9 @@ export function guessKind(p: Period, end: string, min: string) {
   return "custom";
 }
 export function presetName(p: Period, end: string, min: string) {
+  // Single days keep their date ("Mon, Oct 26"); the rest read "Last 14 days", "This week".
+  const q = presets(end, min).find((x) => x.from === p.from && x.to === p.to && x.from !== x.to);
+  if (q) return q.name.replace(/ \(.*\)$/, "");
   for (const k of ["week", "month", "day"]) {
     const c = choices(k, end, min).find((x) => x.from === p.from && x.to === p.to);
     if (c) return c.name;

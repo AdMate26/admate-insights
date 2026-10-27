@@ -102,12 +102,12 @@ export async function disconnectTelegram() {
 export async function sendTestTelegram(workspaceId: string): Promise<{ error?: string }> {
   const user = await requireUser();
   await requireWorkspace(workspaceId);
-  const { accountMessage, sendTelegram, telegramEnabled } = await import("@/lib/telegram");
+  const { accountMessage, sendAccountMessage, telegramEnabled } = await import("@/lib/telegram");
   if (!telegramEnabled()) return { error: "Telegram isn’t set up for AdMate yet." };
   const db = await getDb();
   const [link] = await db.select().from(telegramLinks).where(eq(telegramLinks.userId, user.id));
   if (!link?.chatId) return { error: "Connect Telegram first." };
   const m = await accountMessage(workspaceId);
   if (!m) return { error: "This account has no data yet." };
-  return (await sendTelegram(link.chatId, m.text, { html: true, buttons: m.buttons })) ? {} : { error: "Telegram didn’t accept the message. Try again in a minute." };
+  return (await sendAccountMessage(link.chatId, m)) ? {} : { error: "Telegram didn’t accept the message. Try again in a minute." };
 }
