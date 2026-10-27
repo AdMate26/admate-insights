@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
-import { chooseLevel, loadSampleData } from "@/app/actions";
+import { loadSampleData } from "@/app/actions";
 import { signOut } from "@/app/(auth)/actions";
-import { DEMO_LEVEL_COOKIE, KEEPS_PERIOD, LEVEL_INFO, LEVELS, MENUS, PAGE_HREF, PERIOD_KEYS, levelTarget, type MenuIcon } from "@/lib/levels";
-import { Portal, useV5 } from "./ctx";
+import { KEEPS_PERIOD, MENUS, PAGE_HREF, PERIOD_KEYS, type MenuIcon } from "@/lib/levels";
+import { useV5 } from "./ctx";
 import { apiPath } from "@/lib/integration/paths";
 
-// The sidebar (prototype .side): wordmark, the ad account and "Your view" pickers,
-// the view's menu with badges, and the footer.
+// The sidebar (prototype .side): wordmark, the ad account picker, the menu with
+// badges, and the footer. AdMate has one view (Advanced), so there is no view picker.
 
 const IC: Record<MenuIcon, string> = {
   home: "M2 2h5v6H2z M9 2h5v3.5H9z M9 7.5h5V14H9z M2 10h5v4H2z",
@@ -26,18 +26,17 @@ const IC: Record<MenuIcon, string> = {
   budget: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Z M8 2v6l4.3 4.2",
   alerts: "M4 11V7a4 4 0 0 1 8 0v4l1.5 1.5h-11Z M6.5 13.5a1.5 1.5 0 0 0 3 0",
   reports: "M2.5 2.5h11v11h-11z M2.5 6.2h11 M2.5 9.8h11 M6.2 6.2v7.3",
+  geography: "M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8Z M1.8 8h12.4 M8 1.8c1.8 1.7 2.6 3.8 2.6 6.2s-.8 4.5-2.6 6.2 M8 1.8C6.2 3.5 5.4 5.6 5.4 8s.8 4.5 2.6 6.2",
+  report: "M3.5 1.8h6l3 3v9.4h-9z M9.5 1.8v3h3 M5.8 12v-2.4 M8 12V7.6 M10.2 12V9",
   upload: "M8 12.5V3.5 M4.5 7 8 3.5 11.5 7 M3 13.5h10",
   settings: "M2.5 4.5h11 M2.5 11.5h11 M5.5 2.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z M10.5 9.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z",
 };
 
-export function Side({ counts: initial, answered, userId }: { counts: { actions: number; alerts: number }; answered: boolean; userId: string }) {
+export function Side({ counts: initial, userId }: { counts: { actions: number; alerts: number }; userId: string }) {
   const { ws, level, accounts, isAdv, email, readOnly } = useV5();
   const path = usePathname();
   const search = useSearchParams();
-  const router = useRouter();
-  const [pop, setPop] = useState<null | "acct" | "view">(null);
-  const [welcome, setWelcome] = useState<null | "ask" | "compare">(answered ? null : "ask");
-  const [pending, start] = useTransition();
+  const [pop, setPop] = useState<null | "acct">(null);
   const [counts, setCounts] = useState(initial);
   const side = useRef<HTMLElement>(null);
   const keep = new URLSearchParams();
@@ -75,24 +74,8 @@ export function Side({ counts: initial, answered, userId }: { counts: { actions:
     setPop(null);
   }
 
-  const choose = (l: (typeof LEVELS)[number]) =>
-    start(async () => {
-      setWelcome(null);
-      setPop(null);
-      // AdMate integration: a public demo visitor's view is kept in this browser only.
-      if (readOnly) {
-        document.cookie = `${DEMO_LEVEL_COOKIE}=${l}; path=/; max-age=2592000; samesite=lax`;
-        const to = levelTarget(l, path, search.toString());
-        if (to) router.push(to);
-        router.refresh();
-        return;
-      }
-      await chooseLevel(l, path, search.toString());
-      router.refresh();
-    });
   const acct = accounts.find((a) => a.id === ws);
   const meta = (a: { industry: string | null; country: string | null }) => [a.industry, a.country].filter(Boolean).join(" · ");
-  const info = LEVEL_INFO[level];
 
   return (
     <aside className="side" aria-label="AdMate" ref={side}>
@@ -149,40 +132,6 @@ export function Side({ counts: initial, answered, userId }: { counts: { actions:
           </div>
         )}
       </div>
-      <div className="pickwrap">
-        <button className="pickbtn viewbtn" type="button" aria-expanded={pop === "view"} aria-haspopup="true" onClick={() => setPop(pop === "view" ? null : "view")}>
-          <span className="label">Your view</span>
-          <b>{info.name}</b>
-          <small>{pending ? "Switching…" : info.job}</small>
-          <span className="chev" aria-hidden="true">
-            ▾
-          </span>
-        </button>
-        {pop === "view" && (
-          <div className="pop" role="menu">
-            {LEVELS.map((k) => (
-              <button key={k} type="button" role="menuitemradio" aria-checked={k === level} onClick={() => (k === level ? setPop(null) : choose(k))}>
-                <b>
-                  {LEVEL_INFO[k].name} · {LEVEL_INFO[k].job}
-                  {k === level ? " ✓" : ""}
-                </b>
-                <small>{LEVEL_INFO[k].who}</small>
-              </button>
-            ))}
-            <hr />
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setPop(null);
-                setWelcome("compare");
-              }}
-            >
-              <b>Compare the three views</b>
-            </button>
-          </div>
-        )}
-      </div>
       <nav className="nav" aria-label="Pages">
         {MENUS[level].map((g) => (
           <div key={g.group ?? "main"} style={{ display: "contents" }}>
@@ -205,12 +154,6 @@ export function Side({ counts: initial, answered, userId }: { counts: { actions:
         ))}
       </nav>
       <div className="side-foot">
-        <p className="protopill">
-          <b>How AdMate works.</b> Every number comes from your uploaded reports. AdMate advises; it never changes your ad account.
-        </p>
-        <button type="button" onClick={() => setWelcome("compare")}>
-          Show the welcome question again
-        </button>
         {readOnly ? (
           // AdMate integration: public demo visitors aren't signed in. /login is on the website.
           <a href="/login">Log in or sign up free</a>
@@ -228,8 +171,12 @@ export function Side({ counts: initial, answered, userId }: { counts: { actions:
             <Identify userId={userId} email={email} />
           </>
         )}
+        {/* AdMate integration: the website's legal pages (outside the /app basePath). */}
+        <p className="side-legal">
+          <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+          <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+        </p>
       </div>
-      {welcome && <Portal><Welcome compare={welcome === "compare"} pending={pending} onPick={(k) => (k === level && welcome === "compare" ? setWelcome(null) : choose(k))} onClose={answered || welcome === "compare" ? () => setWelcome(null) : null} /></Portal>}
     </aside>
   );
 }
@@ -240,63 +187,4 @@ function Identify({ userId, email }: { userId: string; email: string }) {
     if (posthog.__loaded) posthog.identify(userId, { email });
   }, [userId, email]);
   return null;
-}
-
-// The welcome question, asked once: which view suits you? (Also "Compare the three views".)
-function Welcome({ compare, pending, onPick, onClose }: { compare: boolean; pending: boolean; onPick: (k: (typeof LEVELS)[number]) => void; onClose: (() => void) | null }) {
-  const { level } = useV5();
-  const first = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    first.current?.focus();
-    if (!onClose) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <>
-      <div className="scrim" onClick={onClose ?? undefined} />
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="ob-t" onClick={(e) => onClose && e.target === e.currentTarget && onClose()}>
-        <div className="onboard">
-          <div>
-            <span className="label">{compare ? "The three views" : "Welcome to AdMate"}</span>
-            <h2 id="ob-t" style={{ marginTop: 6 }}>
-              {compare ? "Same numbers, three ways to use them" : "Which view suits you?"}
-            </h2>
-          </div>
-          <p>AdMate reads your ad reports and tells you how your ads are doing, what’s wrong and what to do next. Every view uses the same numbers; they differ in how much they show and what they help you do.</p>
-          <div className="lvlcards">
-            {LEVELS.map((k, i) => {
-              const x = LEVEL_INFO[k];
-              const mine = compare && k === level;
-              return (
-                <button key={k} ref={i === 0 ? first : undefined} className="lvlcard" type="button" aria-pressed={mine} disabled={pending} onClick={() => onPick(k)}>
-                  <span className="job">{x.job}</span>
-                  <b>{x.name}</b>
-                  <span className="who">{x.who}</span>
-                  <ul>
-                    {x.see.map((s) => (
-                      <li key={s}>{s}</li>
-                    ))}
-                  </ul>
-                  <span className="small-note" style={{ fontFamily: "var(--font-mono)", fontSize: 11.5 }}>
-                    {x.example}
-                  </span>
-                  <span className={`btn ${mine ? "" : "primary"} small pick`}>{mine ? "Your current view" : pending ? "Opening…" : `Use ${x.name}`}</span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="small-note">
-            {compare ? "" : "Not sure? Start with Beginner. "}You can switch any time from “Your view” in the sidebar.{" "}
-            {onClose && (
-              <button className="link" type="button" onClick={onClose}>
-                Close
-              </button>
-            )}
-          </p>
-        </div>
-      </div>
-    </>
-  );
 }

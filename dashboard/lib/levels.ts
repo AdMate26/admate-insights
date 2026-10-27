@@ -5,8 +5,9 @@ export const LEVELS = ["beginner", "intermediate", "advanced"] as const;
 export type Level = (typeof LEVELS)[number];
 export const isLevel = (x: unknown): x is Level => LEVELS.includes(x as Level);
 
-// Shown behind the welcome question, before someone has chosen.
-export const DEFAULT_LEVEL: Level = "intermediate";
+// AdMate now has one view: Advanced. The other two stay defined (their pages are
+// unused) so links and saved settings from before keep working.
+export const DEFAULT_LEVEL: Level = "advanced";
 
 export const LEVEL_INFO: Record<Level, { name: string; job: string; who: string; see: string[]; example: string }> = {
   beginner: {
@@ -33,13 +34,15 @@ export const LEVEL_INFO: Record<Level, { name: string; job: string; who: string;
 };
 
 // Pages of one ad account; href is relative to /c/<account>.
-export const PAGES = ["overview", "actions", "campaigns", "audience", "portfolio", "explorer", "budget", "alerts", "reports", "upload", "settings"] as const;
+export const PAGES = ["overview", "actions", "campaigns", "audience", "geography", "report", "portfolio", "explorer", "budget", "alerts", "reports", "upload", "settings"] as const;
 export type PageId = (typeof PAGES)[number];
 export const PAGE_HREF: Record<PageId, string> = {
   overview: "",
   actions: "/actions",
   campaigns: "/campaigns",
   audience: "/audience",
+  geography: "/geography",
+  report: "/report",
   portfolio: "/portfolio",
   explorer: "/explorer",
   budget: "/budget",
@@ -51,10 +54,10 @@ export const PAGE_HREF: Record<PageId, string> = {
 // The URL parameters of the selected period, and the pages that keep it when you
 // move between them (analysis pages; not uploads or settings).
 export const PERIOD_KEYS = ["from", "to", "cmp", "cfrom", "cto", "report", "vs"] as const;
-export const KEEPS_PERIOD = new Set<PageId>(["overview", "actions", "campaigns", "audience", "portfolio", "explorer", "budget", "alerts"]);
+export const KEEPS_PERIOD = new Set<PageId>(["overview", "actions", "campaigns", "audience", "geography", "report", "portfolio", "explorer", "budget", "alerts"]);
 
 // Menu icons (prototype v5.1), one per subject.
-export type MenuIcon = "home" | "todo" | "myads" | "optimize" | "campaigns" | "audience" | "portfolio" | "actions" | "explorer" | "budget" | "alerts" | "reports" | "upload" | "settings";
+export type MenuIcon = "home" | "todo" | "myads" | "optimize" | "campaigns" | "audience" | "geography" | "report" | "portfolio" | "actions" | "explorer" | "budget" | "alerts" | "reports" | "upload" | "settings";
 export type MenuItem = { page: PageId; label: string; icon: MenuIcon; hint: string; badge?: "actions" | "alerts" };
 export type MenuGroup = { group: string | null; items: MenuItem[] };
 
@@ -97,6 +100,8 @@ export const MENUS: Record<Level, MenuGroup[]> = {
         { page: "explorer", label: "Explorer", icon: "explorer", hint: "Any level, your columns, saved views, CSV" },
         { page: "budget", label: "Budget", icon: "budget", hint: "Spend by goal, and where to add or cut" },
         { page: "audience", label: "Audience", icon: "audience", hint: "Segments with index and z-score" },
+        { page: "geography", label: "Geography", icon: "geography", hint: "Where your money goes, by location" },
+        { page: "report", label: "Performance report", icon: "report", hint: "Build a report: dates, metrics and charts" },
         { page: "alerts", label: "Alerts", icon: "alerts", hint: "Automatic alerts, your own KPI alerts and Telegram (badge: alerts now)", badge: "alerts" },
       ],
     },
@@ -109,6 +114,8 @@ const DEFAULT_LABEL: Record<PageId, string> = {
   actions: "Actions",
   campaigns: "Campaigns",
   audience: "Audience insight",
+  geography: "Geography",
+  report: "Performance report",
   portfolio: "Portfolio",
   explorer: "Explorer",
   budget: "Budget",

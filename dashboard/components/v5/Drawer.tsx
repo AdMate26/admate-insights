@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useV5 } from "./ctx";
 import { usePage } from "./page";
-import { ConfDots, DeltaChip, ImpactChip, KindTag, PathCrumbs, Plat, PrioChip, Src, T } from "./bits";
+import { ConfDots, DeltaChip, Dot, ImpactChip, KindTag, PathCrumbs, Plat, PrioChip, PrioText, Src, T } from "./bits";
 import { DailyChart, DailyFacts, DriverBars, SimpleBars, type Series } from "./charts";
 import {
   addDays, CONF_PLAIN, driverSentence, fmtDay, higher, kindOf, LEVEL, n0, n1, pct, plain, PRIO_PLAIN, prReasonOf, recheckOf, rowOf, statusText, stepsOf,
@@ -13,8 +13,9 @@ import { LEVEL_INFO, type Level as View } from "@/lib/levels";
 import { apiPath } from "@/lib/integration/paths";
 
 // The item panel in three depths (prototype openDrawer): Beginner (plain words),
-// Intermediate (investigate: what changed, why, where, day by day) and Advanced
-// (the same plus statistics, "how AdMate judged this" open).
+// Intermediate (investigate: what changed, what to do, why; evidence, where and day
+// by day under "More detail") and Advanced (the same plus statistics, "how AdMate
+// judged this" open).
 
 export function useEntitySeries(ws: string, r: Pick<Row, "level" | "id" | "objective" | "mode"> | null, from: string, to: string) {
   const [got, setGot] = useState<{ key: string; s: Series | null } | null>(null);
@@ -259,13 +260,20 @@ function investigateBody(env: Env, d: Item, r: Row | null, series: Series | null
   const drv = r?.drivers;
   const where = r ? <WhereTable r={r} v={v} env={env} /> : null;
   const hasWhere = !!r && whereRows(r, v).rows.length > 0;
+  // Most useful first: what changed in one line, what to do, why. The evidence,
+  // breakdown, daily chart, cost, statistics and how AdMate judged it fold away.
   return {
     head: (
       <>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <PrioChip p={d.priority} />
+        <div className="dmeta">
+          <PrioText p={d.priority} />
+          <Dot />
           <KindTag kind={kindOf(d)} />
           <Plat p={d.platform} />
+          <Dot />
+          <span className="conflabel" title="How sure AdMate is about the numbers">
+            <ConfDots c={d.confidence} /> {d.confidence} confidence
+          </span>
           <ImpactChip impact={d.impact} />
         </div>
         <h3 id="dr-t">{d.title}</h3>
@@ -278,23 +286,9 @@ function investigateBody(env: Env, d: Item, r: Row | null, series: Series | null
     ),
     main: (
       <>
-        <div className="rank">
-          <div>
-            <b>
-              Priority <PrioChip p={d.priority} />
-            </b>
-            <span>How much it matters now. {prReasonOf(d)}</span>
-          </div>
-          <div>
-            <b>
-              Confidence <ConfDots c={d.confidence} /> {d.confidence}
-            </b>
-            <span>How sure AdMate is. {String(d.confidenceText ?? "").replace(/^\w+ — /, "")}</span>
-          </div>
-        </div>
         <div className="blk">
           <h4>
-            <span className="stepno">1</span> What changed <Src k="data" />
+            What changed <Src k="data" />
           </h4>
           {r && r.kpi != null && (
             <div className="bigchange">
@@ -316,35 +310,35 @@ function investigateBody(env: Env, d: Item, r: Row | null, series: Series | null
             </div>
           )}
           <p>{d.description}</p>
-          {(d.evidence ?? []).length > 0 && (
-            <div className="evwrap">
-              <table className="ev">
-                <thead>
-                  <tr>
-                    <th>Metric</th>
-                    <th>{v.compareLabel ?? "Before"}</th>
-                    <th>{v.label}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.evidence.map((e, k) => (
-                    <tr key={k}>
-                      <td>
-                        <T s={e.label} />
-                      </td>
-                      <td className="num">{e.a ?? "—"}</td>
-                      <td className="num">{e.b}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
+        {(steps.length > 0 || d.risk || rc) && (
+          <div className="todo-card">
+            <h4>
+              What to do <Src k="step" />
+            </h4>
+            {steps.length > 0 && (
+              <ol>
+                {steps.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ol>
+            )}
+            {(d.risk || rc) && (
+              <div className="after">
+                {rc && <p className="small-note">{rc}</p>}
+                {d.risk && (
+                  <p className="small-note">
+                    <b>Risk:</b> {d.risk}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {(drv?.length || cause) && (
           <div className="blk">
             <h4>
-              <span className="stepno">2</span> Why <Src k="read" />
+              Why <Src k="read" />
             </h4>
             {drv?.length ? (
               <>
@@ -369,63 +363,95 @@ function investigateBody(env: Env, d: Item, r: Row | null, series: Series | null
             )}
           </div>
         )}
-        {hasWhere && (
-          <div className="blk">
-            <h4>
-              <span className="stepno">3</span> Where <Src k="data" />
-            </h4>
-            {where}
-          </div>
-        )}
-        {series && (
-          <div className="blk">
-            <h4>
-              <span className="stepno">{hasWhere ? 4 : 3}</span> Day by day <Src k="data" />
-            </h4>
-            <DailyChart series={series} from={v.from} to={v.to} />
-            <DailyFacts series={series} from={v.from} to={v.to} />
-          </div>
-        )}
-        {d.cost && (
-          <div className="blk">
-            <h4>
-              What it cost <Src k="data" />
-            </h4>
-            <div className="costbox">
-              <p>{d.cost}</p>
-              <span className="small-note">Looking back only: money the change already cost, not a forecast.</span>
+        <details className="more box">
+          <summary>More detail: evidence, {hasWhere ? "where, " : ""}day by day{adv && r ? ", statistics" : ""}</summary>
+          <div>
+            {(d.evidence ?? []).length > 0 && (
+              <div className="blk">
+                <h4>
+                  The numbers behind this <Src k="data" />
+                </h4>
+                <div className="evwrap">
+                  <table className="ev">
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>{v.compareLabel ?? "Before"}</th>
+                        <th>{v.label}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {d.evidence.map((e, k) => (
+                        <tr key={k}>
+                          <td>
+                            <T s={e.label} />
+                          </td>
+                          <td className="num">{e.a ?? "—"}</td>
+                          <td className="num">{e.b}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {hasWhere && (
+              <div className="blk">
+                <h4>
+                  Where <Src k="data" />
+                </h4>
+                {where}
+              </div>
+            )}
+            {series && (
+              <div className="blk">
+                <h4>
+                  Day by day <Src k="data" />
+                </h4>
+                <DailyChart series={series} from={v.from} to={v.to} />
+                <DailyFacts series={series} from={v.from} to={v.to} />
+              </div>
+            )}
+            {d.cost && (
+              <div className="blk">
+                <h4>
+                  What it cost <Src k="data" />
+                </h4>
+                <div className="costbox">
+                  <p>{d.cost}</p>
+                  <span className="small-note">Looking back only: money the change already cost, not a forecast.</span>
+                </div>
+              </div>
+            )}
+            {(d.cantTell ?? []).length > 0 && (
+              <div className="warnbox">
+                <b>What this report can’t tell us.</b> {d.cantTell.join(" ")}
+              </div>
+            )}
+            {adv && r && <AdvStats r={r} v={v} f={f} />}
+            <div className="rank">
+              <div>
+                <b>
+                  Priority <PrioChip p={d.priority} />
+                </b>
+                <span>How much it matters now. {prReasonOf(d)}</span>
+              </div>
+              <div>
+                <b>
+                  Confidence <ConfDots c={d.confidence} /> {d.confidence}
+                </b>
+                <span>How sure AdMate is. {String(d.confidenceText ?? "").replace(/^\w+ — /, "")}</span>
+              </div>
             </div>
+            <details className="small" open={adv}>
+              <summary>How AdMate judged this</summary>
+              <ul>
+                {(d.judgedBy ?? []).map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </details>
           </div>
-        )}
-        <div className="blk">
-          <h4>
-            What to do <Src k="step" />
-          </h4>
-          <ol>
-            {steps.map((s) => (
-              <li key={s}>{s}</li>
-            ))}
-          </ol>
-          {d.risk && (
-            <p className="small-note">
-              <b>Risk:</b> {d.risk}
-            </p>
-          )}
-          {rc && <p className="small-note">{rc}</p>}
-        </div>
-        {(d.cantTell ?? []).length > 0 && (
-          <div className="warnbox">
-            <b>What this report can’t tell us.</b> {d.cantTell.join(" ")}
-          </div>
-        )}
-        {adv && r && <AdvStats r={r} v={v} f={f} />}
-        <details className="small" open={adv}>
-          <summary>How AdMate judged this</summary>
-          <ul>
-            {(d.judgedBy ?? []).map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
         </details>
       </>
     ),

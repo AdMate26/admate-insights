@@ -5,19 +5,21 @@ import { useV5, usePeriodQuery } from "./ctx";
 import { usePage } from "./page";
 import { Src } from "./bits";
 import { detailOf } from "./core";
-import { LEVEL_INFO } from "@/lib/levels";
+import { creditsText } from "@/lib/ai/pricing";
 import { apiPath } from "@/lib/integration/paths";
 
 // AdMate Assistant (prototype 50-assistant.js): answers questions about the analysis
-// on screen with Claude on the server, using only AdMate's numbers. Its style follows
-// the person's view: plain for Beginner, precise for Advanced.
+// on screen with Claude on the server, using only AdMate's numbers. It opens from the
+// "AdMate Assistant" button at the bottom right of every page (or "/").
 
-type Turn = { role: "user" | "assistant" | "error"; content: string; unverified?: string[] };
+type Turn = { role: "user" | "assistant" | "error"; content: string; unverified?: string[]; used?: number; buy?: boolean };
+type Credits = { balance: number; canBuy: boolean; testPayments: boolean; packs: { id: string; credits: number; amountCents: number }[]; history: { units: number; kind: string; note: string | null; createdAt: string }[] };
+const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 const GREET = {
   beginner: "Hi! Ask me anything about your ads, in your own words. I’ll explain it simply, using only your AdMate numbers.",
   intermediate: "Ask me about your results, a campaign, or any recommendation. I answer from your AdMate analysis.",
-  advanced: "Ask about any metric, comparison or call. I’ll cite the comparison basis and confidence from your analysis.",
+  advanced: "Ask me anything about your results: a number you don’t understand, why something changed, or what to do next. I answer only from your AdMate numbers and say how sure AdMate is.",
 };
 const BY_PAGE: Record<string, string[]> = {
   home: ["Am I doing OK this week?", "What should I do first?", "What does “cost per result” mean?"],
@@ -32,7 +34,9 @@ const BY_PAGE: Record<string, string[]> = {
   explorer: ["Which ad sets are fatiguing?", "Where is spend not turning into results?"],
   budget: ["Where should I move budget, and why?", "Is any campaign under-funded?"],
   audience: ["Which group should I test next?", "Can I trust this audience data?"],
-  alerts: ["Suggest 3 alert rules for this account"],
+  alerts: ["Suggest 3 alert rules for this account", "Why is this campaign on the alert?"],
+  geography: ["Where is most of my money going?", "Which location gives the cheapest results?", "Should I spend less anywhere?"],
+  report: ["Summarise this period for my boss in 3 lines", "What is the one thing to fix first?"],
 };
 
 // Short paragraphs, "- " bullets, "1. " steps and **bold**, as the prompt asks for.
@@ -64,6 +68,24 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
   const [live, setLive] = useState("");
   const [status, setStatus] = useState("");
   const [input, setInput] = useState("");
+  // Credits (one balance per person): shown in the header, used per answer, topped up in "buy".
+  const [credits, setCredits] = useState<Credits | null>(null);
+  const [view, setView] = useState<"chat" | "buy">("chat");
+  const loadCredits = () =>
+    fetch(apiPath("/api/credits"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => c && setCredits(c))
+      .catch(() => {});
+  const out = !!credits && credits.balance <= 0;
+  // Minimized: a small bar instead of the panel; the chat and any answer in progress go on.
+  const [min, setMin] = useState(false);
+  const [unseen, setUnseen] = useState(false);
+  // Asking about a specific item (or opening again) brings the panel back.
+  const [seenAbout, setSeenAbout] = useState(about);
+  if (seenAbout !== about) {
+    setSeenAbout(about);
+    setMin(false);
+  }
   const ctl = useRef<AbortController | null>(null);
   const msgs = useRef<HTMLDivElement>(null);
   const inRef = useRef<HTMLTextAreaElement>(null);
@@ -74,19 +96,20 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
   }, [turns, live, open]);
   useEffect(() => {
     if (open) inRef.current?.focus();
+    if (open) void loadCredits();
   }, [open]);
   // "/" opens the Assistant from anywhere except a text field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (e.key === "/" && level !== "advanced" && !["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) && !t.isContentEditable) {
+      if (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) && !t.isContentEditable) {
         e.preventDefault();
         onOpen();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [level, onOpen]);
+  }, [onOpen]);
 
   const chips = item
     ? (() => {
@@ -110,6 +133,8 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
     let text = "";
     let unverified: string[] | undefined;
     let error: string | null = null;
+    let used: number | undefined;
+    let buy = false;
     try {
       const res = await fetch(apiPath("/api/ask"), {
         method: "POST",
@@ -120,6 +145,10 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
         error = j.error ?? "Something went wrong. Please try again.";
+        if (j.code === "no_credits") {
+          buy = true;
+          setCredits((c) => (c ? { ...c, balance: 0 } : c));
+        }
       } else {
         const reader = res.body.getReader();
         const dec = new TextDecoder();
@@ -145,6 +174,10 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
               setStatus("Double-checking the numbers…");
             } else if (e.type === "done") unverified = e.unverified?.length ? e.unverified : undefined;
             else if (e.type === "error") error = e.message;
+            else if (e.type === "credits") {
+              used = e.used;
+              setCredits((c) => (c ? { ...c, balance: e.balance } : c));
+            }
           }
         }
       }
@@ -152,10 +185,11 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
       if ((err as Error)?.name === "AbortError") text += text ? "\n\n(Stopped.)" : "";
       else error = "Couldn’t reach AdMate. Please try again.";
     } finally {
-      setTurns((t) => [...t, ...(text ? [{ role: "assistant" as const, content: text, unverified }] : []), ...(error ? [{ role: "error" as const, content: error }] : [])]);
+      setTurns((t) => [...t, ...(text ? [{ role: "assistant" as const, content: text, unverified, used }] : []), ...(error ? [{ role: "error" as const, content: error, buy }] : [])]);
       setBusy(false);
       setLive("");
       setStatus("");
+      setUnseen(true);
       ctl.current = null;
       inRef.current?.focus();
     }
@@ -163,12 +197,41 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
 
   if (!open)
     return (
-      <button className="asst-fab" type="button" onClick={onOpen} aria-label="Open AdMate Assistant">
+      <button className="asst-fab" type="button" onClick={onOpen} title="Ask about your results (or press /)">
         <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
         </svg>
-        Ask AdMate
+        AdMate Assistant
       </button>
+    );
+  if (min)
+    return (
+      <div className="asst-min" role="region" aria-label="AdMate Assistant, minimized">
+        <button
+          type="button"
+          className="asst-min-open"
+          title="Open the AdMate Assistant again"
+          onClick={() => {
+            setMin(false);
+            setUnseen(false);
+          }}
+        >
+          <b>AdMate Assistant</b>
+          <span className={busy ? "busy" : unseen ? "new" : ""}>{busy ? "Answering…" : unseen ? "New answer" : credits ? `${creditsText(Math.max(0, credits.balance))} credits` : "Minimized"}</span>
+        </button>
+        <button
+          type="button"
+          aria-label="Close the AdMate Assistant"
+          title="Close"
+          onClick={() => {
+            ctl.current?.abort();
+            setMin(false);
+            onClose();
+          }}
+        >
+          ✕
+        </button>
+      </div>
     );
   return (
     <section className="asst" role="dialog" aria-label="AdMate Assistant">
@@ -176,9 +239,14 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
         <div className="who">
           <b>AdMate Assistant</b>
           <span>
-            <Src k="ai" /> {LEVEL_INFO[level].name} style · only your AdMate numbers
+            <Src k="ai" /> Only your AdMate numbers
           </span>
         </div>
+        {credits && (
+          <button type="button" className={`creditchip${credits.balance < 200 ? " low" : ""}`} title={credits.canBuy ? "Your AdMate Assistant credits. Each answer uses credits for the AI work it took." : "Your free beta credits. Each answer uses credits for the AI work it took."} onClick={() => setView(view === "buy" ? "chat" : "buy")}>
+            {creditsText(Math.max(0, credits.balance))} credits
+          </button>
+        )}
         <button
           type="button"
           title="Start a new chat"
@@ -191,6 +259,18 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
         </button>
         <button
           type="button"
+          className="asst-minbtn"
+          aria-label="Minimize"
+          title="Minimize: keep the chat in a small bar"
+          onClick={() => {
+            setUnseen(false);
+            setMin(true);
+          }}
+        >
+          —
+        </button>
+        <button
+          type="button"
           onClick={() => {
             ctl.current?.abort();
             onClose();
@@ -199,6 +279,9 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
           Close ✕
         </button>
       </header>
+      {view === "buy" && credits ? (
+        <BuyCredits credits={credits} onDone={(balance) => setCredits((c) => (c ? { ...c, balance } : c))} reload={loadCredits} onBack={() => setView("chat")} />
+      ) : (
       <div className="msgs" ref={msgs}>
         <div className="bubble ai">
           <p>{GREET[level]}</p>
@@ -220,11 +303,29 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
             <div className={`bubble ai${t.role === "error" ? " err" : ""}`} key={i}>
               {md(t.content)}
               {t.unverified && <p className="small-note">AdMate couldn’t match these numbers to your data: {t.unverified.join(", ")}. Check them before relying on them.</p>}
+              {t.used != null && t.used > 0 && <p className="used">Used {creditsText(t.used)} credits</p>}
+              {t.buy && (
+                <p>
+                  <button className="btn primary small" type="button" onClick={() => setView("buy")}>
+                    Buy more
+                  </button>
+                </p>
+              )}
             </div>
           ),
         )}
         {busy && <div className="bubble ai">{live ? md(live) : <span className="think">{status || "Thinking…"}</span>}</div>}
-        {!busy && askReady && (
+        {out && !busy && !turns.some((t) => t.role === "error") && (
+          <div className="bubble ai err">
+            <p>Your credits ran out.</p>
+            <p>
+              <button className="btn primary small" type="button" onClick={() => setView("buy")}>
+                Buy more
+              </button>
+            </p>
+          </div>
+        )}
+        {!busy && askReady && !out && (
           <div className="chips">
             {chips.map((c) => (
               <button key={c} type="button" onClick={() => send(c)}>
@@ -234,6 +335,7 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
           </div>
         )}
       </div>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -252,25 +354,114 @@ export function Assistant({ open, about, current, onOpen, onClose }: { open: boo
                 void send(input);
               }
             }}
-            placeholder={askReady ? "Ask about your ads…" : "Add an API key to ask"}
+            placeholder={!askReady ? "Add an API key to ask" : out ? "Your credits ran out" : "Ask about your ads…"}
             aria-label="Your question"
-            disabled={!askReady}
+            disabled={!askReady || out}
           />
           {busy ? (
             <button className="btn" type="button" onClick={() => ctl.current?.abort()}>
               Stop
             </button>
           ) : (
-            <button className="btn primary" type="submit" disabled={!askReady}>
+            <button className="btn primary" type="submit" disabled={!askReady || out}>
               Send
             </button>
           )}
         </div>
-        <span className="fine">Answers can be wrong: check them against the numbers. AdMate never changes your ad account.</span>
       </form>
     </section>
   );
 }
 
-const TITLES: Record<string, string> = { home: "Home", todo: "Things to do", myads: "My ads", overview: "Overview", optimize: "Optimize", campaigns: "Campaigns", audcre: "Audiences & creatives", portfolio: "Portfolio", actions: "Actions", explorer: "Explorer", budget: "Budget", audience: "Audience insight", alerts: "Alerts" };
+// Buy credits: the packs, the (test) checkout, and recent credit history.
+function BuyCredits({ credits, onDone, reload, onBack }: { credits: Credits; onDone: (balance: number) => void; reload: () => Promise<void>; onBack: () => void }) {
+  const [pending, setPending] = useState<{ purchaseId: string; credits: number; amountCents: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const post = (url: string, body: unknown) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({ ok: r.ok, j: await r.json().catch(() => ({})) }));
+  const choose = async (pack: string) => {
+    setBusy(true);
+    setMsg(null);
+    const { ok, j } = await post(apiPath("/api/credits/checkout"), { pack });
+    setBusy(false);
+    if (!ok) return setMsg(j.error ?? "Couldn’t start the checkout.");
+    setPending({ purchaseId: j.purchaseId, credits: j.credits, amountCents: j.amountCents });
+  };
+  const finish = async (action: "pay" | "cancel") => {
+    if (!pending) return;
+    setBusy(true);
+    const { ok, j } = await post(apiPath("/api/credits/test-pay"), { purchaseId: pending.purchaseId, action });
+    setBusy(false);
+    setPending(null);
+    if (!ok) return setMsg(j.error ?? "Something went wrong.");
+    onDone(j.balance);
+    void reload();
+    setMsg(action === "pay" ? `Done: ${pending.credits} credits added.` : "Canceled. Nothing was charged.");
+  };
+  return (
+    <div className="msgs buy">
+      <div className="buyhead">
+        <b>Buy more credits</b>
+        <span>
+          You have <b>{creditsText(Math.max(0, credits.balance))}</b> credits. Each answer uses credits for the AI work it took: short questions use fewer.
+        </span>
+      </div>
+      {credits.testPayments && <p className="testbanner">Test mode: no real money is charged.</p>}
+      {!credits.canBuy ? (
+        <div className="soon">
+          <span className="soonchip">Coming soon</span>
+          <span>You’ll be able to buy more credits here soon.</span>
+        </div>
+      ) : pending ? (
+        <div className="checkout">
+          <b>
+            {pending.credits} credits · {usd(pending.amountCents)}
+          </b>
+          <span className="small-note">Test checkout. A real payment page will appear here once a payment provider is connected.</span>
+          <div className="row">
+            <button className="btn primary" type="button" disabled={busy} onClick={() => finish("pay")}>
+              Pay {usd(pending.amountCents)} (test)
+            </button>
+            <button className="btn" type="button" disabled={busy} onClick={() => finish("cancel")}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="packs">
+          {credits.packs.map((p) => (
+            <button key={p.id} type="button" className="pack" disabled={busy || !credits.testPayments} onClick={() => choose(p.id)}>
+              <b>{p.credits} credits</b>
+              <span className="num">{usd(p.amountCents)}</span>
+              <small>{usd(Math.round(p.amountCents / p.credits * 100) / 100)} per credit</small>
+            </button>
+          ))}
+        </div>
+      )}
+      {msg && <p className="small-note" role="status">{msg}</p>}
+      {credits.history.length > 0 && (
+        <div className="hist">
+          <b>Recent</b>
+          {credits.history.map((h, i) => (
+            <div key={i}>
+              <span>{h.kind === "usage" ? "Answer" : h.kind === "purchase" ? "Bought" : h.kind === "grant" ? "Free credits" : "Adjustment"}</span>
+              <span className="muted small">{new Date(h.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+              <span className={`num ${h.units < 0 ? "muted" : "plus"}`}>
+                {h.units > 0 ? "+" : "−"}
+                {creditsText(Math.abs(h.units))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p>
+        <button className="link" type="button" onClick={onBack}>
+          ← Back to the chat
+        </button>
+      </p>
+    </div>
+  );
+}
+
+const TITLES: Record<string, string> = { geography: "Geography", report: "Performance report", home: "Home", todo: "Things to do", myads: "My ads", overview: "Overview", optimize: "Optimize", campaigns: "Campaigns", audcre: "Audiences & creatives", portfolio: "Portfolio", actions: "Actions", explorer: "Explorer", budget: "Budget", audience: "Audience insight", alerts: "Alerts" };
 const pageTitle = (p: string) => TITLES[p] ?? "AdMate";

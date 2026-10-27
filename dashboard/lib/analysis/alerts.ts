@@ -208,10 +208,15 @@ export interface Digest {
   rules: { name: string; text: string; limit: string }[];
   more: number;
   allClear: boolean;
+  stake: string | null; // "$1,030" at stake across the campaigns that need attention
+  // Campaigns doing great where AdMate suggests more budget (the Overview's "Doing
+  // great: consider more budget"), so the alert shows what to grow, not only what to fix.
+  scale: { name: string; platform: string; metric: string; action: string | null }[];
 }
 const SEV_TITLE: Record<DigestSev, string> = { urgent: "Act now", watch: "Keep an eye on", good: "Going well" };
 export const SEV_ICON: Record<DigestSev, string> = { urgent: "🔴", watch: "🟠", good: "🟢" };
 const MAX_ITEMS = 5;
+const MAX_SCALE = 2;
 
 export function alertDigest(account: string, v: ViewModel, cfg: AlertConfig, rules: Rule[], own: CampaignTargets, f: Fmt): Digest {
   const auto = autoAlerts(v, cfg, own);
@@ -251,6 +256,14 @@ export function alertDigest(account: string, v: ViewModel, cfg: AlertConfig, rul
       w,
     });
   }
+  // Budget candidates the person hasn't already decided on; while alerts are off, none.
+  const scale = (cfg.on ? v.great : [])
+    .filter((g) => !v.closed.some((c) => c.key === g.key))
+    .slice(0, MAX_SCALE)
+    .map((g) => ({ name: g.campaign ?? "", platform: g.platform ?? "", metric: g.kpi, action: g.action ?? null }))
+    .filter((g) => g.name);
+  // A campaign listed for more budget isn't repeated as good news.
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].sev === "good" && scale.some((g) => g.name === items[i].name)) items.splice(i, 1);
   const order: DigestSev[] = ["urgent", "watch", "good"];
   items.sort((x, y) => order.indexOf(x.sev) - order.indexOf(y.sev) || y.stake - x.stake || y.w - x.w);
   const shown = items.slice(0, MAX_ITEMS);
@@ -266,10 +279,12 @@ export function alertDigest(account: string, v: ViewModel, cfg: AlertConfig, rul
     ? `${account}: ${plural(needs, "campaign")} ${needs === 1 ? "needs" : "need"} attention`
     : fired.length
       ? `${account}: ${plural(fired.length, "of your alerts")} fired`
-      : goodN
-        ? `${account}: good news on ${plural(goodN, "campaign")}`
-        : `${account}: all clear`;
-  const sub = [period, stake >= 1 ? `${f.money(stake)} at stake` : null, !needs && !fired.length && !goodN ? "every campaign is within your settings" : null].filter(Boolean).join(" · ");
+      : scale.length
+        ? `${account}: ${plural(scale.length, "campaign")} ready for more budget`
+        : goodN
+          ? `${account}: good news on ${plural(goodN, "campaign")}`
+          : `${account}: all clear`;
+  const sub = [period, stake >= 1 ? `${f.money(stake)} at stake` : null, scale.length && (needs || fired.length) ? `${scale.length} to grow` : null, !needs && !fired.length && !goodN && !scale.length ? "every campaign is within your settings" : null].filter(Boolean).join(" · ");
   return {
     account,
     period,
@@ -278,7 +293,9 @@ export function alertDigest(account: string, v: ViewModel, cfg: AlertConfig, rul
     groups: order.map((sev) => ({ sev, title: SEV_TITLE[sev], items: shown.filter((i) => i.sev === sev) })).filter((g) => g.items.length),
     rules: ruleRows,
     more: items.length - shown.length + (fired.length - ruleRows.length),
-    allClear: !items.length && !fired.length,
+    allClear: !items.length && !fired.length && !scale.length,
+    stake: stake >= 1 ? f.money(stake) : null,
+    scale,
   };
 }
 export const digestIcon = (d: Digest) => (d.groups.some((g) => g.sev === "urgent") ? "🔴" : d.groups.some((g) => g.sev === "watch") || d.rules.length ? "🟠" : "✅");
@@ -300,6 +317,13 @@ export function digestHtml(d: Digest) {
   if (d.rules.length) {
     out.push("", "📌 <b>YOUR ALERTS</b>");
     for (const r of d.rules) out.push(`• <b>${esc(r.name)}</b>: ${esc(r.text)} <i>(${esc(r.limit)})</i>`);
+  }
+  if (d.scale.length) {
+    out.push("", "💰 <b>CONSIDER MORE BUDGET</b>");
+    for (const g of d.scale) {
+      out.push("", `<b>${esc(g.name)}</b>`, esc(g.metric));
+      if (g.action) out.push(`👉 ${esc(g.action)}`);
+    }
   }
   if (d.more > 0) out.push("", `+${d.more} more in AdMate`);
   out.push("", "<i>Looking back only, not a forecast. AdMate never changes your ads.</i>");

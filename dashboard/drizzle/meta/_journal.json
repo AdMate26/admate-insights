@@ -71,6 +71,13 @@
       "when": 1792654624257,
       "tag": "0009_alerts_and_telegram",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793091931224,
+      "tag": "0010_ai_credits",
+      "breakpoints": true
     }
   ]
 }

@@ -51,7 +51,7 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
         <ReadOnlyProvider value={readOnly}>
         <div className="frame">
           <Suspense>
-            <Side counts={{ actions: 0, alerts: 0 }} answered={!!saved} userId={user.id} />
+            <Side counts={{ actions: 0, alerts: 0 }} userId={user.id} />
           </Suspense>
           <main className="main">
             {workspace.isSample && (
