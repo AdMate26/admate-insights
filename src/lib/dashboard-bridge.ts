@@ -15,7 +15,7 @@ const SESSION_ENDPOINT = `${DASHBOARD_PATH}/api/session`;
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export type BridgeOutcome =
-  | { kind: "dashboard"; href: string }
+  | { kind: "dashboard"; href: string; firstEntry?: true }
   | { kind: "login" }
   | { kind: "not_authorized" }
   | { kind: "error" };
@@ -55,7 +55,14 @@ export async function enterDashboard(input: {
   } catch {
     return { kind: "error" };
   }
-  if (response.ok) return { kind: "dashboard", href: safeDashboardPath(input.next) };
+  if (response.ok) {
+    const href = safeDashboardPath(input.next);
+    // The dashboard says when this was the user's first entry (account just created).
+    const body = (await response.json().catch(() => null)) as { first?: unknown } | null;
+    return body?.first === true
+      ? { kind: "dashboard", href, firstEntry: true }
+      : { kind: "dashboard", href };
+  }
   // 401 with a Supabase session in hand means the dashboard could not confirm
   // it (e.g. misconfigured): /login would see the session and send the user
   // straight back here, looping. Treat it as an error instead.

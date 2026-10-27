@@ -40,7 +40,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
     try {
       const res = await fetch(apiPath("/api/import/preview"), { method: "POST", body });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Upload failed.");
+      if (!res.ok) throw Object.assign(new Error(json.error ?? "Upload failed."), { status: res.status });
       const p = json as PreviewResponse;
       setPreview(p);
       setPlatform(p.platform ?? "");
@@ -52,7 +52,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
     } catch (e) {
       const message = e instanceof Error ? e.message : "Upload failed.";
       setError(message);
-      track("report_upload_failed", { stage: "reading_file", error: message });
+      track("report_upload_failed", { stage: "reading_file", reason: failReason(e) });
     } finally {
       setBusy(false);
     }
@@ -61,7 +61,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
   async function upload(file: File) {
     // Checked here too: on Vercel an oversized request is refused before it reaches AdMate.
     const sizeKb = Math.round(file.size / 1024);
-    track("report_upload_started", { file_type: file.name.split(".").pop()?.toLowerCase() ?? "", size_kb: sizeKb, new_account: creating });
+    track("report_upload_started", { file_type: fileType(file.name), size_kb: sizeKb, new_account: creating });
     if (file.size > maxMb * 1024 * 1024) {
       setError(`This file is larger than ${maxMb} MB. Export a shorter date range or fewer columns.`);
       track("report_upload_failed", { stage: "file_too_large", size_kb: sizeKb });
@@ -77,7 +77,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
       setBusy(false);
       if (!res.id) {
         setError(res.error ?? "Couldn't create your account. Try again.");
-        track("report_upload_failed", { stage: "creating_account", error: res.error ?? null });
+        track("report_upload_failed", { stage: "creating_account", reason: res.error ? "refused" : "unknown" });
         return;
       }
       id = res.id;
@@ -110,7 +110,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
         body: JSON.stringify({ uploadId: preview.uploadId, workspaceId, platform, periodStart: start, periodEnd: end, objectives, matches }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Import failed.");
+      if (!res.ok) throw Object.assign(new Error(json.error ?? "Import failed."), { status: res.status });
       track("report_uploaded", {
         platform,
         level: preview.level,
@@ -126,7 +126,7 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
     } catch (e) {
       const message = e instanceof Error ? e.message : "Import failed.";
       setError(message);
-      track("report_upload_failed", { stage: "saving", error: message });
+      track("report_upload_failed", { stage: "saving", reason: failReason(e) });
       setBusy(false);
     }
   }
@@ -352,4 +352,18 @@ export function UploadFlow({ workspaceId: startId, maxMb, newAccount = false }: 
       </div>
     </div>
   );
+}
+
+// Analytics only gets a code for why an upload failed, never the message (it
+// can contain the file name or values from the file).
+function failReason(e: unknown): string {
+  const status = e && typeof e === "object" && "status" in e ? Number((e as { status: unknown }).status) : NaN;
+  if (Number.isInteger(status)) return `http_${status}`;
+  return e instanceof TypeError ? "network" : "unknown";
+}
+
+// Analytics gets only the kind of file from a fixed list, never its name.
+function fileType(name: string): string {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ["csv", "tsv", "txt", "xls", "xlsx", "zip"].includes(ext) ? ext : "other";
 }

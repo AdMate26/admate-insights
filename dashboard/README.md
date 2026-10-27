@@ -28,7 +28,7 @@ On Vercel, uploads are limited to 4 MB per file (Vercel's request size limit).
 ## Sign-in and analytics
 
 - **Sign-in**: email + password (`lib/auth/`, `app/(auth)/`). Passwords are hashed with scrypt; sessions live in the `sessions` table and a 30-day httpOnly cookie. `proxy.ts` sends signed-out visitors to /login; every page, server action and API route also checks that the account belongs to the signed-in user (`requireWorkspace` / `getWorkspace` in `lib/data/workspaces.ts`).
-- **Analytics**: PostHog (`instrumentation-client.ts`), on when `NEXT_PUBLIC_POSTHOG_KEY` is set. Page views, clicks, session length and session replays (typed text masked), with each signed-in user identified by email. Events go through `/ingest` on AdMate's own domain so ad blockers don't drop them. Named events (`track()` in `lib/analytics.ts`): `report_upload_started`, `report_previewed`, `report_uploaded`, `report_upload_failed`, `report_undone`, `ask_sent`, `summary_generated` — counts and categories only, never file contents or typed text.
+- **Analytics**: PostHog (`lib/analytics.ts`), only when `NEXT_PUBLIC_POSTHOG_KEY` is set **and** the person chose "Allow analytics" (`components/AnalyticsConsent.tsx`, shared with the website). Page views and named events only — no session replay, autocapture or heatmaps; signed-in users are identified by their Supabase user ID, never email. Every event passes `lib/analytics-sanitize.ts` (no query strings, IDs or free text). Events: `report_upload_started`, `report_previewed`, `report_uploaded`, `report_upload_failed`, `report_undone`, `analysis_viewed`, `recommendation_viewed`, `telegram_connected`. See `docs/analytics.md` at the repository root.
 
 ### Optional: AI (summaries and Ask AdMate)
 

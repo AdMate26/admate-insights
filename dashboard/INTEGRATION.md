@@ -62,32 +62,36 @@ Everything not listed here is byte-identical to the source commit
 
 | File | Change | Why |
 | --- | --- | --- |
-| `.env.example` | modified | New integration settings (placeholders) |
+| `.env.example` | modified | New integration settings (placeholders); PostHog token/host wording |
 | `app/(auth)/actions.ts` | modified | Only sign-out remains (continues to the website's `/logout`); sign-in, sign-up, password reset and Google live on the website |
 | `app/actions.ts` | modified | Account limit before creating an account (2 calls); `chooseLevel` uses the shared `levelTarget` |
 | `app/api/import/commit/route.ts` | modified | Signed-in owners only; report, file and row limits (v5 Telegram-after-upload kept) |
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
 | `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`) |
-| `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link |
+| `README.md` | modified | Analytics paragraph matches the consent-first PostHog setup |
+| `app/layout.tsx` | modified | Mounts the analytics consent banner |
+| `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link and "Analytics settings" |
 | `app/c/[ws]/upload/page.tsx` | modified | v5 page kept; visitors see "sign up to upload" instead of the upload form |
 | `components/DeleteClientButton.tsx` | modified | Hidden for visitors |
 | `components/SettingsForm.tsx` | modified | Read-only fields and a sign-in prompt for visitors |
 | `components/UndoImportButton.tsx` | modified | Hidden for visitors |
-| `components/UploadFlow.tsx` | modified | `fetch` paths under `/app` (`apiPath`) |
+| `components/UploadFlow.tsx` | modified | `fetch` paths under `/app` (`apiPath`); analytics gets reason codes and a fixed file-type list, never error text or file names |
 | `components/v5/Assistant.tsx` | modified | `fetch` paths under `/app` (`apiPath`: ask, credits, checkout, test checkout); visitors get the sign-up note instead of a question |
 | `components/v5/Drawer.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages |
+| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID only (no email), "Analytics settings" link |
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
-| `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved |
-| `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving |
+| `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `analysis_viewed` / `recommendation_viewed` events |
+| `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving; `telegram_connected` event |
+| `instrumentation-client.ts` | modified | PostHog starts only after consent (`lib/analytics.ts`) |
+| `lib/analytics.ts` | modified | Consent-first PostHog: no replay/autocapture, user ID only, privacy filter |
 | `components/v5/views/campaigns.tsx` | modified | Visitors get the sign-up note instead of changing a goal or funnel role |
 | `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
 | `lib/auth/session.ts` | modified | Per-request access check in `getCurrentUser()`; sign-in redirect goes to the website |
 | `lib/telegram.ts` | modified | Message buttons open `ADMATE_PUBLIC_ORIGIN` + `/app` (the website), not this app's protected deployment address |
 | `lib/levels.ts` | modified | `levelTarget` (shared by the server action and the visitor path) and the visitor view cookie name |
-| `next.config.ts` | modified | `basePath: "/app"`; Server Actions accept exactly the public host (`serverActions.allowedOrigins`) |
+| `next.config.ts` | modified | `basePath: "/app"`; Server Actions accept exactly the public host (`serverActions.allowedOrigins`); `/ingest` analytics relay removed |
 | `proxy.ts` | modified | Public: session bridge, demo refresh, `/api/cron` (own secret). Visitor read-only mark on demo pages incl. v5 Portfolio/Explorer/Budget/Geography/Report and `/api/v5/*`; signed-out visitors go to the website's `/home` |
 | `vercel.json` | modified | `buildCommand: "next build"` (no migrations during builds) |
 | `.claude/launch.json` | deleted | Local tool config, not needed in this repository |
@@ -109,10 +113,12 @@ Everything not listed here is byte-identical to the source commit
 | `tests/auth.test.ts` | deleted | Tests the removed password reset and Google sign-in |
 | `INTEGRATION.md` | added | This file |
 | `app/api/internal/public-demo/route.ts` | added | Secret-protected demo refresh |
-| `app/api/session/route.ts` | added | Session bridge and sign-out |
+| `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry for sign-up analytics) |
 | `app/demo/route.ts` | added | `/app/demo`: own sample or the public demo |
+| `components/AnalyticsConsent.tsx` | added | Analytics choice banner (shared with the website) |
 | `integration.lock.json` | added | Source commit file hashes |
 | `lib/access/policy.ts` | added | Who may use the dashboard |
+| `lib/analytics-sanitize.ts` | added | Privacy filter for analytics events (identical to the website's) |
 | `lib/auth/supabase.ts` | added | Supabase token check |
 | `lib/integration/limits.ts` | added | Upload and account limits, file content checks |
 | `lib/integration/paths.ts` | added | Base path, API paths, website URLs |
@@ -120,6 +126,7 @@ Everything not listed here is byte-identical to the source commit
 | `lib/integration/read-only.tsx` | added | Read-only flag for visitors (what the screen offers) |
 | `scripts/check-integration.mjs` | added | Verifies the two files above |
 | `scripts/e2e-proxy.mjs` | added | End-to-end test through the website's `/app` proxy (local only) |
+| `tests/analytics.test.ts` | added | Analytics privacy filter cases for dashboard events |
 | `tests/integration-session.test.ts` | added | Bridge, access, sign-out, request-gate and allowed-origin tests |
 
 ## Verification record (2026-10-18, local, before the first push)

@@ -61,7 +61,8 @@ export async function POST(request: Request) {
   }
 
   await startSession(user.id);
-  return json(200, { ok: true });
+  // `first` lets the website count a completed sign-up (analytics, if allowed).
+  return json(200, created.length > 0 ? { ok: true, first: true } : { ok: true });
 }
 
 export async function DELETE(request: Request) {

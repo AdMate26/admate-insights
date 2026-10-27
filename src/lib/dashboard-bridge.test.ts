@@ -33,6 +33,26 @@ test("hand-off: the token travels only in the Authorization header of a same-ori
   expect(s.calls[0]!.url).not.toContain("a.b.c");
 });
 
+test("hand-off: a first entry (new account) is reported for sign-up analytics", async () => {
+  const first = async () =>
+    new Response(JSON.stringify({ ok: true, first: true }), { status: 200 });
+  expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: first })).toEqual({
+    kind: "dashboard",
+    href: "/app",
+    firstEntry: true,
+  });
+  const again = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
+  expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: again })).toEqual({
+    kind: "dashboard",
+    href: "/app",
+  });
+  const odd = async () => new Response("not json", { status: 200 });
+  expect(await enterDashboard({ accessToken: "a.b.c", fetchImpl: odd })).toEqual({
+    kind: "dashboard",
+    href: "/app",
+  });
+});
+
 test("hand-off: each answer maps to one destination", async () => {
   // A refused token is an error, never /login: /login would see the Supabase
   // session and return to /home, looping (seen on the Preview).
