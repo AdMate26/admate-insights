@@ -163,13 +163,21 @@ function PrivacyPage() {
         <Heading n={4} />
         <p>
           AdMate's numbers, scores and alerts are calculated by our own software. AI is used only to
-          write explanations, summaries and suggested next steps.
+          write explanations, summaries, suggested next steps and answers to your questions.
         </p>
         <p>
           When you use AI features with uploaded reports, the relevant report information, your
           questions and relevant conversation history are sent to our AI provider to generate that
-          text. AdMate does not send information retrieved through the Meta connection to AI
-          features. If this changes, we will update this policy before it happens.
+          text. Our AI provider is Anthropic (in the United States), which makes the Claude models.
+          Anthropic processes this information on our behalf to write the text and, under its
+          commercial terms, does not use it to train its models. AdMate does not send information
+          retrieved through the Meta connection to AI features. If this changes, we will update this
+          policy before it happens.
+        </p>
+        <p>
+          The <strong className="text-foreground">AdMate Assistant</strong> answers questions you
+          ask about your results. For each answer, we record how much AI it used, to count your AI
+          credits and to keep costs under control.
         </p>
       </section>
 
