@@ -214,18 +214,27 @@ function PrivacyPage() {
         <Heading n={7} />
         <p>
           We use browser storage and session cookies to keep you signed in, and to remember your
-          analytics choice. Website statistics count page visits without using cookies.
+          cookie choice. Website statistics count page visits without using cookies.
         </p>
         <p>
-          Product analytics (PostHog, in the United States) runs only if you choose{" "}
-          <strong className="text-foreground">Allow analytics</strong>. It then records the pages
-          you visit, how long you stay on them, and key steps such as signing up, uploading a report
-          (whether it worked, never its contents or file name) and viewing an analysis or
-          recommendation. Once you sign in, these are linked to your AdMate user ID and your account
-          email address. It does not record your screen, and we do not send it your report data or
-          anything you type. Accepting our Terms is not consent to analytics. You can change your
-          choice at any time with <strong className="text-foreground">Analytics settings</strong> at
-          the bottom of our pages or in the dashboard menu.
+          <strong className="text-foreground">When you are signed in</strong>, AdMate records how
+          you use the service so we can run and improve it: the dashboard pages you open, when and
+          for how long, your sign-up, and when you view an analysis. AdMate&apos;s server records
+          this with your AdMate user ID and account email address, without tracking cookies, and
+          sends it to our product analytics provider (PostHog, in the United States).
+        </p>
+        <p>
+          <strong className="text-foreground">On our public pages and demo</strong>, analytics
+          cookies are used only if you choose <strong className="text-foreground">Accept</strong> in
+          our cookie notice. They then record the pages you visit, how long you stay and key steps
+          such as uploading a report (whether it worked, never its contents or file name). You can
+          change this choice at any time with{" "}
+          <strong className="text-foreground">Cookie settings</strong> at the bottom of our pages or
+          in the dashboard menu.
+        </p>
+        <p>
+          Product analytics never records your screen, and we do not send it your report data or
+          anything you type.
         </p>
       </section>
 

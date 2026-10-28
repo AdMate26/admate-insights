@@ -6,6 +6,8 @@
 export interface SupabaseUser {
   id: string;
   email: string;
+  // How they signed in ("email" or "google"), for sign-up analytics.
+  provider?: string;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -32,10 +34,11 @@ export async function verifySupabaseToken(authorization: string | null, fetchImp
       signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     });
     if (!response.ok) return null;
-    const user = (await response.json()) as { id?: unknown; email?: unknown };
+    const user = (await response.json()) as { id?: unknown; email?: unknown; app_metadata?: { provider?: unknown } };
     if (typeof user.id !== "string" || !user.id) return null;
     if (typeof user.email !== "string" || !user.email) return null;
-    return { id: user.id, email: user.email.trim().toLowerCase() };
+    const provider = user.app_metadata?.provider;
+    return { id: user.id, email: user.email.trim().toLowerCase(), ...(typeof provider === "string" ? { provider } : {}) };
   } catch {
     return null;
   }

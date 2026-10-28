@@ -73,7 +73,7 @@ export function writeConsent(value: Consent): void {
   window.dispatchEvent(new Event(CONSENT_EVENT));
 }
 
-/** Re-opens the analytics banner (footer "Analytics settings" link). */
+/** Re-opens the analytics banner (footer "Cookie settings" link). */
 export function openAnalyticsSettings(): void {
   window.dispatchEvent(new Event(OPEN_SETTINGS_EVENT));
 }
@@ -159,18 +159,6 @@ type EventProps = Record<string, string | number | boolean>;
 export function track(event: string, props?: EventProps): void {
   if (!capturing()) return;
   posthog.capture(event, props);
-}
-
-/**
- * For an event right before a full-page navigation: send it now and give the
- * request a moment to arrive, so PostHog records it before the next page's
- * events (a beacon sent while leaving can be timestamped after them). Returns
- * at once when analytics is off.
- */
-export async function trackBeforeLeaving(event: string, props?: EventProps): Promise<void> {
-  if (!capturing()) return;
-  posthog.capture(event, props, { send_instantly: true });
-  await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
 // Remembers (as a short fingerprint, never the email itself) that this user's

@@ -6,7 +6,6 @@ import { AuthPending } from "@/components/auth/AuthLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { profileQueryOptions } from "@/lib/auth/profile";
 import { requireSession } from "@/lib/auth/session";
-import { signInMethod, trackBeforeLeaving } from "@/lib/analytics/posthog";
 import { enterDashboard } from "@/lib/dashboard-bridge";
 import { validateWorkspaceSearch } from "@/lib/dashboard-search";
 
@@ -57,13 +56,9 @@ function EnterDashboard() {
       // enterDashboard only ever returns a path inside /app.
       const next = new URLSearchParams(window.location.search).get("next");
       const outcome = await enterDashboard({ accessToken: data.session?.access_token, next });
-      if (outcome.kind === "dashboard") {
-        if (outcome.firstEntry) {
-          const provider = data.session?.user.app_metadata?.provider;
-          await trackBeforeLeaving("signup_completed", { method: signInMethod(provider) });
-        }
-        window.location.replace(outcome.href);
-      } else if (outcome.kind === "login") void navigate({ to: "/login", replace: true });
+      // A completed sign-up is recorded by the dashboard's server (analytics).
+      if (outcome.kind === "dashboard") window.location.replace(outcome.href);
+      else if (outcome.kind === "login") void navigate({ to: "/login", replace: true });
       else {
         // Not admitted (invite-only), or the dashboard is unreachable.
         void navigate({ to: "/onboarding", search: { access: "pending" }, replace: true });

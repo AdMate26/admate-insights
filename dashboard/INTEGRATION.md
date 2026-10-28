@@ -69,7 +69,7 @@ Everything not listed here is byte-identical to the source commit
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
 | `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`) |
 | `README.md` | modified | Analytics paragraph matches the consent-first PostHog setup |
-| `app/layout.tsx` | modified | Mounts the analytics consent banner |
+| `app/layout.tsx` | modified | Mounts the cookie banner and the page tracker (signed-in page views go through the server) |
 | `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link and "Analytics settings" |
 | `app/c/[ws]/upload/page.tsx` | modified | v5 page kept; visitors see "sign up to upload" instead of the upload form |
 | `components/DeleteClientButton.tsx` | modified | Hidden for visitors |
@@ -81,10 +81,12 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID and account email (after consent), "Analytics settings" link |
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
-| `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `analysis_viewed` / `recommendation_viewed` events |
+| `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `recommendation_viewed` event, `analysis_viewed` for demo visitors (signed-in: server) |
+| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits` |
 | `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving; `telegram_connected` event |
 | `instrumentation-client.ts` | modified | PostHog starts only after consent (`lib/analytics.ts`) |
-| `lib/analytics.ts` | modified | Consent-first PostHog: no replay/autocapture, user ID only, privacy filter |
+| `lib/analytics.ts` | modified | Cookie-consent PostHog in the browser: no replay/autocapture, privacy filter; page views only for demo visitors (`trackPageview`) |
+| `lib/db/schema.ts` | modified | `user_visits` table (current visit per signed-in person, for analytics) |
 | `components/v5/views/campaigns.tsx` | modified | Visitors get the sign-up note instead of changing a goal or funnel role |
 | `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
@@ -113,19 +115,25 @@ Everything not listed here is byte-identical to the source commit
 | `tests/auth.test.ts` | deleted | Tests the removed password reset and Google sign-in |
 | `INTEGRATION.md` | added | This file |
 | `app/api/internal/public-demo/route.ts` | added | Secret-protected demo refresh |
-| `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry for sign-up analytics) |
+| `app/api/activity/route.ts` | added | Signed-in page views and page leaves for analytics (server-side, no tracking cookie) |
+| `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side) |
 | `app/demo/route.ts` | added | `/app/demo`: own sample or the public demo |
-| `components/AnalyticsConsent.tsx` | added | Analytics choice banner (shared with the website) |
+| `components/AnalyticsConsent.tsx` | added | Cookie banner for analytics (shared with the website) |
+| `components/PageTracker.tsx` | added | Page views: server for signed-in people, browser (after consent) for demo visitors |
+| `drizzle/0011_user_visits.sql` | added | Migration for `user_visits` (apply to the dashboard database before go-live) |
+| `drizzle/meta/0011_snapshot.json` | added | Drizzle snapshot for 0011 |
 | `integration.lock.json` | added | Source commit file hashes |
 | `lib/access/policy.ts` | added | Who may use the dashboard |
 | `lib/analytics-sanitize.ts` | added | Privacy filter for analytics events (identical to the website's) |
-| `lib/auth/supabase.ts` | added | Supabase token check |
+| `lib/analytics-server.ts` | added | Server-side analytics for signed-in people: visits, PostHog capture through the privacy filter |
+| `lib/auth/supabase.ts` | added | Supabase token check (also returns the sign-in provider for sign-up analytics) |
 | `lib/integration/limits.ts` | added | Upload and account limits, file content checks |
 | `lib/integration/paths.ts` | added | Base path, API paths, website URLs |
 | `lib/integration/public-demo.ts` | added | Shared public demo: system owners, current demo, safe refresh, visitor identity |
 | `lib/integration/read-only.tsx` | added | Read-only flag for visitors (what the screen offers) |
 | `scripts/check-integration.mjs` | added | Verifies the two files above |
 | `scripts/e2e-proxy.mjs` | added | End-to-end test through the website's `/app` proxy (local only) |
+| `tests/analytics-server.test.ts` | added | Server-side analytics: sign-up, visits, cleaned paths, denial cases |
 | `tests/analytics.test.ts` | added | Analytics privacy filter cases for dashboard events |
 | `tests/integration-session.test.ts` | added | Bridge, access, sign-out, request-gate and allowed-origin tests |
 

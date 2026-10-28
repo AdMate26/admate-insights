@@ -177,7 +177,7 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
           <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a>
           {analyticsAvailable() && (
             <button type="button" className="link" onClick={openAnalyticsSettings}>
-              Analytics settings
+              Cookie settings
             </button>
           )}
         </p>

@@ -3,18 +3,31 @@
 One PostHog project (US region) covers the whole journey: the website
 (TanStack Start) and the dashboard (Next.js, served at `/app` on the same site).
 
+## Two ways events are recorded
+
+- **Signed-in people (dashboard): by AdMate's server, no banner.** The dashboard
+  tells `/app/api/activity` which page was opened or left, over the login
+  session people already have. `lib/analytics-server.ts` then sends the event to
+  PostHog with the Supabase user ID and account email, grouped into visits.
+  - A new visit starts after 30 minutes without activity (`user_visits` table).
+  - Sign-up (`signup_completed`) is recorded by the session bridge.
+  - Opening an account's Overview counts as `analysis_viewed`.
+  - No tracking cookie or browser storage is used. This is covered by the
+    Privacy Policy ("when you are signed in").
+- **Everyone else (public pages, demo): in the browser, after cookie consent.**
+  Nothing loads until the visitor clicks **Accept** in the "We use cookies"
+  banner. The choice is stored under `admate.analytics-consent`, is shared by
+  both apps, and can be changed from **Cookie settings** (website footer,
+  dashboard sidebar). Some dashboard events (uploads, recommendations,
+  Telegram) are also browser events and follow the same consent.
+
 ## Privacy rules
 
-- **Consent first.** Nothing loads or is sent until the visitor clicks
-  **Allow analytics** in the banner. The choice is stored in the browser under
-  `admate.analytics-consent` and shared by both apps (same site). It can be
-  changed from **Analytics settings** (website footer, dashboard sidebar).
-  Accepting the Terms at sign-up is not analytics consent.
 - **Off:** session replay, autocapture, heatmaps, dead clicks, exceptions, web
   vitals, surveys, feature flags and remote scripts.
 - **Identity:** signed-in users are identified by their Supabase user ID, and their
-  account email is set on their PostHog person (the only personal detail sent,
-  only after consent; never a name). The identity is reset on sign-out.
+  account email is set on their PostHog person (the only personal detail sent;
+  never a name). The browser identity is reset on sign-out.
 - **Time on page:** `$pageleave` is sent when a page is left, so PostHog can show
   time per page and session length. It follows the same rules as page views.
 - **Filter:** every event passes `sanitizeEvent` (`src/lib/analytics/sanitize.ts`,
@@ -24,7 +37,8 @@ One PostHog project (US region) covers the whole journey: the website
   - Other sites keep only their origin.
   - Only the events listed below are sent, and only with their listed short-code
     properties.
-- **No duplicate page views:** the dashboard records `/app/*`. The website records
+- **No duplicate page views:** dashboard pages are recorded once (by the server
+  for signed-in people, by the browser for demo visitors). The website records
   everything else and drops `/app`, `/auth/callback`, `/home` and `/logout`. A
   page view of the same page straight after itself is dropped too, because some
   pages rewrite their own address.
@@ -35,15 +49,15 @@ One PostHog project (US region) covers the whole journey: the website
 
 | Event | App | Properties |
 | --- | --- | --- |
-| `$pageview`, `$pageleave` | both | cleaned URL, `app`, `app_env` (page leave adds time on page) |
-| `login_completed` | website | `method`: `email_code` / `google` |
-| `signup_completed` | website | `method` (first entry into the dashboard) |
+| `$pageview`, `$pageleave` | both (dashboard signed-in: server) | cleaned URL, `app`, `app_env`, visit (`$session_id`); page leave adds time on page |
+| `login_completed` | website (after consent) | `method`: `email_code` / `google` |
+| `signup_completed` | dashboard server | `method` (first entry into the dashboard) |
 | `report_upload_started` | dashboard | `file_type` (fixed list), `size_kb`, `new_account` |
 | `report_previewed` | dashboard | `platform`, `level`, `granularity`, `rows` |
 | `report_uploaded` | dashboard | `platform`, `level`, `granularity`, `breakdown`, `rows`, `days`, `new_account` |
 | `report_upload_failed` | dashboard | `stage`, `reason` (e.g. `http_422`), `size_kb` |
 | `report_undone` | dashboard | none |
-| `analysis_viewed` | dashboard | `account` (`demo` / `sample` / `own`), `view` |
+| `analysis_viewed` | dashboard server (demo visitors: browser) | `account` (`demo` / `sample` / `own`) |
 | `recommendation_viewed` | dashboard | `account`, `view`, `detector`, `kind` |
 | `telegram_connected` | dashboard | none |
 
@@ -62,7 +76,9 @@ needed.
 
 - The key is the PostHog **project token** (`phc_…`). It is public by design.
 - The variables are read at build time, so redeploy after changing them.
-- Without a key there is no banner and nothing runs.
+- Without a key there is no banner and nothing runs, in the browser or on the server.
+- The dashboard database needs migration `0011_user_visits` (one small table)
+  before the server-side recording goes live.
 - Vercel Preview builds of the website are not connected to a dashboard (the
   dashboard settings are Production-only). Test dashboard events locally
   (`localhost:3000` website + `localhost:3100` dashboard); they arrive tagged

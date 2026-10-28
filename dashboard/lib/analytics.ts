@@ -83,8 +83,10 @@ export function startAnalytics(): boolean {
       api_host: config.host,
       defaults: "2026-08-30",
       person_profiles: "identified_only",
-      capture_pageview: "history_change",
-      capture_pageleave: true,
+      // Page views come from components/PageTracker.tsx: the server records them
+      // for signed-in people, the browser (trackPageview) for demo visitors.
+      capture_pageview: false,
+      capture_pageleave: false,
       autocapture: false,
       disable_session_recording: true,
       capture_heatmaps: false,
@@ -129,6 +131,15 @@ export function stopAnalytics() {
 
 function capturing() {
   return started && !posthog.has_opted_out_capturing();
+}
+
+// A browser page view (public demo visitors only; see components/PageTracker.tsx).
+export function trackPageview() {
+  if (!capturing()) {
+    whenReady.push(() => capturing() && posthog.capture("$pageview"));
+    return;
+  }
+  posthog.capture("$pageview");
 }
 
 // Named product events (PostHog), e.g. report_uploaded. Does nothing when
