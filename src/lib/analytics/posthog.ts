@@ -133,6 +133,7 @@ export function stopAnalytics(): void {
     posthog.opt_out_capturing();
     posthog.reset();
   }
+  rememberEmailSent(null);
   try {
     for (const key of Object.keys(window.localStorage)) {
       if (key.startsWith("ph_") || key.startsWith("__ph_")) window.localStorage.removeItem(key);
@@ -172,7 +173,29 @@ export async function trackBeforeLeaving(event: string, props?: EventProps): Pro
   await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
-let emailSent: string | null = null;
+// Remembers (as a short fingerprint, never the email itself) that this user's
+// email is already on their PostHog person, so it isn't re-sent on every page.
+const PERSON_KEY = "admate.analytics-person";
+function personMark(userId: string, email: string): string {
+  let h = 5381;
+  for (const ch of email) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return `${userId}:${h.toString(36)}`;
+}
+function emailAlreadySent(mark: string): boolean {
+  try {
+    return window.localStorage.getItem(PERSON_KEY) === mark;
+  } catch {
+    return false;
+  }
+}
+function rememberEmailSent(mark: string | null): void {
+  try {
+    if (mark) window.localStorage.setItem(PERSON_KEY, mark);
+    else window.localStorage.removeItem(PERSON_KEY);
+  } catch {
+    /* storage blocked: the email may be sent again next page */
+  }
+}
 
 /**
  * Links this browser to the signed-in Supabase user: their user ID and email
@@ -182,10 +205,11 @@ export function identifyUser(userId: string, email?: string | null): void {
   if (!SUPABASE_USER_ID.test(userId)) return;
   const run = () => {
     if (!capturing()) return;
-    const person = email ? { email } : undefined;
+    const mark = email ? personMark(userId, email) : null;
+    const person = email && mark && !emailAlreadySent(mark) ? { email } : undefined;
     if (posthog.get_distinct_id() !== userId) posthog.identify(userId, person);
-    else if (person && emailSent !== email) posthog.setPersonProperties(person);
-    if (email) emailSent = email;
+    else if (person) posthog.setPersonProperties(person);
+    if (person) rememberEmailSent(mark);
   };
   if (started) run();
   else whenReady.push(run);
@@ -194,7 +218,7 @@ export function identifyUser(userId: string, email?: string | null): void {
 /** Forget the signed-in user in this browser (sign-out). */
 export function resetAnalytics(): void {
   whenReady.length = 0;
-  emailSent = null;
+  rememberEmailSent(null);
   if (started) posthog.reset();
 }
 
