@@ -411,3 +411,14 @@ export const alertSends = pgTable(
   },
   (t) => [index("alert_sends_user_idx").on(t.userId, t.workspaceId, t.sentAt)],
 );
+
+// AdMate integration: each signed-in person's current visit, so product
+// analytics can group page views into visits and measure how long they last
+// (lib/analytics-server.ts). One row per person; a new visit starts after 30
+// minutes without activity.
+export const userVisits = pgTable("user_visits", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  visitId: text("visit_id").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+});

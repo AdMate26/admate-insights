@@ -53,7 +53,7 @@ export function LandingFooter() {
               onClick={openAnalyticsSettings}
               className="text-muted-foreground hover:text-foreground"
             >
-              Analytics settings
+              Cookie settings
             </button>
           )}
         </nav>

@@ -70,8 +70,9 @@ export function V5Page({ vm: serverVm, page, askAvailable = false, children }: {
   const account = readOnly ? "demo" : isSample ? "sample" : "own";
   const hasData = !!serverVm;
   useEffect(() => {
-    if (hasData && (page === "overview" || page === "home")) track("analysis_viewed", { account, view: level });
-  }, [ws, page, hasData, account, level]);
+    // Signed-in people's analysis views are recorded by the server (/api/activity).
+    if (readOnly && hasData && (page === "overview" || page === "home")) track("analysis_viewed", { account, view: level });
+  }, [ws, page, hasData, account, level, readOnly]);
   const [local, setLocal] = useState<Record<string, Status>>({});
   // New numbers from the server replace the optimistic decisions.
   const [seenVm, setSeenVm] = useState(serverVm);
