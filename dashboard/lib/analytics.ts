@@ -17,6 +17,7 @@ const OPEN_SETTINGS_EVENT = "admate:analytics-settings";
 const SUPABASE_USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 let started = false;
+const lastPageview = { path: null as string | null };
 const whenReady: Array<() => void> = [];
 
 function settings(): { key: string; host: string } | null {
@@ -93,9 +94,10 @@ export function startAnalytics(): boolean {
       disable_surveys: true,
       disable_external_dependency_loading: true,
       advanced_disable_flags: true,
-      before_send: (event) => sanitizeEvent(event as unknown as AnalyticsEvent | null, { ownHost }) as unknown as typeof event,
+      before_send: (event) => sanitizeEvent(event as unknown as AnalyticsEvent | null, { ownHost, lastPageview }) as unknown as typeof event,
     });
-    posthog.register({ app: "dashboard", app_env: appEnv(ownHost) });
+    // `$geoip_disable`: PostHog does not look up a city or coordinates from the IP.
+    posthog.register({ app: "dashboard", app_env: appEnv(ownHost), $geoip_disable: true });
     if (posthog.has_opted_out_capturing()) posthog.opt_in_capturing();
   } catch {
     return false;

@@ -22,7 +22,11 @@ One PostHog project (US region) covers the whole journey: the website
   - Only the events listed below are sent, and only with their listed short-code
     properties.
 - **No duplicate page views:** the dashboard records `/app/*`. The website records
-  everything else and drops `/app`, `/auth/callback`, `/home` and `/logout`.
+  everything else and drops `/app`, `/auth/callback`, `/home` and `/logout`. A
+  page view of the same page straight after itself is dropped too, because some
+  pages rewrite their own address.
+- **No location lookup:** `$geoip_disable` is set, so PostHog does not derive a
+  city or coordinates from the IP. "Discard client IP data" is on in the project.
 
 ## Events
 

@@ -79,6 +79,18 @@ test("no duplicate page views: the website drops /app pages and hand-off pages",
   expect(sanitizeEvent(pageview({ $pathname: "/" }), website)).not.toBeNull();
 });
 
+test("a repeat page view of the same page is dropped; a new page is not", () => {
+  const lastPageview = { path: null as string | null };
+  const opts = { ...website, lastPageview };
+  expect(sanitizeEvent(pageview({ $pathname: "/onboarding" }), opts)).not.toBeNull();
+  expect(sanitizeEvent(pageview({ $pathname: "/onboarding?access=pending" }), opts)).toBeNull();
+  expect(sanitizeEvent(pageview({ $pathname: "/privacy" }), opts)).not.toBeNull();
+  expect(sanitizeEvent(pageview({ $pathname: "/onboarding" }), opts)).not.toBeNull();
+  expect(
+    sanitizeEvent({ event: "login_completed", properties: { method: "google" } }, opts),
+  ).not.toBeNull();
+});
+
 test("only listed events are sent, with listed short-code properties only", () => {
   for (const event of [
     "$autocapture",

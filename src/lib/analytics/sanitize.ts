@@ -33,6 +33,12 @@ export interface SanitizeOptions {
   ownHost: string;
   /** Page views for these path prefixes are dropped (another app owns them). */
   skipPageviewPrefixes?: readonly string[];
+  /**
+   * The last page view's cleaned path, kept by the caller for this page load.
+   * A page view of the same path straight after it is dropped (pages that
+   * rewrite their own address, e.g. adding `?access=…`, are one visit).
+   */
+  lastPageview?: { path: string | null };
 }
 
 /** Allowed events and, for each, the only custom properties it may carry. */
@@ -144,6 +150,12 @@ export function sanitizeEvent(
       else if ((GLOBAL_PROPS.has(key) || allowed.includes(key)) && allowedValue(value)) {
         properties[key] = value;
       }
+    }
+
+    if (event.event === "$pageview" && options.lastPageview) {
+      const path = String(properties["$pathname"] ?? "");
+      if (path === options.lastPageview.path) return null;
+      options.lastPageview.path = path;
     }
 
     const result: AnalyticsEvent = { ...event, properties };
