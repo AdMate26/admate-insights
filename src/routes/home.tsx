@@ -6,7 +6,7 @@ import { AuthPending } from "@/components/auth/AuthLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { profileQueryOptions } from "@/lib/auth/profile";
 import { requireSession } from "@/lib/auth/session";
-import { signInMethod, track } from "@/lib/analytics/posthog";
+import { signInMethod, trackBeforeLeaving } from "@/lib/analytics/posthog";
 import { enterDashboard } from "@/lib/dashboard-bridge";
 import { validateWorkspaceSearch } from "@/lib/dashboard-search";
 
@@ -60,7 +60,7 @@ function EnterDashboard() {
       if (outcome.kind === "dashboard") {
         if (outcome.firstEntry) {
           const provider = data.session?.user.app_metadata?.provider;
-          track("signup_completed", { method: signInMethod(provider) }, true);
+          await trackBeforeLeaving("signup_completed", { method: signInMethod(provider) });
         }
         window.location.replace(outcome.href);
       } else if (outcome.kind === "login") void navigate({ to: "/login", replace: true });

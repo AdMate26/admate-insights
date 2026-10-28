@@ -154,17 +154,22 @@ function capturing(): boolean {
 
 type EventProps = Record<string, string | number | boolean>;
 
-/**
- * A named product event. Only codes, counts and flags (see sanitize.ts).
- * `beforeLeaving` sends at once (for events right before a full-page navigation).
- */
-export function track(event: string, props?: EventProps, beforeLeaving = false): void {
+/** A named product event. Only codes, counts and flags (see sanitize.ts). */
+export function track(event: string, props?: EventProps): void {
   if (!capturing()) return;
-  posthog.capture(
-    event,
-    props,
-    beforeLeaving ? { send_instantly: true, transport: "sendBeacon" } : undefined,
-  );
+  posthog.capture(event, props);
+}
+
+/**
+ * For an event right before a full-page navigation: send it now and give the
+ * request a moment to arrive, so PostHog records it before the next page's
+ * events (a beacon sent while leaving can be timestamped after them). Returns
+ * at once when analytics is off.
+ */
+export async function trackBeforeLeaving(event: string, props?: EventProps): Promise<void> {
+  if (!capturing()) return;
+  posthog.capture(event, props, { send_instantly: true });
+  await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
 /** Links this browser to the signed-in Supabase user (ID only, no email). */
