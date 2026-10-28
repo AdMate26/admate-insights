@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import posthog from "posthog-js";
+import { analyticsAvailable, identifyUser, openAnalyticsSettings, resetAnalytics } from "@/lib/analytics";
 import { loadSampleData } from "@/app/actions";
 import { signOut } from "@/app/(auth)/actions";
 import { KEEPS_PERIOD, MENUS, PAGE_HREF, PERIOD_KEYS, type MenuIcon } from "@/lib/levels";
@@ -123,7 +123,7 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
               <b>+ Add an ad account</b>
             </Link>
             <hr />
-            <form action={signOut} onSubmit={() => posthog.__loaded && posthog.reset()}>
+            <form action={signOut} onSubmit={resetAnalytics}>
               <button type="submit" role="menuitem" style={{ width: "100%" }}>
                 <b>Sign out</b>
                 <small>{email}</small>
@@ -165,7 +165,7 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
             <span className="user" title={email}>
               {email}
             </span>
-            <form action={signOut} onSubmit={() => posthog.__loaded && posthog.reset()}>
+            <form action={signOut} onSubmit={resetAnalytics}>
               <button type="submit">Sign out</button>
             </form>
             <Identify userId={userId} email={email} />
@@ -175,16 +175,20 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
         <p className="side-legal">
           <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
           <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a>
+          {analyticsAvailable() && (
+            <button type="button" className="link" onClick={openAnalyticsSettings}>
+              Analytics settings
+            </button>
+          )}
         </p>
       </div>
     </aside>
   );
 }
 
-// Tells analytics who this is (only when NEXT_PUBLIC_POSTHOG_KEY is set).
+// Tells analytics who this is: the Supabase user ID and email, only if the
+// person allowed analytics (lib/analytics.ts).
 function Identify({ userId, email }: { userId: string; email: string }) {
-  useEffect(() => {
-    if (posthog.__loaded) posthog.identify(userId, { email });
-  }, [userId, email]);
+  useEffect(() => identifyUser(userId, email), [userId, email]);
   return null;
 }

@@ -6,6 +6,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { identifyUser, resetAnalytics, signInMethod, track } from "@/lib/analytics/posthog";
 import { endDashboardSession, signOutEverywhere } from "@/lib/dashboard-bridge";
 import { PROFILE_QUERY_KEY, profileQueryOptions } from "./profile";
 
@@ -98,6 +99,10 @@ export async function completeSignIn(queryClient: QueryClient): Promise<PostLogi
   // as an account error, never skipped).
   await queryClient.fetchQuery(profileQueryOptions(userData.user.id));
 
+  // Analytics (only if the visitor allowed it): the Supabase user ID and email.
+  identifyUser(userData.user.id, userData.user.email);
+  track("login_completed", { method: signInMethod(userData.user.app_metadata?.provider) });
+
   // Open registration (submission MVP): every verified user goes straight to
   // their own dashboard; /home hands the sign-in to it. The unfinished Early
   // Access setup is skipped.
@@ -120,6 +125,7 @@ export function useLogout() {
       toast.error("We couldn't log you out. Please try again.");
       return;
     }
+    resetAnalytics();
     await navigate({ to: "/", replace: true });
     queryClient.removeQueries({ queryKey: PROFILE_QUERY_KEY });
     // Drop analyses (including the owner's live data) and access answers so

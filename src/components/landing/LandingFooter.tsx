@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
+import { analyticsAvailable, openAnalyticsSettings } from "@/lib/analytics/posthog";
+
 export function LandingFooter() {
   return (
     <footer className="border-t border-border/70 bg-background">
@@ -45,6 +47,15 @@ export function LandingFooter() {
           <Link to="/terms" className="text-muted-foreground hover:text-foreground">
             Terms
           </Link>
+          {analyticsAvailable() && (
+            <button
+              type="button"
+              onClick={openAnalyticsSettings}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Analytics settings
+            </button>
+          )}
         </nav>
       </div>
 

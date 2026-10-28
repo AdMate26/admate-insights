@@ -50,7 +50,7 @@ function Heading({ n }: { n: number }) {
 
 function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" effectiveDate="October 24, 2026">
+    <LegalPage title="Privacy Policy" effectiveDate="October 28, 2026">
       <section className="rounded-xl border border-border bg-muted/40 p-5">
         <p className="font-semibold text-foreground">The short version</p>
         <ul className="mt-2">
@@ -205,11 +205,19 @@ function PrivacyPage() {
       <section id="cookies">
         <Heading n={7} />
         <p>
-          We use browser storage and session cookies to keep you signed in. Website statistics and
-          product analytics help us understand how the service is used. Product analytics may link
-          page interactions and session recordings to your AdMate user ID and email. Session
-          recordings may include content shown on a page; anything you type into forms is masked.
-          You can limit analytics with your browser's privacy settings.
+          We use browser storage and session cookies to keep you signed in, and to remember your
+          analytics choice. Website statistics count page visits without using cookies.
+        </p>
+        <p>
+          Product analytics (PostHog, in the United States) runs only if you choose{" "}
+          <strong className="text-foreground">Allow analytics</strong>. It then records the pages
+          you visit, how long you stay on them, and key steps such as signing up, uploading a report
+          (whether it worked, never its contents or file name) and viewing an analysis or
+          recommendation. Once you sign in, these are linked to your AdMate user ID and your account
+          email address. It does not record your screen, and we do not send it your report data or
+          anything you type. Accepting our Terms is not consent to analytics. You can change your
+          choice at any time with <strong className="text-foreground">Analytics settings</strong> at
+          the bottom of our pages or in the dashboard menu.
         </p>
       </section>
 

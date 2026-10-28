@@ -11,6 +11,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { Analytics } from "@vercel/analytics/react";
 
+import { AnalyticsConsent } from "@/components/analytics/AnalyticsConsent";
 import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
@@ -139,6 +140,7 @@ function RootComponent() {
       <Outlet />
       <Toaster />
       <Analytics />
+      <AnalyticsConsent />
     </QueryClientProvider>
   );
 }

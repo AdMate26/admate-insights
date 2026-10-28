@@ -13,6 +13,7 @@ import {
 } from "@/lib/analysis/alerts";
 import { OBJECTIVE_DEFS, type Objective } from "@/lib/metrics/objectives";
 import { apiPath } from "@/lib/integration/paths";
+import { track } from "@/lib/analytics";
 
 // Advanced · Alerts (prototype advAlerts): 1) automatic alerts, 2) your own KPI alerts,
 // and where and when they're sent (in AdMate, and to Telegram).
@@ -512,6 +513,7 @@ function TelegramBlock({ P }: { P: Shared }) {
                   const r = await fetch(apiPath("/api/telegram/link")).then((x) => x.json()).catch(() => null);
                   setChecking(false);
                   if (r?.linked) {
+                    track("telegram_connected");
                     setTg((t) => ({ ...t, linked: true, on: true, username: r.username }));
                     toast("Telegram connected");
                   } else toast("Not yet. Press Start in the bot, then check again.");
