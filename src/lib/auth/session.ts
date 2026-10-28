@@ -99,8 +99,8 @@ export async function completeSignIn(queryClient: QueryClient): Promise<PostLogi
   // as an account error, never skipped).
   await queryClient.fetchQuery(profileQueryOptions(userData.user.id));
 
-  // Analytics (only if the visitor allowed it): the Supabase user ID, no email.
-  identifyUser(userData.user.id);
+  // Analytics (only if the visitor allowed it): the Supabase user ID and email.
+  identifyUser(userData.user.id, userData.user.email);
   track("login_completed", { method: signInMethod(userData.user.app_metadata?.provider) });
 
   // Open registration (submission MVP): every verified user goes straight to

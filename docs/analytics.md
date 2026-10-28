@@ -12,8 +12,11 @@ One PostHog project (US region) covers the whole journey: the website
   Accepting the Terms at sign-up is not analytics consent.
 - **Off:** session replay, autocapture, heatmaps, dead clicks, exceptions, web
   vitals, surveys, feature flags and remote scripts.
-- **Identity:** signed-in users are identified by their Supabase user ID only
-  (never email or name), and the identity is reset on sign-out.
+- **Identity:** signed-in users are identified by their Supabase user ID, and their
+  account email is set on their PostHog person (the only personal detail sent,
+  only after consent; never a name). The identity is reset on sign-out.
+- **Time on page:** `$pageleave` is sent when a page is left, so PostHog can show
+  time per page and session length. It follows the same rules as page views.
 - **Filter:** every event passes `sanitizeEvent` (`src/lib/analytics/sanitize.ts`,
   kept identical in `dashboard/lib/analytics-sanitize.ts`):
   - URLs and referrers lose their query string and `#…` part.
@@ -32,7 +35,7 @@ One PostHog project (US region) covers the whole journey: the website
 
 | Event | App | Properties |
 | --- | --- | --- |
-| `$pageview` | both | cleaned URL, `app`, `app_env` |
+| `$pageview`, `$pageleave` | both | cleaned URL, `app`, `app_env` (page leave adds time on page) |
 | `login_completed` | website | `method`: `email_code` / `google` |
 | `signup_completed` | website | `method` (first entry into the dashboard) |
 | `report_upload_started` | dashboard | `file_type` (fixed list), `size_kb`, `new_account` |

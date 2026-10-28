@@ -99,7 +99,7 @@ export function startAnalytics(): boolean {
       defaults: "2026-08-30",
       person_profiles: "identified_only",
       capture_pageview: "history_change",
-      capture_pageleave: false,
+      capture_pageleave: true,
       autocapture: false,
       disable_session_recording: true,
       capture_heatmaps: false,
@@ -172,11 +172,20 @@ export async function trackBeforeLeaving(event: string, props?: EventProps): Pro
   await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
-/** Links this browser to the signed-in Supabase user (ID only, no email). */
-export function identifyUser(userId: string): void {
+let emailSent: string | null = null;
+
+/**
+ * Links this browser to the signed-in Supabase user: their user ID and email
+ * (the only personal detail sent; only after the visitor allowed analytics).
+ */
+export function identifyUser(userId: string, email?: string | null): void {
   if (!SUPABASE_USER_ID.test(userId)) return;
   const run = () => {
-    if (capturing() && posthog.get_distinct_id() !== userId) posthog.identify(userId);
+    if (!capturing()) return;
+    const person = email ? { email } : undefined;
+    if (posthog.get_distinct_id() !== userId) posthog.identify(userId, person);
+    else if (person && emailSent !== email) posthog.setPersonProperties(person);
+    if (email) emailSent = email;
   };
   if (started) run();
   else whenReady.push(run);
@@ -185,6 +194,7 @@ export function identifyUser(userId: string): void {
 /** Forget the signed-in user in this browser (sign-out). */
 export function resetAnalytics(): void {
   whenReady.length = 0;
+  emailSent = null;
   if (started) posthog.reset();
 }
 

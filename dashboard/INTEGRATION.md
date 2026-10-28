@@ -78,7 +78,7 @@ Everything not listed here is byte-identical to the source commit
 | `components/UploadFlow.tsx` | modified | `fetch` paths under `/app` (`apiPath`); analytics gets reason codes and a fixed file-type list, never error text or file names |
 | `components/v5/Assistant.tsx` | modified | `fetch` paths under `/app` (`apiPath`: ask, credits, checkout, test checkout); visitors get the sign-up note instead of a question |
 | `components/v5/Drawer.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID only (no email), "Analytics settings" link |
+| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID and account email (after consent), "Analytics settings" link |
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `analysis_viewed` / `recommendation_viewed` events |

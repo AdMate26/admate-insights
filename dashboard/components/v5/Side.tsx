@@ -168,7 +168,7 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
             <form action={signOut} onSubmit={resetAnalytics}>
               <button type="submit">Sign out</button>
             </form>
-            <Identify userId={userId} />
+            <Identify userId={userId} email={email} />
           </>
         )}
         {/* AdMate integration: the website's legal pages (outside the /app basePath). */}
@@ -186,9 +186,9 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
   );
 }
 
-// Tells analytics who this is: the Supabase user ID only, and only if the
+// Tells analytics who this is: the Supabase user ID and email, only if the
 // person allowed analytics (lib/analytics.ts).
-function Identify({ userId }: { userId: string }) {
-  useEffect(() => identifyUser(userId), [userId]);
+function Identify({ userId, email }: { userId: string; email: string }) {
+  useEffect(() => identifyUser(userId, email), [userId, email]);
   return null;
 }

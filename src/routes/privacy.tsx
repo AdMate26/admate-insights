@@ -211,13 +211,13 @@ function PrivacyPage() {
         <p>
           Product analytics (PostHog, in the United States) runs only if you choose{" "}
           <strong className="text-foreground">Allow analytics</strong>. It then records the pages
-          you visit and key steps such as signing up, uploading a report (whether it worked, never
-          its contents or file name) and viewing an analysis or recommendation. Once you sign in,
-          these are linked to your AdMate user ID. It does not record your screen, and we do not
-          send it your email address, your report data or anything you type. Accepting our Terms is
-          not consent to analytics. You can change your choice at any time with{" "}
-          <strong className="text-foreground">Analytics settings</strong> at the bottom of our pages
-          or in the dashboard menu.
+          you visit, how long you stay on them, and key steps such as signing up, uploading a report
+          (whether it worked, never its contents or file name) and viewing an analysis or
+          recommendation. Once you sign in, these are linked to your AdMate user ID and your account
+          email address. It does not record your screen, and we do not send it your report data or
+          anything you type. Accepting our Terms is not consent to analytics. You can change your
+          choice at any time with <strong className="text-foreground">Analytics settings</strong> at
+          the bottom of our pages or in the dashboard menu.
         </p>
       </section>
 

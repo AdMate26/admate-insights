@@ -13,8 +13,9 @@
  * - PostHog's own `$` properties are kept, except ones that can carry page
  *   content or personal data. Every URL loses its query string and `#…` part,
  *   IDs in paths become `:id`, and URLs of other sites keep only their origin.
- * - Person properties (`$set`, `$set_once`) keep only PostHog's own `$` keys,
- *   so no email or name can be attached to a person.
+ * - Person properties (`$set`, `$set_once`) keep PostHog's own `$` keys and,
+ *   in `$set`, the signed-in user's email (set on sign-in, after consent). No
+ *   name or other personal fields can be attached to a person.
  */
 
 type Properties = Record<string, unknown>;
@@ -44,7 +45,9 @@ export interface SanitizeOptions {
 /** Allowed events and, for each, the only custom properties it may carry. */
 export const EVENT_PROPS: Readonly<Record<string, readonly string[]>> = {
   $pageview: [],
+  $pageleave: [],
   $identify: [],
+  $set: [],
   login_completed: ["method"],
   signup_completed: ["method"],
   report_upload_started: ["file_type", "size_kb", "new_account"],
@@ -72,6 +75,7 @@ const BLOCKED_SYSTEM_PROPS = new Set([
 ]);
 
 const CODE = /^[A-Za-z0-9_.:-]{1,64}$/;
+const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,63}$/;
 const ID_SEGMENT =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{5,}|[A-Za-z0-9_-]{24,})$/i;
 const URL_KEY = /url|referrer|pathname/i;
@@ -137,7 +141,7 @@ export function sanitizeEvent(
     if (!allowed) return null;
 
     const props = event.properties ?? {};
-    if (event.event === "$pageview") {
+    if (event.event === "$pageview" || event.event === "$pageleave") {
       const path = cleanPath(String(props["$pathname"] ?? ""));
       const owned = options.skipPageviewPrefixes ?? [];
       if (owned.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) return null;
@@ -159,7 +163,11 @@ export function sanitizeEvent(
     }
 
     const result: AnalyticsEvent = { ...event, properties };
-    if (event.$set) result.$set = cleanSystemProps(event.$set, options.ownHost);
+    if (event.$set) {
+      result.$set = cleanSystemProps(event.$set, options.ownHost);
+      const email = event.$set["email"];
+      if (typeof email === "string" && EMAIL.test(email)) result.$set["email"] = email;
+    }
     if (event.$set_once) result.$set_once = cleanSystemProps(event.$set_once, options.ownHost);
     return result;
   } catch {

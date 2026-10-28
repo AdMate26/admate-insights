@@ -27,9 +27,9 @@ export function AnalyticsConsent() {
     else if (readConsent() === null) setOpen(true);
     const stopListening = onAnalyticsSettings(() => setOpen(true));
 
-    // Identity follows the Supabase session: its user ID only, never the email.
+    // Identity follows the Supabase session: user ID and email (after consent only).
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) identifyUser(session.user.id);
+      if (session?.user) identifyUser(session.user.id, session.user.email);
       else if (event === "SIGNED_OUT") resetAnalytics();
     });
     return () => {
@@ -54,7 +54,8 @@ export function AnalyticsConsent() {
       <p className="text-foreground">
         <strong className="font-semibold">Help us improve AdMate?</strong> With your permission we
         record which pages you visit and key steps such as sign-up and viewing an analysis, using
-        PostHog. No recordings of your screen, and never your report data.{" "}
+        PostHog, linked to your account email once you sign in. No recordings of your screen, and
+        never your report data.{" "}
         <a href="/privacy#cookies" className="underline">
           Privacy
         </a>

@@ -91,6 +91,24 @@ test("a repeat page view of the same page is dropped; a new page is not", () => 
   ).not.toBeNull();
 });
 
+test("page-leave events follow the page-view rules", () => {
+  const leave = (path: string): AnalyticsEvent => ({
+    event: "$pageleave",
+    properties: {
+      $pathname: path,
+      $current_url: `https://www.admate.site${path}?x=1`,
+      $prev_pageview_duration: 42,
+    },
+  });
+  expect(sanitizeEvent(leave("/app/c/abc"), website)).toBeNull();
+  expect(sanitizeEvent(leave("/home"), website)).toBeNull();
+  expect(sanitizeEvent(leave("/privacy"), website)?.properties).toEqual({
+    $pathname: "/privacy",
+    $current_url: "https://www.admate.site/privacy",
+    $prev_pageview_duration: 42,
+  });
+});
+
 test("only listed events are sent, with listed short-code properties only", () => {
   for (const event of [
     "$autocapture",
@@ -122,7 +140,7 @@ test("only listed events are sent, with listed short-code properties only", () =
   expect(sanitizeEvent(null, website)).toBeNull();
 });
 
-test("person properties never carry an email or name", () => {
+test("person properties carry only the signed-in email, never a name or other fields", () => {
   const out = sanitizeEvent(
     {
       event: "$identify",
@@ -135,7 +153,12 @@ test("person properties never carry an email or name", () => {
     },
     website,
   );
-  expect(out?.$set).toEqual({ $browser: "Safari" });
+  expect(out?.$set).toEqual({ $browser: "Safari", email: "me@example.com" });
+  const bad = sanitizeEvent(
+    { event: "$set", properties: {}, $set: { email: "not an email", phone: "+855 12 345 678" } },
+    website,
+  );
+  expect(bad?.$set).toEqual({});
   expect(out?.$set_once).toEqual({ $initial_current_url: "https://www.admate.site/login" });
 });
 

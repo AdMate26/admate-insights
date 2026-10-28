@@ -29,7 +29,7 @@ export function AnalyticsConsent() {
   return (
     <div role="dialog" aria-label="Analytics choice" className="fixed inset-x-3 bottom-3 z-[1000] mx-auto max-w-xl rounded-xl border border-line bg-bg p-4 text-sm text-fg shadow-lg sm:inset-x-6">
       <p>
-        <strong className="font-semibold">Help us improve AdMate?</strong> With your permission we record which pages you visit and key steps such as sign-up and viewing an analysis, using PostHog. No recordings of your screen, and never your report data.{" "}
+        <strong className="font-semibold">Help us improve AdMate?</strong> With your permission we record which pages you visit and key steps such as sign-up and viewing an analysis, using PostHog, linked to your account email once you sign in. No recordings of your screen, and never your report data.{" "}
         <a href="/privacy#cookies" className="underline">
           Privacy
         </a>
