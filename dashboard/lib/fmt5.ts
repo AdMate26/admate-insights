@@ -26,6 +26,9 @@ export function makeFmt(currency: string) {
     return v < 0 ? `−${s}` : s;
   };
   const kpi = (v: number | null | undefined, mode: KpiMode | "neutral") => (v == null || !Number.isFinite(v) ? "—" : mode === "roas" ? `${v.toFixed(2)}×` : money(v));
-  return { money, kpi, currency };
+  // Sales back per one unit spent, in the account's currency ("$2.50" / "KHR 2.50"), and that unit ("$1" / "KHR 1").
+  const back = (v: number) => nf(2).format(v);
+  const one = nf(0).format(1);
+  return { money, kpi, back, one, currency };
 }
 export type Fmt = ReturnType<typeof makeFmt>;

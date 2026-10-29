@@ -141,7 +141,7 @@ export const imports = pgTable(
     rowCount: integer("row_count").notNull(),
     currency: text("currency"),
     attribution: text("attribution"),
-    status: text("status").notNull().default("active"), // active | undone
+    status: text("status").notNull().default("active"), // active | undone | history (older TikTok syncs: kept, not undoable)
     // "performance" (campaign numbers) or a breakdown export for Audience insight (age_gender, location, …).
     kind: text("kind").notNull().default("performance"),
     diff: jsonb("diff"), // what this import replaced (newest-wins overlap handling)

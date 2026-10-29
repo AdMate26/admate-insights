@@ -45,6 +45,7 @@ const STATUS: Record<TikTokConnectErrorCode, number> = {
   import_limit: 409,
   report: 502,
   timeout: 504,
+  storage: 500,
 };
 
 /** A fixed error code for the browser; never provider text, tokens or stack traces. */

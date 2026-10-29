@@ -291,13 +291,14 @@ export async function undoImport(db: DB, workspaceId: string, importId: string):
   await db.transaction(async (tx) => {
     const [imp] = await tx.select().from(imports).where(and(eq(imports.id, importId), eq(imports.workspaceId, workspaceId)));
     if (!imp || imp.status !== "active") return;
-    // Newer active uploads of the same platform and kind, oldest first: the first
-    // one overlapping a row is the upload that would have replaced it.
+    // Newer imports of the same platform and kind still holding data (active, or
+    // TikTok sync history), oldest first: the first one that would have replaced a
+    // row takes it. (A history sync can't be undone itself: its status isn't "active".)
     const later = (
       await tx
         .select({ id: imports.id, createdAt: imports.createdAt, periodStart: imports.periodStart, periodEnd: imports.periodEnd })
         .from(imports)
-        .where(and(eq(imports.workspaceId, workspaceId), eq(imports.platform, imp.platform), eq(imports.kind, imp.kind), eq(imports.status, "active"), gt(imports.createdAt, imp.createdAt)))
+        .where(and(eq(imports.workspaceId, workspaceId), eq(imports.platform, imp.platform), eq(imports.kind, imp.kind), inArray(imports.status, ["active", "history"]), gt(imports.createdAt, imp.createdAt)))
     ).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     const owner = (r: { periodStart: string; periodEnd: string }) => later.find((l) => l.periodStart <= r.periodEnd && l.periodEnd >= r.periodStart)?.id ?? null;
 

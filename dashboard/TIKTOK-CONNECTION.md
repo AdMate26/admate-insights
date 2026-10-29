@@ -97,6 +97,9 @@ imports them into the linked ad account as one report.
   - the import transaction re-checks the lock, so a run that lost it rolls back
   - the lock frees itself after 10 minutes if a server crashes
   - a one-minute pause between syncs
+- **Rolling history:** only the 7 newest syncs per advertiser can be undone.
+  Older syncs become history: their numbers stay, they can't be undone, and they
+  never count toward the 50-upload limit (`lib/tiktok/history.ts`).
 - **Time limit and retries:** reading has a 4-minute budget. A page with a
   temporary TikTok failure is retried twice. The access token is refreshed first
   if it wouldn't last the run.

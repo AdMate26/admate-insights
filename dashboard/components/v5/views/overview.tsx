@@ -446,7 +446,7 @@ export function BegHome() {
   const k = (x: number | null) => (x == null ? "—" : f.kpi(x, "cost"));
   const before = picked && v.compareLabel ? v.compareLabel : `the ${periodWord(v)} before`;
   const words = !periodName ? `in ${v.label}` : /^(Last|This|The)\b/.test(periodName) ? `in ${periodName.replace(/^Last/, "the last").replace(/^This/, "this").replace(/^The/, "the")}` : `in ${periodName}`;
-  const kOf = (o: Goal) => (x: number | null) => (x == null ? "—" : o.mode === "roas" ? `$${x.toFixed(2)} back` : k(x));
+  const kOf = (o: Goal) => (x: number | null) => (x == null ? "—" : o.mode === "roas" ? `${f.back(x)} back` : k(x));
   const lines = goals.slice(0, 3).map((o) => plainGoal(o, before, kOf(o)));
   const todo = decisions(v, shown);
   const probsHM = openProblems(v, shown).filter((d) => d.priority === "high" || d.priority === "medium");

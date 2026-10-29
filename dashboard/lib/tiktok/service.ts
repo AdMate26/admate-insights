@@ -31,7 +31,8 @@ export type TikTokConnectErrorCode =
   | "busy" // a sync is running or just ran for this account
   | "import_limit" // the account already holds the maximum number of reports
   | "report" // TikTok's report was unusable (format, dates, size or time zone)
-  | "timeout"; // the sync ran out of time; nothing was written
+  | "timeout" // the sync ran out of time; nothing was written
+  | "storage"; // AdMate couldn't save; the whole sync was rolled back
 
 export class TikTokConnectError extends Error {
   constructor(public readonly code: TikTokConnectErrorCode) {

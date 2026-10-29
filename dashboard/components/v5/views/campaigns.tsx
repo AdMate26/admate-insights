@@ -54,8 +54,8 @@ export function BegMyAds() {
         <div className="grid3">
           {list.map((r) => {
             const [tone, word] = CAMP_TAG[r.kind ?? ""] ?? ["flat", "No verdict yet"];
-            const each = r.kpi == null ? "no results yet" : r.mode === "roas" ? `$${r.kpi.toFixed(2)} back in sales for every $1` : r.mode === "cpm" ? `${f.money(r.kpi)} per 1,000 views` : `${f.money(r.kpi)} per ${singular(r)}`;
-            const exp = r.expected != null ? `AdMate expected about ${r.mode === "roas" ? `$${r.expected.toFixed(2)} back` : f.money(r.expected)}.` : "";
+            const each = r.kpi == null ? "no results yet" : r.mode === "roas" ? `${f.back(r.kpi)} back in sales for every ${f.one}` : r.mode === "cpm" ? `${f.money(r.kpi)} per 1,000 views` : `${f.money(r.kpi)} per ${singular(r)}`;
+            const exp = r.expected != null ? `AdMate expected about ${r.mode === "roas" ? `${f.back(r.expected)} back` : f.money(r.expected)}.` : "";
             return (
               <button key={r.id} className="ccard" type="button" onClick={() => open(null, { entity: { level: "campaign", id: r.id } })}>
                 <span className={`tag ${tone}`}>{word}</span>

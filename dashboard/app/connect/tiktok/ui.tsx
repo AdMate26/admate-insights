@@ -39,6 +39,7 @@ const MESSAGES: Record<string, string> = {
   import_limit: "This ad account already holds the maximum number of reports. Undo an old one in Reports first.",
   report: "TikTok's report couldn't be used, so nothing was imported. Please try again later.",
   timeout: "TikTok took too long to answer, so nothing was imported. Please try again later.",
+  storage: "AdMate couldn't save the data, so nothing was changed. Please try again later.",
 };
 
 function syncSummary(r: SyncResult): string {

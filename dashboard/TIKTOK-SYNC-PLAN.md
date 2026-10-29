@@ -1,9 +1,9 @@
 # TikTok sync: Phase 5 review and the plan for daily automatic sync
 
-Status on 2026-10-29: everything below is on the draft branch
+Status on 2026-10-29 (Phases 5–6): everything below is on the draft branch
 `codex/tiktok-mcp-oauth-foundation` (PR #39) and local only. Nothing is deployed,
 no shared database has the TikTok migrations (`0012`–`0014`), and scheduled
-sync is **not** implemented.
+sync is **not** implemented. Phase 6 needed no new migration.
 
 ## 1. What a sync may replace (fixed in Phase 5)
 
@@ -59,46 +59,87 @@ what they did before. The analysis engine itself is unchanged. A test confirms
 the engine produces identical KPIs, verdicts and findings for synced data and for
 the same rows uploaded as a file.
 
-## 3. Capacity: the 50-report limit (design, not built)
+## 3. Capacity: the 50-report limit (built in Phase 6)
 
 **The problem.** Each sync that changes anything creates an import. With a 30-day
-window synced daily, every import is mostly replaced by the next one, but keeps
-the one day that falls out of the window. Imports therefore never become empty:
-365 syncs make 365 imports, each with one active day.
+window synced daily, every import keeps the one day that falls out of the window,
+so imports never empty out. Under the old rule, syncs used up the 50-report
+allowance in about 50 days and filled Reports with one entry per sync.
 
-The effects:
-- Sync Now stops at 50 (`import_limit`).
-- The "compare reports" list fills with sync entries.
-- About 29 of every 30 stored copies are inactive undo history.
+**What was built** (`lib/tiktok/history.ts`, called inside the sync's own
+transaction):
 
-**Proposal: rolling consolidation of sync imports.**
+1. **Syncs don't count toward the upload limit.** `checkImportLimit` counts
+   uploaded reports only. Uploads keep their limit of 50.
+2. **Only the 7 newest syncs per advertiser and account stay `active`**
+   (undoable, listed one by one).
+3. **Older syncs become `history`.**
+   - Their stored rows are **not moved or changed**. Every number keeps its source
+     sync and that sync's own set of available measures, so the analysis reads
+     exactly the same active rows.
+   - History syncs can't be undone.
+   - Reports shows them as one "TikTok sync history" line.
+4. **Unreachable undo copies are deleted.** These are rows that a history sync
+   replaced: only undoing that history sync could bring them back, and that's no
+   longer possible. This keeps storage bounded. In the 90-day test, AdMate stored
+   under a fifth of the replaced copies kept when every sync is kept.
+5. **Undo stays correct.** History syncs still count as "newer imports" when an
+   older upload is undone, so rows they replaced never come back alongside them.
+   The test fails without this.
+6. **One transaction:** the import, the sync record, the retirement and the
+   clean-up succeed or roll back together. This is tested with a forced database
+   failure.
 
-1. **Count syncs separately.** `checkImportLimit` counts only uploads (imports
-   without a `tiktok_sync_imports` row). Syncs follow the retention rule below.
-2. **Keep the newest K = 7 sync imports per advertiser as they are.** They stay
-   undoable, newest first.
-3. **Fold older sync imports into one "TikTok history" import per advertiser** (and
-   per column set, so a measure is never claimed for data that lacked it). This
-   runs in the same transaction as the sync that pushes one out of the newest K:
-   - Re-point the old import's active rows to the history import.
-   - Keep its inactive rows that one of the K newest syncs, or any upload, would
-     restore on undo (re-pointed too).
-   - Delete inactive rows that only an older, folded sync replaced. No undo can
-     reach them any more.
-   - Mark the old import `merged`. It is kept for audit, but left out of Reports,
-     the limit and report-mode comparisons.
-4. **Undo:** the K newest syncs and all uploads keep Undo. The history import gets
-   an explicit "Remove synced history" action instead of Undo.
-5. **What doesn't change:**
-   - Date-range comparisons read rows by date, so they are unaffected.
-   - History before the window is preserved.
-   - Storage stays bounded at about K × 30 days × campaigns of undo copies.
+**Change from the plan:** the plan proposed moving old rows into one "TikTok
+history" import per advertiser. Changing their status instead keeps each row's
+source sync and its exact measure set, and avoids rewriting thousands of rows.
+It meets the same goals: limit, clean Reports, bounded storage, and the same
+analysis.
 
-Before building it, write tests for:
-- Reports, the limit and comparisons after 60 simulated daily syncs
-- undo of each of the K newest syncs
-- an upload in between
-- a column-set change
+### Data-loss review
+
+- **Active data:** never moved, changed or deleted by consolidation. Only inactive
+  copies replaced by a history sync are deleted.
+- **What can no longer be undone:**
+  - syncs older than the 7 newest
+  - the earlier versions of rows those syncs replaced, for example TikTok's
+    first, still-changing numbers for a day, or an uploaded day that a sync later
+    replaced
+
+  This is the intended trade-off. TikTok's later numbers are kept, and the history
+  sync's own rows stay.
+- **Uploads:** still fully undoable. Rows a history sync replaced from an upload
+  are deleted; undoing that upload would have deleted them anyway.
+- **Relinking:** if an account is relinked to another advertiser, the previous
+  advertiser's 7 newest syncs stay undoable indefinitely, because retention runs
+  per advertiser. Harmless.
+- **Remaining growth:** one small import row (metadata) per changed sync per day.
+  Rows of history syncs whose data is all replaced could be deleted later. That
+  needs no data decision, but isn't built.
+- **Concurrency:** an upload, an undo and a sync aren't serialized against each
+  other (uploads never were). A row handed to a history sync by an undo during a
+  sync is cleaned up at the next sync.
+
+**Tests** (`tests/tiktok-connection.test.ts`, "rolling history"). The main test
+runs 90 daily syncs, then compares against a reference account that never
+consolidates. It covers:
+- TikTok revising the newest 3 days
+- campaigns starting and stopping
+- reach and likes missing for some syncs (three measure sets)
+- three uploads in between: a daily CSV, a summary partly before the window, and
+  a late daily CSV
+
+At 30, 60 and 90 syncs, the two accounts have identical active rows, plus
+identical KPIs, verdicts, findings and dashboard rows for three periods (default,
+an old week, a month). They stay identical after undoing the newest sync, an older
+recent sync, a recent upload, and an upload older than the history.
+
+Other tests cover:
+- the upload limit with syncs present
+- full rollback on a database failure
+- isolation: another person's account, another advertiser's syncs in the same
+  account, a forged sync record
+- KHR formatting
 
 ## 4. Lock, retries and time limits (reviewed; gaps fixed in Phase 5)
 
@@ -145,7 +186,7 @@ All of these are in section 5.
   - a manual Sync Now resets the backoff
 - **Telemetry:** counts and outcome codes only; never tokens, report rows or
   advertiser names.
-- **Capacity:** needs section 3 first, or accounts hit the limit after 50 days.
+- **Capacity:** handled by section 3 (built).
 
 ## 6. Proposal: reconnect reminders (not built)
 
@@ -185,7 +226,7 @@ TikTok's authorization lasts a fixed 30 days (`refresh_expires_at`).
 
 ## 8. Remaining steps before daily automatic sync
 
-1. Approve this design. Build section 3 (capacity) with its tests.
+1. ~~Build section 3 (capacity) with its tests.~~ Done in Phase 6.
 2. Build the scheduler (section 5) and the reminders (section 6), with tests.
 3. Verify the unverified metrics (leads, revenue, registrations) with an
    authorized advertiser that has history, then decide whether to enable them.

@@ -52,6 +52,7 @@ const tiktok = {
   failTimes: Infinity, // …this many times, then normally
   failCode: 50000, // 50000 = temporary system error (retried); 40002 = bad request (final)
   onReport: null as null | (() => Promise<void>), // runs before each report page is answered
+  reportFn: null as null | ((start: string, end: string) => Record<string, unknown>[]), // rows generated per request instead of `report`
   shiftTotal: false, // pretend the report changed between pages
 };
 function issue() {
@@ -126,7 +127,8 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
         tiktok.failTimes -= 1;
         return reply({ content: [{ type: "text", text: JSON.stringify({ code: tiktok.failCode, message: "System error" }) }] });
       }
-      const inRange = tiktok.report.filter((r) => {
+      const source = tiktok.reportFn ? tiktok.reportFn(String(args.start_date), String(args.end_date)) : tiktok.report;
+      const inRange = source.filter((r) => {
         const day = String((r.dimensions as Record<string, string>).stat_time_day).slice(0, 10);
         return day >= String(args.start_date) && day <= String(args.end_date);
       });
@@ -465,6 +467,7 @@ function resetReport() {
   tiktok.failTimes = Infinity;
   tiktok.failCode = 50000;
   tiktok.onReport = null;
+  tiktok.reportFn = null;
   tiktok.shiftTotal = false;
   tiktok.currency = "KHR";
 }
@@ -1013,5 +1016,281 @@ describe("TikTok Sync: lock, retries and time limits (ready for scheduled jobs)"
     const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
     expect((await syncTikTokAdvertiser(A, ADVERTISER, { now: () => at, sleep: async () => {} })).outcome).toBe("ok");
     expect(tiktok.refreshes).toBe(refreshes + 1);
+  });
+});
+
+// ---- Phase 6: rolling sync history ------------------------------------------
+const P6 = [
+  { id: CAMPAIGNS[0]!.id, name: CAMPAIGNS[0]!.name, objective: "TRAFFIC", spend: 60000 },
+  { id: CAMPAIGNS[2]!.id, name: CAMPAIGNS[2]!.name, objective: "VIDEO_VIEWS", spend: 35000 },
+  { id: "1850000000000001", name: "KH | Late starter", objective: "TRAFFIC", spend: 20000, from: 40 },
+  { id: "1850000000000002", name: "KH | Ended early", objective: "REACH", spend: 15000, to: 25 },
+];
+const dayIndex = (origin: string, d: string) => Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${origin}T00:00:00Z`)) / 86400000);
+/**
+ * TikTok as it behaves over months: each report covers the asked dates, the
+ * newest 3 days are still being revised (they grow on later syncs), campaigns
+ * start and stop, and some measures go missing for a while ("-" for reach on
+ * syncs 30–39, for likes on syncs 50–55).
+ */
+function months(origin: string, syncNo: () => number) {
+  return (start: string, end: string) => {
+    const n = syncNo();
+    const rows: Record<string, unknown>[] = [];
+    for (let d = start; d <= end; d = day(d, 1)) {
+      const idx = dayIndex(origin, d);
+      const age = dayIndex(d, end);
+      const revise = age < 3 ? 0.97 + 0.01 * age : 1;
+      for (const c of P6) {
+        if ((c.from !== undefined && idx < c.from) || (c.to !== undefined && idx > c.to)) continue;
+        const spend = (c.spend + (idx % 7) * 900) * revise;
+        rows.push({
+          dimensions: { campaign_id: c.id, stat_time_day: `${d} 00:00:00` },
+          metrics: {
+            campaign_name: c.name, objective_type: c.objective, campaign_budget: "-",
+            spend: spend.toFixed(2), impressions: String(Math.round(spend * 0.8)), clicks: String(Math.round((spend / 400) * (idx > 60 && c.objective === "TRAFFIC" ? 0.7 : 1))),
+            reach: n >= 30 && n < 40 ? "-" : String(Math.round(spend * 0.5)), conversion: "0", complete_payment: "0", app_install: "0", registration: "0",
+            total_landing_page_view: String(Math.round(spend / 600)), video_play_actions: String(Math.round(spend * 0.4)), follows: "2",
+            likes: n >= 50 && n < 56 ? "-" : "30", comments: "2", shares: "1",
+          },
+        });
+      }
+    }
+    return rows;
+  };
+}
+async function connectAs(person: "a" | "b") {
+  await signIn(person);
+  await callback((await start()).state);
+  const { db: d, schema, eq } = await db();
+  const far = new Date(Date.now() + 500 * 86400000); // the simulated months stay inside the authorization
+  await d.update(schema.tiktokConnections).set({ accessExpiresAt: far, refreshExpiresAt: far }).where(eq(schema.tiktokConnections.userId, PEOPLE[`${person}.jwt.sig`]!.id));
+}
+async function linkTo(user: string, workspaceId: string) {
+  const { linkTikTokAdvertiser } = await import("@/lib/tiktok/service");
+  await linkTikTokAdvertiser(user, ADVERTISER, workspaceId);
+}
+const syncAs = async (user: string, at: Date, keepRecentSyncs?: number) =>
+  (await import("@/lib/tiktok/sync")).syncTikTokAdvertiser(user, ADVERTISER, { now: () => at, sleep: async () => {}, keepRecentSyncs });
+/** Every active row as the analysis reads it, by campaign name (ids differ between accounts). */
+async function activeRows(workspaceId: string) {
+  const { db: d, schema } = await db();
+  const { and, eq } = await import("drizzle-orm");
+  const { MEASURE_KEYS } = await import("@/lib/metrics/measures");
+  const rows = await d
+    .select({ f: schema.facts, name: schema.entities.name })
+    .from(schema.facts)
+    .innerJoin(schema.entities, eq(schema.entities.id, schema.facts.campaignId))
+    .where(and(eq(schema.facts.workspaceId, workspaceId), eq(schema.facts.active, true)));
+  return rows.map(({ f, name }) => [name, f.platform, f.granularity, f.periodStart, f.periodEnd, ...MEASURE_KEYS.map((k) => Math.round(Number(f[k]) * 100) / 100)].join("|")).sort();
+}
+/** What the dashboard shows for a period: KPIs, verdicts, availability, findings, plans. */
+async function analysisDigest(workspaceId: string, params: Record<string, string> = {}) {
+  const { loadAnalysisTrusted } = await import("@/lib/data/workspaces");
+  const { viewModel } = await import("@/lib/analysis/viewModel");
+  const a = await loadAnalysisTrusted(workspaceId, params);
+  if (!a) return null;
+  const v = viewModel(a, a.coverage.dailyFrom ?? a.coverage.minDate ?? a.selection.b.from);
+  return {
+    selection: [a.selection.b, a.selection.a],
+    campaigns: a.campaigns.map((c) => [c.info.name, c.mode, c.kpiA, c.kpiB, c.verdict, c.confidence, [...c.availB].sort()]).sort(),
+    findings: a.findings.map((f) => [f.detector, f.campaignName, f.priority, f.confidence, f.title, f.dataBasis]).sort(),
+    objectives: a.objectives.map((o) => [o.objective, o.kpiA, o.kpiB, o.kpiMissing]),
+    rows: v.levels.campaign.map((r) => [r.name, r.spend, r.results, r.reach, r.revenue, r.kpi, r.label]).sort(),
+  };
+}
+async function importsOf(workspaceId: string) {
+  const { db: d, schema, eq } = await db();
+  return d.select().from(schema.imports).where(eq(schema.imports.workspaceId, workspaceId));
+}
+
+describe("TikTok Sync: rolling history", () => {
+  beforeEach(resetReport);
+
+  it("90 daily syncs with uploads in between: same data, comparisons and insights as keeping every sync", async () => {
+    await connectAs("b");
+    await connectAs("a");
+    const wsA = await account(A, "ws-p6-rolling", "KHR"); // rolling history (keeps 7)
+    const wsB = await account(B, "ws-p6-reference", "KHR"); // reference: never consolidates
+    await linkTo(A, wsA.id);
+    await linkTo(B, wsB.id);
+    const base = Date.now();
+    const at = (i: number) => new Date(base + i * 86400000);
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    const origin = syncWindow("Asia/Phnom_Penh", at(0)).start;
+    let n = 0;
+    tiktok.reportFn = months(origin, () => n);
+    const both = async (fn: (ws: string) => Promise<unknown>) => {
+      await fn(wsA.id);
+      await fn(wsB.id);
+    };
+    const same = async (label: string) => {
+      expect(await activeRows(wsA.id), label).toEqual(await activeRows(wsB.id));
+      const periods: Record<string, string>[] = [{}, { from: day(origin, 10), to: day(origin, 16), cmp: "previous" }, { from: day(origin, 40), to: day(origin, 69), cmp: "previous" }];
+      for (const params of periods) {
+        expect(await analysisDigest(wsA.id, params), `${label} ${JSON.stringify(params)}`).toEqual(await analysisDigest(wsB.id, params));
+      }
+    };
+
+    let ok = 0;
+    for (n = 0; n < 90; n++) {
+      const w = syncWindow("Asia/Phnom_Penh", at(n));
+      const ra = await syncAs(A, at(n));
+      const rb = await syncAs(B, at(n), Number.POSITIVE_INFINITY);
+      expect([ra.outcome, rb.outcome]).toEqual(["ok", "ok"]);
+      expect(ra.rows).toBe(rb.rows);
+      ok++;
+      if (n === 20) await both((ws) => upload(ws, "tiktok", Array.from({ length: 10 }, (_, i) => ({ campaign: "KH | CSV only", date: day(w.start, 10 + i), spend: 1111 })), "csv-only.csv"));
+      if (n === 45) await both((ws) => upload(ws, "tiktok", [{ campaign: P6[0]!.name, campaignId: P6[0]!.id, from: day(w.start, -5), to: day(w.start, 3), spend: 77_777 }], "summary.csv"));
+      if (n === 70) await both((ws) => upload(ws, "tiktok", [day(w.end, -2), day(w.end, -1), w.end].map((date) => ({ campaign: P6[0]!.name, campaignId: P6[0]!.id, date, spend: 4242 })), "late-daily.csv"));
+      if (n === 29 || n === 59) await same(`after ${n + 1} syncs`);
+    }
+    await same("after 90 syncs");
+
+    // Only the 7 newest syncs stay undoable; the rest are history; the reference keeps all 90.
+    const syncs = async (ws: string) => (await import("@/lib/tiktok/history")).syncImportsOf(ws);
+    const syncA = await syncs(wsA.id);
+    const impA = (await importsOf(wsA.id)).filter((i) => syncA.has(i.id));
+    expect(impA.filter((i) => i.status === "active")).toHaveLength(7);
+    expect(impA.filter((i) => i.status === "history")).toHaveLength(ok - 7);
+    expect((await importsOf(wsB.id)).filter((i) => i.status === "active")).toHaveLength(ok + 3);
+    // History rows keep their own measure sets (reach missing on syncs 30–39, likes on 50–55).
+    const columnSets = new Set(impA.map((i) => JSON.stringify(i.columns)));
+    expect(columnSets.size).toBe(3);
+    // Storage stays bounded: far fewer replaced copies than keeping every sync.
+    const { db: d, schema } = await db();
+    const { and, eq } = await import("drizzle-orm");
+    const inactive = async (ws: string) => (await d.select({ id: schema.facts.id }).from(schema.facts).where(and(eq(schema.facts.workspaceId, ws), eq(schema.facts.active, false)))).length;
+    expect(await inactive(wsA.id)).toBeLessThan((await inactive(wsB.id)) / 5);
+
+    // Undo still works on the recent imports and uploads, identically to the reference.
+    const { undoImport } = await import("@/lib/data/imports");
+    const newest = async (ws: string, skip = 0) => {
+      const s = await syncs(ws);
+      return (await importsOf(ws)).filter((i) => s.has(i.id) && i.status === "active").sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())[skip]!.id;
+    };
+    const file = async (ws: string, name: string) => (await importsOf(ws)).find((i) => i.fileName === name)!.id;
+    await both(async (ws) => undoImport(d, ws, await newest(ws)));
+    await same("after undoing the newest sync");
+    await both(async (ws) => undoImport(d, ws, await newest(ws, 2)));
+    await same("after undoing an older recent sync");
+    await both(async (ws) => undoImport(d, ws, await file(ws, "late-daily.csv")));
+    await same("after undoing a recent upload");
+    await both(async (ws) => undoImport(d, ws, await file(ws, "summary.csv")));
+    await same("after undoing an upload older than the history");
+
+    // A history sync can't be undone: nothing changes.
+    const before = await activeRows(wsA.id);
+    const old = impA.find((i) => i.status === "history")!;
+    await undoImport(d, wsA.id, old.id);
+    expect(await activeRows(wsA.id)).toEqual(before);
+    expect((await importsOf(wsA.id)).find((i) => i.id === old.id)!.status).toBe("history");
+  }, 240_000);
+
+  it("syncs never use up the upload allowance; uploads keep their limit", async () => {
+    await connectAs("a");
+    const ws = await account(A, "ws-p6-limit", "KHR");
+    await linkTo(A, ws.id);
+    const base = Date.now();
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    tiktok.reportFn = months(syncWindow("Asia/Phnom_Penh", new Date(base)).start, () => 0);
+    for (let i = 0; i < 12; i++) expect((await syncAs(A, new Date(base + i * 86400000))).outcome).toBe("ok");
+    const { checkImportLimit, LIMITS } = await import("@/lib/integration/limits");
+    expect(await checkImportLimit(ws.id)).toBeNull();
+    const { db: d, schema } = await db();
+    // Fill the upload allowance with uploads (bare rows are enough for the count).
+    await d.insert(schema.imports).values(Array.from({ length: LIMITS.importsPerAccount }, (_, i) => ({
+      id: `p6-upload-${i}`, workspaceId: ws.id, platform: "meta", fileName: `u${i}.csv`, level: "campaign", granularity: "daily", periodStart: "2026-01-01", periodEnd: "2026-01-01", rowCount: 0,
+    })));
+    expect(await checkImportLimit(ws.id)).toMatch(/already has 50 reports/);
+    // …and TikTok still syncs.
+    expect((await syncAs(A, new Date(base + 12 * 86400000))).outcome).toBe("ok");
+  });
+
+  it("a failure during consolidation rolls the whole sync back", async () => {
+    await connectAs("a");
+    const ws = await account(A, "ws-p6-rollback", "KHR");
+    await linkTo(A, ws.id);
+    const base = Date.now();
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    tiktok.reportFn = months(syncWindow("Asia/Phnom_Penh", new Date(base)).start, () => 0);
+    // 8 syncs: the 9th retires the 2nd, whose replaced copies (of the 1st) it then deletes.
+    for (let i = 0; i < 8; i++) await syncAs(A, new Date(base + i * 86400000));
+    const { db: d, schema, eq } = await db();
+    const state = async () => ({
+      imports: (await importsOf(ws.id)).map((i) => [i.id, i.status]).sort(),
+      facts: (await d.select().from(schema.facts).where(eq(schema.facts.workspaceId, ws.id))).map((f) => [f.id, f.active, f.replacedBy]).sort(),
+      syncImports: (await d.select().from(schema.tiktokSyncImports).where(eq(schema.tiktokSyncImports.workspaceId, ws.id))).length,
+      entities: (await d.select().from(schema.entities).where(eq(schema.entities.workspaceId, ws.id))).length,
+    });
+    const before = await state();
+    // The database refuses the clean-up step of the 9th sync.
+    await d.execute(`create or replace function p6_refuse() returns trigger language plpgsql as $$ begin raise exception 'refused for test'; end $$;`);
+    await d.execute(`create trigger p6_refuse before delete on facts for each row when (old.workspace_id = 'ws-p6-rollback') execute function p6_refuse();`);
+    await expect(syncAs(A, new Date(base + 8 * 86400000))).rejects.toMatchObject({ code: "storage" });
+    expect(await state()).toEqual(before); // no import, no status change, no replaced rows, no new entities
+    const [row] = await d.select().from(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.workspaceId, ws.id));
+    expect(row).toMatchObject({ outcome: "failed", errorCode: "storage", lockToken: null, lockedUntil: null });
+    await d.execute(`drop trigger p6_refuse on facts`);
+    await d.execute(`drop function p6_refuse()`);
+    const after = await syncAs(A, new Date(base + 9 * 86400000));
+    expect(after).toMatchObject({ outcome: "ok", history: { retired: 1 } });
+    expect(after.history!.pruned).toBeGreaterThan(0);
+  });
+
+  it("consolidation only ever touches the syncing person's account and advertiser", async () => {
+    await connectAs("b");
+    await connectAs("a");
+    const wsA = await account(A, "ws-p6-iso-a", "KHR");
+    const wsB = await account(B, "ws-p6-iso-b", "KHR");
+    await linkTo(A, wsA.id);
+    await linkTo(B, wsB.id);
+    const base = Date.now();
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    tiktok.reportFn = months(syncWindow("Asia/Phnom_Penh", new Date(base)).start, () => 0);
+    for (let i = 0; i < 9; i++) await syncAs(B, new Date(base + i * 86400000));
+    const bUpload = await upload(wsB.id, "tiktok", [{ campaign: "B | CSV", date: day(syncWindow("Asia/Phnom_Penh", new Date(base)).end, -1), spend: 5 }], "b.csv");
+    // A's account holds syncs of another (previously linked) advertiser: never retired by this advertiser's syncs.
+    const { db: d, schema } = await db();
+    const other: string[] = [];
+    for (let i = 0; i < 9; i++) other.push((await upload(wsA.id, "tiktok", [{ campaign: `Old advertiser ${i}`, date: "2026-01-01", spend: 1 }], `old-${i}.csv`)).importId);
+    await d.insert(schema.tiktokSyncImports).values(other.map((importId) => ({ importId, workspaceId: wsA.id, advertiserId: "7000000000999", windowStart: "2025-12-03", windowEnd: "2026-01-01" })));
+    // A forged record claiming B's upload as a sync of A's account.
+    await d.insert(schema.tiktokSyncImports).values({ importId: bUpload.importId, workspaceId: wsA.id, advertiserId: ADVERTISER, windowStart: "2026-01-01", windowEnd: "2026-01-30" });
+    const bBefore = { imports: (await importsOf(wsB.id)).map((i) => [i.id, i.status]).sort(), rows: await activeRows(wsB.id) };
+
+    for (let i = 0; i < 10; i++) expect((await syncAs(A, new Date(base + (20 + i) * 86400000))).outcome).toBe("ok");
+
+    expect({ imports: (await importsOf(wsB.id)).map((i) => [i.id, i.status]).sort(), rows: await activeRows(wsB.id) }).toEqual(bBefore);
+    const aImports = await importsOf(wsA.id);
+    expect(aImports.filter((i) => other.includes(i.id)).every((i) => i.status === "active")).toBe(true);
+    const { syncImportsOf } = await import("@/lib/tiktok/history");
+    expect((await syncImportsOf(wsA.id)).has(bUpload.importId)).toBe(false);
+    // B's own history is B's: 9 syncs → 2 retired, done by B's syncs only.
+    expect((await importsOf(wsB.id)).filter((i) => i.status === "history")).toHaveLength(2);
+  });
+
+  it("shows KHR everywhere money appears, without changing any number", async () => {
+    const { makeFmt } = await import("@/lib/fmt5");
+    const khr = makeFmt("KHR");
+    const usd = makeFmt("USD");
+    const plain = (x: string) => x.replace(/\u00a0/g, " "); // Intl puts a no-break space after "KHR"
+    expect([khr.money(653.8), khr.money(41000), khr.money(0.5), khr.back(2.5), khr.one].map(plain)).toEqual(["KHR 654", "KHR 41,000", "KHR 0.50", "KHR 2.50", "KHR 1"]);
+    expect([usd.back(2.5), usd.one]).toEqual(["$2.50", "$1"]); // the USD wording is unchanged
+
+    const ws = await freshKhr("ws-p6-khr");
+    const w = await window();
+    tiktok.report = month(w);
+    await sync();
+    const { loadAnalysisTrusted } = await import("@/lib/data/workspaces");
+    const a = (await loadAnalysisTrusted(ws.id))!;
+    const texts = a.findings.flatMap((f) => [f.title, f.whatHappened, f.rule, f.dataBasis, f.action, ...f.evidence.flatMap((e) => [e.a, e.b])]).filter(Boolean).join("\n");
+    expect(texts).toMatch(/KHR/);
+    expect(texts).not.toMatch(/\$/);
+    const { accountMessage } = await import("@/lib/telegram");
+    const m = (await accountMessage(ws.id))!;
+    const msg = [m.text, ...m.lines.map((l) => JSON.stringify(l))].join("\n");
+    expect(msg).not.toMatch(/\$\d/);
+    expect(msg).toMatch(/KHR/);
   });
 });
