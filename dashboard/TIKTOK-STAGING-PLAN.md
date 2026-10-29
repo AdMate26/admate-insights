@@ -4,6 +4,101 @@ Status 2026-10-29: **plan only.** Nothing in this document has been created,
 registered, migrated or deployed. Each numbered gate in §7 needs explicit
 approval. Automatic scheduling stays off and is not part of staging.
 
+## 0. Decisions and verified facts (2026-10-29, after review)
+
+**Decisions:**
+- **G0:** approved and done (below).
+- **G1:** option A (a separate staging Supabase), with the names `staging/tiktok`,
+  `admate-tiktok-staging` and `admate-tiktok-dashboard-staging`.
+- **G2–G10:** pending.
+
+**G0 result:**
+- On `admate-insights`:
+  - `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` now have target Production only;
+    the Preview target was removed from the shared record.
+  - The separate Preview-only `META_ACCESS_TOKEN` record was deleted. The
+    Production record is untouched.
+- No values were displayed and no redeploy happened. www.admate.site answered
+  normally afterwards.
+- Preview deployments built **before** the change keep the old values: at least
+  20 in the last 5 days. All of them are behind Vercel Authentication (an
+  anonymous request is redirected to Vercel's login).
+- Full clean-up is optional and needs separate approval. Either delete those
+  preview deployments, or rotate the Telegram bot token and the Meta token. A
+  rotation also means updating Production.
+- `META_AD_ACCOUNT_ID` and `META_OWNER_USER_ID` (identifiers, not secrets) are
+  still in Preview. They are harmless without the token; they can be removed too.
+
+**Verified facts:**
+- **Supabase** ([pricing](https://supabase.com/pricing)): the Free plan allows 2
+  active projects. Your only organization, "AdMate", is on Free with 2 projects,
+  so there is no free slot.
+  - Pro costs $25 per **organization** per month and includes $10 of compute
+    credit, which covers one Micro project ($10). Each extra project adds $10.
+  - **Option A cost:** a new organization "AdMate Staging" on Pro with one
+    project is about **$25/month** plus tax.
+  - Upgrading the existing "AdMate" organization instead would cost
+    $25 + 3 × $10 − $10 = $45/month and put production on paid billing, so it is
+    not recommended.
+- **Email for logins.** The website signs people in with email codes
+  (`signInWithOtp`). Supabase's built-in email
+  ([docs](https://supabase.com/docs/guides/auth/auth-smtp)) delivers only to
+  members of the project's team, at 2 emails an hour. Staging therefore needs
+  custom email.
+  - Production already uses **Resend** (`smtp.resend.com`, sender domain
+    `admate.site`).
+  - Staging should use a **new, separate Resend API key** on the same account
+    ($0). Never the production key.
+  - The Resend Free plan ([pricing](https://resend.com/pricing)) gives 100 emails
+    a day and 3,000 a month, **shared with production's emails**.
+- **Neon Free** ([pricing](https://neon.com/pricing)): 100 projects, 100
+  compute-hours per project per month, 1 GB per project (20 GB in total), 10
+  branches, 5 GB of transfer. It scales to zero after 5 minutes. Hitting a limit
+  suspends or blocks writes; it never deletes data. Cost $0.
+- **Vercel Hobby and commercial use** ([fair use](https://vercel.com/docs/limits/fair-use-guidelines#commercial-usage)):
+  Hobby is restricted to non-commercial, personal use. Any deployment used for
+  someone's financial gain, including asking for payment, counts as commercial
+  and needs Pro ($20 per developer seat per month). AdMate is a SaaS with paid AI
+  credits, so this applies to **production already**. Staging adds no new kind of
+  use. I recommend moving to Pro before charging customers or launching publicly.
+  This is your decision; staging itself works on Hobby.
+- **The 4-minute sync on Vercel** ([duration](https://vercel.com/docs/functions/configuring-functions/duration)):
+  - With Fluid compute, Hobby functions run for up to 300 s by default.
+    `admate-insights` and `admate-dashboard` both have Fluid on; new projects
+    have it by default, which G6 must confirm.
+  - A sync passes through two functions: the website relay, which waits for the
+    dashboard, and the dashboard itself. Node's default 300 s wait for response
+    headers also applies.
+  - So the current 240 s read budget fits, but with under a minute to spare.
+    **Recommendation (a small code change before G8):** set
+    `export const maxDuration = 300` on the sync route and lower the hosted read
+    budget to 180 s.
+  - Also set the function region to `sin1` (Singapore) on both staging projects,
+    next to Neon. Production functions run in `iad1` (US East).
+- **Staging's dependencies on production Supabase:**
+  - **Website:** sign-in only calls Supabase Auth (email code, code check,
+    session, sign-out, password reset). The only table it reads is `profiles`
+    (`src/lib/auth/profile.ts`). The other table code (`telegram_schedules`)
+    needs the service key, which staging never has, so it fails closed.
+  - **Dashboard:** it uses Supabase only to check sign-in tokens
+    (`/auth/v1/user`).
+  - So the staging Supabase needs only the `profiles` migration, Auth with custom
+    email, and no other production tables.
+  - One requirement: sign-ups must be closed in staging Auth, because the website
+    asks Supabase to create users on first sign-in (`shouldCreateUser: true`).
+    With sign-ups closed, uninvited addresses are refused.
+- **Staging addresses:** `admate-tiktok-staging.vercel.app` and
+  `admate-tiktok-dashboard-staging.vercel.app` are unused today: they return
+  `DEPLOYMENT_NOT_FOUND`. Vercel lets any plan point a domain at a Git branch.
+  Meta staging points its `vercel.app` addresses at builds manually, so automatic
+  branch assignment of a `vercel.app` address hasn't been tested in this team.
+  - **Order:**
+    1. G6 creates the projects.
+    2. Confirm both addresses belong to our projects.
+    3. Try branch assignment; the fallback is a manual `vercel alias set` after
+       each staging deployment.
+    4. Only then G7 (TikTok client).
+
 ## 1. Current architecture (reviewed read-only)
 
 | Piece | Production today |
@@ -139,11 +234,14 @@ Sign-in: Supabase project "admate-staging" (Auth + profiles only, sign-ups close
    -- no create, no BYPASSRLS, no access to the drizzle migrations schema
    ```
 
-**Supabase `admate-staging`** (Singapore):
+**Supabase `admate-staging`** (Singapore, in a separate "AdMate Staging"
+organization on Pro):
 1. Apply only the `profiles` migration.
-2. Under Auth, turn off "Allow new users to sign up" and keep Google off.
-3. Set the Site URL and redirect URLs to `https://admate-tiktok-staging.vercel.app`.
-4. Invite the testers. Leave the Data API on, because `profiles` relies on RLS
+2. Set up custom email: Resend, with a new staging-only API key, sender
+   `AdMate (staging)` at an `admate.site` address. Keep the email rate limit low.
+3. Under Auth, turn off "Allow new users to sign up" and keep Google off.
+4. Set the Site URL and redirect URLs to `https://admate-tiktok-staging.vercel.app`.
+5. Invite the testers. Leave the Data API on, because `profiles` relies on RLS
    and per-user policies.
 
 ## 4. Staging TikTok OAuth client (prepared, not sent)
@@ -217,7 +315,7 @@ That is real advertising data, so treat it as production-grade:
 | G0 (optional, separate) | Claude, after approval | Remove the Preview scope from `META_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `admate-insights` |
 | G1 | You | Choose option A or B. Confirm the domains and the branch name. |
 | G2 | You (in the Supabase console) | Option A: create `admate-staging` (Singapore). The cost depends on your free-project slots (§8). |
-| G3 | You, then Claude | Supabase: paste the `profiles` SQL I prepare, close sign-ups, and set the URLs. Add the testers with "Add user", auto-confirmed, or by email invite. Each tester then sets their own password through "Forgot password" on the staging site. Send me the testers' staging user IDs. |
+| G3 | You, then Claude | Supabase: paste the `profiles` SQL I prepare. Add a **new staging-only Resend key** as custom email. Close sign-ups and set the URLs. Add the testers with "Add user", auto-confirmed, or by email invite. Each tester then sets their own password through "Forgot password" on the staging site. Send me the testers' staging user IDs. |
 | G4 | You (Neon console), then Claude | Create the Neon project. Enter the owner URL privately when I run the migrations. Create the runtime role. Run the full test suite once against a throwaway Neon branch (`ADMATE_TEST_DATABASE_URL`), then delete the branch. |
 | G5 | Claude | Create branch `staging/tiktok` on GitHub from PR #39's head |
 | G6 | Claude (Vercel CLI), you for secrets if the CLI can't take them | Create both projects, protection, domains, Ignored Build Step and the settings in §3. Secrets go in without display. |
@@ -232,7 +330,8 @@ That is real advertising data, so treat it as production-grade:
 | --- | --- | --- |
 | Vercel (Hobby) | 2 new projects; builds only for `staging/tiktok` | $0. (Vercel's Hobby terms are for non-commercial use; that applies to production already and isn't new.) |
 | Neon | 1 new Free project (0.5 GB, 100 compute-hours a month, scales to zero) | $0 |
-| Supabase | Option A: 1 new project. The Free plan allows **2 active free projects**, and you already have AdMate and admate-dashboard. | $0 if Supabase offers Free when you create it. Otherwise a **separate** organization on Pro: about **$25 a month** (its $10 compute credit covers one Micro project). Your current organizations and projects are unchanged. Cancel after testing. |
+| Supabase | Option A (chosen): a new organization on Pro with 1 project. **Verified:** your "AdMate" organization is on Free with 2 projects, so there is no free slot. | **About $25 a month plus tax.** The $10 credit covers the one Micro project. Your existing organization stays on Free. Cancel after testing. |
+| Resend | A new staging-only API key on the existing account | $0. Shares the free 100-a-day limit with production. |
 | Supabase | Option B: none | $0 |
 | TikTok, GitHub, GCP or Cloud Run, PostHog, Anthropic, DNS | No change | $0 |
 
