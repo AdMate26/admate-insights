@@ -79,16 +79,27 @@ imports them into the linked ad account as one report.
   A link pointing at someone else's account is refused.
 - **No conversion:** money stays in the advertiser's currency and days stay in
   its time zone, exactly as TikTok reports them.
-- **One transaction:** the write uses the same `commitImport` as file uploads.
-  Overlapping days from earlier TikTok reports in that account are replaced
-  (newest wins) and kept for Undo in Reports. Earlier reports are never deleted
-  or retired.
-- **Empty report:** nothing is written, so stored data is never hidden. The
-  replaced range is only the first to last day TikTok actually returned.
+- **One transaction, narrow replacement:** the write uses the same `commitImport`
+  as file uploads, but a sync hides stored data only where it brings TikTok's new
+  number for the same campaign and day (Phase 5).
+  - Other campaigns are never hidden.
+  - Uploaded days without a TikTok row stay.
+  - A summary export reaching outside the window is kept, and the overlapping
+    sync rows are left out.
+
+  Replaced rows are kept for Undo in Reports. Earlier reports are never deleted
+  or retired. Details are in `TIKTOK-SYNC-PLAN.md`.
+- **Empty report:** nothing is written, so stored data is never hidden.
 - **Reruns:** if the numbers are identical to the last sync (still active),
-  nothing is written ("already up to date"). Only one sync per account runs at a
-  time, across servers (`tiktok_syncs` lock, freed after 5 minutes if a server
-  crashes). There is a one-minute pause between syncs.
+  nothing is written ("already up to date").
+- **One sync per account at a time, across servers:**
+  - `tiktok_syncs` lock with a per-run token
+  - the import transaction re-checks the lock, so a run that lost it rolls back
+  - the lock frees itself after 10 minutes if a server crashes
+  - a one-minute pause between syncs
+- **Time limit and retries:** reading has a 4-minute budget. A page with a
+  temporary TikTok failure is retried twice. The access token is refreshed first
+  if it wouldn't last the run.
 - **Limits:** the account's 50-report limit and the 50,000-row limit apply as for
   uploads.
 - **Undo history:** undoing an older report whose days a newer one has since
@@ -132,14 +143,15 @@ from attribute metrics.
 Campaign status is not synced: it needs `campaign_get`, which is not read-only on
 this server.
 
-## Database (`drizzle/0012_tiktok_connections.sql`, `0013_tiktok_syncs.sql`, new tables only)
+## Database (`drizzle/0012_tiktok_connections.sql`, `0013_tiktok_syncs.sql`, `0014_tiktok_sync_imports.sql`)
 
 | Table | Contents |
 | --- | --- |
 | `tiktok_connections` | One row per person: encrypted tokens, expiries, the server path, status, token version |
 | `tiktok_oauth_states` | Pending attempts: state hash, session hash, encrypted verifier, expiry |
 | `tiktok_advertiser_links` | (person, advertiser) → one of the person's ad accounts (one advertiser per account) |
-| `tiktok_syncs` | Per ad account: sync lock, last outcome, row count, dates, import ID and data fingerprint (no tokens, no report numbers) |
+| `tiktok_syncs` | Per ad account: sync lock and its per-run token, last outcome, row count, dates, import ID and data fingerprint (no tokens, no report numbers) |
+| `tiktok_sync_imports` | Which imports came from Sync Now: advertiser and asked dates (for narrow replacement and undo) |
 
 Every query filters by the signed-in person's ID (`lib/tiktok/store.ts`), matching the
 rest of this dashboard database (Data API off, no browser access). The migrations

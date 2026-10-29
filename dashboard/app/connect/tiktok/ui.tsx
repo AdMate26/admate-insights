@@ -11,7 +11,7 @@ type LastSync = { outcome: string | null; errorCode: string | null; finishedAt: 
 type AdvertiserLink = { advertiserId: string; workspaceId: string; lastSync: LastSync | null };
 type Account = { id: string; name: string; currency: string; isSample: boolean };
 type SyncResult = {
-  outcome: "ok" | "unchanged" | "empty";
+  outcome: "ok" | "unchanged" | "empty" | "skipped";
   window: { start: string; end: string };
   period: { start: string; end: string } | null;
   rows: number;
@@ -19,6 +19,7 @@ type SyncResult = {
   currency: string;
   timezone: string;
   diff: { replaced: unknown[] } | null;
+  skipped: number;
   unavailable: { measure: string; label: string; reason: string }[];
 };
 
@@ -37,6 +38,7 @@ const MESSAGES: Record<string, string> = {
   busy: "A sync is running or has just finished for this ad account. Please wait a minute and try again.",
   import_limit: "This ad account already holds the maximum number of reports. Undo an old one in Reports first.",
   report: "TikTok's report couldn't be used, so nothing was imported. Please try again later.",
+  timeout: "TikTok took too long to answer, so nothing was imported. Please try again later.",
 };
 
 function syncSummary(r: SyncResult): string {
@@ -46,8 +48,12 @@ function syncSummary(r: SyncResult): string {
   if (r.outcome === "unchanged") {
     return `Already up to date: TikTok's numbers for ${r.period?.start} to ${r.period?.end} match the last sync, so nothing was written.`;
   }
-  const replaced = r.diff?.replaced.length ? " Earlier data for the same days was replaced and can be brought back with Undo in Reports." : "";
-  return `Imported ${r.rows} daily rows for ${r.campaigns} campaign${r.campaigns === 1 ? "" : "s"} (${r.period?.start} to ${r.period?.end}). Amounts are in ${r.currency}, as TikTok reports them.${replaced}`;
+  if (r.outcome === "skipped") {
+    return `Every day TikTok returned is already covered by a summary report you uploaded, so nothing was written. Undo that report in Reports if you want TikTok's daily numbers instead.`;
+  }
+  const replaced = r.diff?.replaced.length ? " Earlier data for the same campaigns and days was replaced and can be brought back with Undo in Reports." : "";
+  const skipped = r.skipped ? ` ${r.skipped} rows were left out because a summary report you uploaded already covers those days.` : "";
+  return `Imported ${r.rows - r.skipped} daily rows for ${r.campaigns} campaign${r.campaigns === 1 ? "" : "s"} (${r.period?.start} to ${r.period?.end}). Amounts are in ${r.currency}, as TikTok reports them.${replaced}${skipped}`;
 }
 
 function lastSyncText(s: LastSync | null): string {
@@ -57,6 +63,7 @@ function lastSyncText(s: LastSync | null): string {
   if (s.outcome === "failed") return `Last sync failed (${when})`;
   if (s.outcome === "empty") return `Last sync: TikTok had no data (${when})`;
   if (s.outcome === "unchanged") return `Last sync: already up to date (${when})`;
+  if (s.outcome === "skipped") return `Last sync: already covered by an uploaded report (${when})`;
   return `Last sync: ${s.rows ?? 0} rows, ${s.periodStart} to ${s.periodEnd} (${when})`;
 }
 

@@ -30,7 +30,8 @@ export type TikTokConnectErrorCode =
   | "currency" // the advertiser's currency differs from the ad account's (never converted)
   | "busy" // a sync is running or just ran for this account
   | "import_limit" // the account already holds the maximum number of reports
-  | "report"; // TikTok's report was unusable (format, dates, size or time zone)
+  | "report" // TikTok's report was unusable (format, dates, size or time zone)
+  | "timeout"; // the sync ran out of time; nothing was written
 
 export class TikTokConnectError extends Error {
   constructor(public readonly code: TikTokConnectErrorCode) {
@@ -42,6 +43,8 @@ export class TikTokConnectError extends Error {
 export interface Deps {
   fetcher?: typeof fetch;
   now?: () => Date;
+  // Refresh the access token unless it stays valid at least this long (default 5 minutes).
+  minValidMs?: number;
 }
 
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
@@ -134,7 +137,7 @@ async function accessTokenOnce(userId: string, deps: Deps): Promise<string> {
     throw new TikTokConnectError("reauth_required");
   }
   const key = readTikTokEncryptionKey();
-  if (row.accessTokenEnc && row.accessExpiresAt && row.accessExpiresAt.getTime() - now.getTime() > REFRESH_MARGIN_MS) {
+  if (row.accessTokenEnc && row.accessExpiresAt && row.accessExpiresAt.getTime() - now.getTime() > (deps.minValidMs ?? REFRESH_MARGIN_MS)) {
     return decryptTikTokSecret(row.accessTokenEnc, key, userId, "access");
   }
 

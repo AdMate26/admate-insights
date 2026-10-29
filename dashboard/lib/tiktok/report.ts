@@ -4,7 +4,7 @@ import { addDays, isValidISO, type ISODate } from "../dates";
 import { MEASURE_KEYS, emptyMeasures, type MeasureKey } from "../metrics/measures";
 import { objectiveFromName, type Objective } from "../metrics/objectives";
 import { objectiveFromMetrics, objectiveFromPlatformText, type NormalizedRow, type ObjectiveSource } from "../ingest/normalize";
-import type { TikTokMcp } from "./mcp";
+import { TikTokMcpError, type TikTokMcp } from "./mcp";
 
 // Campaign-by-day performance for one advertiser, read with TikTok's read-only
 // `report_integrated_get` and a fixed request (only the advertiser, the dates and
@@ -55,9 +55,11 @@ export const SYNC_DAYS = 30; // TikTok's limit for daily rows in one report
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 50;
 const PAGE_GAP_MS = 200; // well under TikTok's per-second request limit
+// A temporary failure on a page is tried again after these pauses (then the sync fails).
+export const RETRY_DELAYS_MS = [1_000, 4_000];
 
 export class TikTokReportError extends Error {
-  constructor(public readonly code: "timezone" | "report" | "too_large", message: string) {
+  constructor(public readonly code: "timezone" | "report" | "too_large" | "timeout", message: string) {
     super(message);
     this.name = "TikTokReportError";
   }
@@ -80,19 +82,36 @@ export function syncWindow(timezone: string | null, now: Date): { start: ISODate
 type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** Every page of the campaign-by-day report. Any failed or inconsistent page fails the whole read. */
+/**
+ * Every page of the campaign-by-day report. A temporary failure on a page is
+ * retried (RETRY_DELAYS_MS); anything else, or running past `deadline`, fails the
+ * whole read, and nothing is written.
+ */
 export async function fetchTikTokCampaignDaily(
   client: TikTokMcp,
   advertiserId: string,
   window: { start: ISODate; end: ISODate },
   sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  deadline: number = Number.POSITIVE_INFINITY,
+  now: () => number = Date.now,
 ): Promise<Json[]> {
   const rows: Json[] = [];
   let totalPages = 1;
   let totalRows = 0;
-  for (let page = 1; page <= totalPages; page++) {
-    if (page > 1) await sleep(PAGE_GAP_MS);
-    const data = await client.read("report_integrated_get", {
+  const readPage = async (page: number) => {
+    for (let attempt = 0; ; attempt++) {
+      if (now() > deadline) throw new TikTokReportError("timeout", "The sync took too long");
+      try {
+        return await readOnce(page);
+      } catch (error) {
+        const wait = RETRY_DELAYS_MS[attempt];
+        if (!(error instanceof TikTokMcpError && error.retryable) || wait === undefined || now() + wait > deadline) throw error;
+        await sleep(wait);
+      }
+    }
+  };
+  const readOnce = (page: number) =>
+    client.read("report_integrated_get", {
       advertiser_id: advertiserId,
       report_type: "BASIC",
       data_level: "AUCTION_CAMPAIGN",
@@ -105,6 +124,9 @@ export async function fetchTikTokCampaignDaily(
       page,
       page_size: PAGE_SIZE,
     });
+  for (let page = 1; page <= totalPages; page++) {
+    if (page > 1) await sleep(PAGE_GAP_MS);
+    const data = await readPage(page);
     const info = data.page_info;
     const list = data.list;
     if (!isObject(info) || !Array.isArray(list)) throw new TikTokReportError("report", "Unexpected report format");

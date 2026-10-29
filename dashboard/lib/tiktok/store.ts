@@ -1,6 +1,8 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { and, eq, gt, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "../db/client";
+import type { Tx } from "../data/imports";
 import { tiktokAdvertiserLinks, tiktokConnections, tiktokOauthStates, tiktokSyncs, workspaces } from "../db/schema";
 import { sha256Hex } from "./crypto";
 
@@ -100,44 +102,65 @@ export async function deleteLink(userId: string, advertiserId: string) {
   await db.delete(tiktokAdvertiserLinks).where(and(eq(tiktokAdvertiserLinks.userId, userId), eq(tiktokAdvertiserLinks.advertiserId, advertiserId)));
 }
 
-export const SYNC_LOCK_MS = 5 * 60 * 1000; // a crashed sync frees the account after this
+// A run must finish reading within SYNC_BUDGET_MS; the lock lasts longer, so it can
+// never lapse while its holder is still allowed to write (and frees the account
+// if a server crashes mid-sync).
+export const SYNC_BUDGET_MS = 4 * 60 * 1000;
+export const SYNC_LOCK_MS = 10 * 60 * 1000;
 export const SYNC_COOLDOWN_MS = 60 * 1000; // at most one sync a minute per ad account
 
 /**
  * Takes the account's sync lock atomically, across servers: only when no sync is
- * running and the last one finished more than a minute ago. Returns false otherwise.
+ * running and the last one finished more than a minute ago. Returns this run's
+ * lock token, or null when the account is busy.
  */
-export async function acquireSyncLock(userId: string, advertiserId: string, workspaceId: string, now = new Date()): Promise<boolean> {
+export async function acquireSyncLock(userId: string, advertiserId: string, workspaceId: string, now = new Date()): Promise<string | null> {
   const db = await getDb();
+  const lockToken = randomUUID();
   const lockedUntil = new Date(now.getTime() + SYNC_LOCK_MS);
   const cooled = new Date(now.getTime() - SYNC_COOLDOWN_MS);
   const rows = await db
     .insert(tiktokSyncs)
-    .values({ workspaceId, userId, advertiserId, lockedUntil, startedAt: now })
+    .values({ workspaceId, userId, advertiserId, lockedUntil, lockToken, startedAt: now })
     .onConflictDoUpdate({
       target: tiktokSyncs.workspaceId,
-      set: { userId, advertiserId, lockedUntil, startedAt: now },
+      set: { userId, advertiserId, lockedUntil, lockToken, startedAt: now },
       setWhere: and(
         or(isNull(tiktokSyncs.lockedUntil), lt(tiktokSyncs.lockedUntil, now)),
         or(isNull(tiktokSyncs.finishedAt), lt(tiktokSyncs.finishedAt, cooled)),
       ),
     })
     .returning({ workspaceId: tiktokSyncs.workspaceId });
+  return rows.length === 1 ? lockToken : null;
+}
+
+/**
+ * Inside the import's transaction: confirms this run still holds an unexpired
+ * lock (and extends it), so a run that lost its lock can never write. The row
+ * lock also makes a competing run wait until this transaction ends.
+ */
+export async function holdSyncLock(tx: Tx, workspaceId: string, lockToken: string, now = new Date()): Promise<boolean> {
+  const rows = await tx
+    .update(tiktokSyncs)
+    .set({ lockedUntil: new Date(now.getTime() + SYNC_LOCK_MS) })
+    .where(and(eq(tiktokSyncs.workspaceId, workspaceId), eq(tiktokSyncs.lockToken, lockToken), gt(tiktokSyncs.lockedUntil, now)))
+    .returning({ workspaceId: tiktokSyncs.workspaceId });
   return rows.length === 1;
 }
 
-/** Records the outcome and frees the lock (only this person's row for this account). */
+/** Records the outcome and frees the lock, only if this run still holds it. */
 export async function finishSync(
   userId: string,
   workspaceId: string,
+  lockToken: string,
   result: Pick<TikTokSyncRow, "outcome" | "errorCode" | "rows" | "periodStart" | "periodEnd"> & Partial<Pick<TikTokSyncRow, "importId" | "fingerprint">>,
   now = new Date(),
 ) {
   const db = await getDb();
   await db
     .update(tiktokSyncs)
-    .set({ ...result, lockedUntil: null, finishedAt: now })
-    .where(and(eq(tiktokSyncs.workspaceId, workspaceId), eq(tiktokSyncs.userId, userId)));
+    .set({ ...result, lockedUntil: null, lockToken: null, finishedAt: now })
+    .where(and(eq(tiktokSyncs.workspaceId, workspaceId), eq(tiktokSyncs.userId, userId), eq(tiktokSyncs.lockToken, lockToken)));
 }
 
 export async function readSync(userId: string, workspaceId: string): Promise<TikTokSyncRow | null> {

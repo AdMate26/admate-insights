@@ -82,15 +82,20 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `recommendation_viewed` event, `analysis_viewed` for demo visitors (signed-in: server) |
-| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections` and `0013_tiktok_syncs` |
-| `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer overlapping report instead of restoring it (no double counting); undoing the newest report is unchanged |
+| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections`, `0013_tiktok_syncs` and `0014_tiktok_sync_imports` |
+| `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer import that would have replaced it (no double counting); undoing the newest report is unchanged. TikTok syncs replace narrowly (`syncScope`): only the same campaign and day; uploads keep their rule |
+| `lib/analysis/viewModel.ts` | modified | Dashboard rows show reach, frequency, results and revenue as unavailable (null, "—") when the data lacks them or reach was added up; the analysis engine is unchanged |
+| `lib/analysis/alerts.ts` | modified | Treats an unavailable result count as 0 for its volume check (as before) |
+| `components/v5/views/audience.tsx` | modified | Adds up possibly-unavailable results and revenue as 0 (as before) |
+| `components/v5/views/budget.tsx` | modified | Adds up possibly-unavailable results and revenue as 0 (as before) |
+| `components/v5/views/overview.tsx` | modified | Chart goal ignores unavailable result counts |
 | `lib/ingest/normalize.ts` | modified | Exports `objectiveFromPlatformText` and `objectiveFromMetrics` for the TikTok sync (no behavior change) |
 | `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving; `telegram_connected` event |
 | `instrumentation-client.ts` | modified | PostHog starts only after consent (`lib/analytics.ts`) |
 | `lib/analytics.ts` | modified | Cookie-consent PostHog in the browser: no replay/autocapture, privacy filter; page views only for demo visitors (`trackPageview`) |
-| `lib/db/schema.ts` | modified | `user_visits` table (current visit per signed-in person, for analytics); TikTok tables `tiktok_connections`, `tiktok_oauth_states`, `tiktok_advertiser_links`, `tiktok_syncs` |
-| `components/v5/views/campaigns.tsx` | modified | Visitors get the sign-up note instead of changing a goal or funnel role |
-| `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
+| `lib/db/schema.ts` | modified | `user_visits` table (current visit per signed-in person, for analytics); TikTok tables `tiktok_connections`, `tiktok_oauth_states`, `tiktok_advertiser_links`, `tiktok_syncs` (with lock token), `tiktok_sync_imports` |
+| `components/v5/views/campaigns.tsx` | modified | Visitors get the sign-up note instead of changing a goal or funnel role; skips comparisons that need an unavailable result count or revenue |
+| `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view; a group's results subtotal is unavailable when any row's is |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
 | `lib/auth/session.ts` | modified | Per-request access check in `getCurrentUser()`; sign-in redirect goes to the website |
 | `lib/telegram.ts` | modified | Message buttons open `ADMATE_PUBLIC_ORIGIN` + `/app` (the website), not this app's protected deployment address |
@@ -134,6 +139,9 @@ Everything not listed here is byte-identical to the source commit
 | `drizzle/meta/0012_snapshot.json` | added | Drizzle snapshot for 0012 |
 | `drizzle/0013_tiktok_syncs.sql` | added | Migration for the Sync Now lock and last-sync state (new table only; local database only) |
 | `drizzle/meta/0013_snapshot.json` | added | Drizzle snapshot for 0013 |
+| `drizzle/0014_tiktok_sync_imports.sql` | added | Sync imports table and sync lock token (local database only) |
+| `drizzle/meta/0014_snapshot.json` | added | Drizzle snapshot for 0014 |
+| `TIKTOK-SYNC-PLAN.md` | added | Phase 5 audit, fixes, capacity design and the plan for daily sync, reminders and hosted testing |
 | `drizzle/0011_user_visits.sql` | added | Migration for `user_visits` (apply to the dashboard database before go-live) |
 | `drizzle/meta/0011_snapshot.json` | added | Drizzle snapshot for 0011 |
 | `integration.lock.json` | added | Source commit file hashes |

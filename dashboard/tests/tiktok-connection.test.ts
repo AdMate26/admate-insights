@@ -48,7 +48,10 @@ const tiktok = {
   // Simulated campaign-by-day report: every row TikTok would hold, served page by page.
   report: [] as Record<string, unknown>[],
   reportCalls: [] as Record<string, unknown>[],
-  failPage: 0, // answer this page with a TikTok error
+  failPage: 0, // answer this page with a TikTok error…
+  failTimes: Infinity, // …this many times, then normally
+  failCode: 50000, // 50000 = temporary system error (retried); 40002 = bad request (final)
+  onReport: null as null | (() => Promise<void>), // runs before each report page is answered
   shiftTotal: false, // pretend the report changed between pages
 };
 function issue() {
@@ -118,7 +121,11 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
       tiktok.reportCalls.push(args);
       const page = Number(args.page ?? 1);
       const size = Number(args.page_size ?? 10);
-      if (page === tiktok.failPage) return reply({ content: [{ type: "text", text: JSON.stringify({ code: 50000, message: "System error" }) }] });
+      if (tiktok.onReport) await tiktok.onReport();
+      if (page === tiktok.failPage && tiktok.failTimes > 0) {
+        tiktok.failTimes -= 1;
+        return reply({ content: [{ type: "text", text: JSON.stringify({ code: tiktok.failCode, message: "System error" }) }] });
+      }
       const inRange = tiktok.report.filter((r) => {
         const day = String((r.dimensions as Record<string, string>).stat_time_day).slice(0, 10);
         return day >= String(args.start_date) && day <= String(args.end_date);
@@ -417,43 +424,53 @@ function simulate(days: string[], campaigns = CAMPAIGNS, factor = 1) {
 }
 const day = (base: string, n: number) => new Date(Date.parse(`${base}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
+// Shared by the Sync Now tests below.
+let clock = Date.now();
+const later = () => {
+  clock += 2 * 60_000; // past the one-minute cooldown
+  return new Date(clock);
+};
+const noWait = async () => {};
+
+async function linkedKhr() {
+  await signIn("a");
+  await callback((await start()).state);
+  tiktok.currency = "KHR";
+  const ws = await account(A, "ws-a-tiktok-khr", "KHR");
+  const { db: d, schema, eq } = await db();
+  await d.delete(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, A));
+  const { linkTikTokAdvertiser } = await import("@/lib/tiktok/service");
+  await linkTikTokAdvertiser(A, ADVERTISER, ws.id);
+  return ws;
+}
+async function activeFacts(workspaceId: string) {
+  const { db: d, schema } = await db();
+  const { and, eq } = await import("drizzle-orm");
+  return d.select().from(schema.facts).where(and(eq(schema.facts.workspaceId, workspaceId), eq(schema.facts.active, true)));
+}
+async function window() {
+  const { syncWindow } = await import("@/lib/tiktok/report");
+  return syncWindow("Asia/Phnom_Penh", new Date(clock));
+}
+// Each sync runs at its own fixed moment, two minutes after the previous one.
+const sync = async () => {
+  const at = later();
+  return (await import("@/lib/tiktok/sync")).syncTikTokAdvertiser(A, ADVERTISER, { now: () => at, sleep: noWait });
+};
+
+function resetReport() {
+  tiktok.report = [];
+  tiktok.reportCalls = [];
+  tiktok.failPage = 0;
+  tiktok.failTimes = Infinity;
+  tiktok.failCode = 50000;
+  tiktok.onReport = null;
+  tiktok.shiftTotal = false;
+  tiktok.currency = "KHR";
+}
+
 describe("TikTok Sync Now", () => {
-  let clock = Date.now();
-  const later = () => {
-    clock += 2 * 60_000; // past the one-minute cooldown
-    return new Date(clock);
-  };
-  const noWait = async () => {};
-
-  async function linkedKhr() {
-    await signIn("a");
-    await callback((await start()).state);
-    tiktok.currency = "KHR";
-    const ws = await account(A, "ws-a-tiktok-khr", "KHR");
-    const { db: d, schema, eq } = await db();
-    await d.delete(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, A));
-    const { linkTikTokAdvertiser } = await import("@/lib/tiktok/service");
-    await linkTikTokAdvertiser(A, ADVERTISER, ws.id);
-    return ws;
-  }
-  async function activeFacts(workspaceId: string) {
-    const { db: d, schema } = await db();
-    const { and, eq } = await import("drizzle-orm");
-    return d.select().from(schema.facts).where(and(eq(schema.facts.workspaceId, workspaceId), eq(schema.facts.active, true)));
-  }
-  async function window() {
-    const { syncWindow } = await import("@/lib/tiktok/report");
-    return syncWindow("Asia/Phnom_Penh", new Date(clock));
-  }
-  const sync = async () => (await import("@/lib/tiktok/sync")).syncTikTokAdvertiser(A, ADVERTISER, { now: later, sleep: noWait });
-
-  beforeEach(() => {
-    tiktok.report = [];
-    tiktok.reportCalls = [];
-    tiktok.failPage = 0;
-    tiktok.shiftTotal = false;
-    tiktok.currency = "KHR";
-  });
+  beforeEach(resetReport);
 
   it("imports every page of a realistic report in KHR with advertiser-local dates and no conversion", async () => {
     const ws = await linkedKhr();
@@ -640,7 +657,8 @@ describe("TikTok Sync Now", () => {
     await signIn("b");
     await callback((await start()).state);
     const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
-    await expect(syncTikTokAdvertiser(B, ADVERTISER, { now: later, sleep: noWait })).rejects.toMatchObject({ code: "advertiser" });
+    const atB = later();
+    await expect(syncTikTokAdvertiser(B, ADVERTISER, { now: () => atB, sleep: noWait })).rejects.toMatchObject({ code: "advertiser" });
     const route = await import("@/app/api/tiktok/sync/route");
     const post = (body: unknown, origin: string | null = ORIGIN) => route.POST(req("/api/tiktok/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, origin));
     expect(await (await post({ advertiserId: ADVERTISER })).json()).toEqual({ error: "advertiser" });
@@ -666,5 +684,334 @@ describe("TikTok Sync Now", () => {
     await client.initialize();
     await expect(client.read("tool_execute", { tool_name: "campaign_get" })).rejects.toMatchObject({ code: "forbidden_tool" });
     await expect(client.read("campaign_create", {})).rejects.toMatchObject({ code: "forbidden_tool" });
+  });
+});
+
+// ---- Phase 5: data integrity, the analysis journey, reliability ------------
+// An uploaded export, committed exactly like the upload page does (newest upload
+// wins across the platform's whole period).
+type Up = { campaign: string; campaignId?: string | null; date?: string; from?: string; to?: string; adGroup?: string; ad?: string; spend: number; clicks?: number };
+async function upload(workspaceId: string, platform: "tiktok" | "meta", rows: Up[], fileName = "upload.csv") {
+  const { commitImport } = await import("@/lib/data/imports");
+  const { emptyMeasures } = await import("@/lib/metrics/measures");
+  const { db: d } = await db();
+  const days = rows.flatMap((r) => (r.date ? [r.date] : [r.from!, r.to!])).sort();
+  return commitImport(d, {
+    workspaceId, fileName, platform, level: rows.some((r) => r.ad) ? "ad" : "campaign", granularity: rows.some((r) => r.date) ? "daily" : "snapshot",
+    period: { start: days[0]!, end: days[days.length - 1]! }, currency: "KHR", attribution: null, warnings: [], columns: ["spend", "impressions", "linkClicks"],
+    rows: rows.map((r) => ({
+      campaign: r.campaign, campaignId: r.campaignId ?? null, adGroup: r.adGroup ?? null, adGroupId: null, ad: r.ad ?? null, adId: null,
+      date: r.date ?? null, periodStart: r.from ?? null, periodEnd: r.to ?? null, status: null, secondaryStatus: null, objective: "traffic" as const, objectiveSource: "user" as const, budget: null,
+      measures: { ...emptyMeasures(), spend: r.spend, impressions: r.spend * 10, linkClicks: r.clicks ?? 10 },
+    })),
+  });
+}
+/** Active spend per campaign name (and level), so tests read like the dashboard. */
+async function spendBy(workspaceId: string) {
+  const { db: d, schema } = await db();
+  const { and, eq } = await import("drizzle-orm");
+  const rows = await d
+    .select({ name: schema.entities.name, spend: schema.facts.spend, platform: schema.facts.platform, adId: schema.facts.adId, day: schema.facts.periodStart, to: schema.facts.periodEnd })
+    .from(schema.facts)
+    .innerJoin(schema.entities, eq(schema.entities.id, schema.facts.campaignId))
+    .where(and(eq(schema.facts.workspaceId, workspaceId), eq(schema.facts.active, true)));
+  const total = (pred: (r: (typeof rows)[number]) => boolean) => Math.round(rows.filter(pred).reduce((s, r) => s + r.spend, 0) * 100) / 100;
+  return { rows, total };
+}
+async function freshKhr(id: string) {
+  await linkedKhr();
+  const { db: d, schema, eq } = await db();
+  const ws = await account(A, id, "KHR");
+  await d.delete(schema.imports).where(eq(schema.imports.workspaceId, ws.id));
+  await d.delete(schema.entities).where(eq(schema.entities.workspaceId, ws.id));
+  await d.delete(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.userId, A));
+  await d.update(schema.tiktokAdvertiserLinks).set({ workspaceId: ws.id }).where(eq(schema.tiktokAdvertiserLinks.userId, A));
+  return ws;
+}
+const [TRAFFIC] = CAMPAIGNS;
+
+describe("TikTok Sync: what a sync may replace", () => {
+  beforeEach(resetReport);
+
+  it("never hides uploads of other campaigns or other platforms in the same dates", async () => {
+    const ws = await freshKhr("ws-p5-unrelated");
+    const w = await window();
+    const days = [day(w.end, -4), day(w.end, -3), day(w.end, -2)];
+    await upload(ws.id, "tiktok", days.map((date) => ({ campaign: "KH | Older campaign (CSV only)", date, spend: 1000 })), "tiktok-older.csv");
+    await upload(ws.id, "meta", days.map((date) => ({ campaign: "Meta | Prospecting", date, spend: 2000 })), "meta.csv");
+    tiktok.report = simulate(days);
+    expect((await sync()).outcome).toBe("ok");
+    const { total } = await spendBy(ws.id);
+    expect(total((r) => r.name === "KH | Older campaign (CSV only)")).toBe(3000); // was hidden before Phase 5
+    expect(total((r) => r.platform === "meta")).toBe(6000);
+    expect(total((r) => r.name === TRAFFIC!.name)).toBe(sumSpend(tiktok.report, TRAFFIC!.id));
+  });
+
+  it("replaces an uploaded campaign only on the days TikTok returned (sparse days), never the others", async () => {
+    const ws = await freshKhr("ws-p5-sparse");
+    const w = await window();
+    const five = [-6, -5, -4, -3, -2].map((n) => day(w.end, n));
+    // The same campaign uploaded earlier, matched by TikTok's campaign ID; one day at ad level too.
+    await upload(ws.id, "tiktok", [...five.map((date) => ({ campaign: TRAFFIC!.name, campaignId: TRAFFIC!.id, date, spend: 500 }))], "daily.csv");
+    await upload(ws.id, "tiktok", [{ campaign: TRAFFIC!.name, campaignId: TRAFFIC!.id, date: five[0]!, adGroup: "AG 1", ad: "Ad 1", spend: 70 }], "ads.csv");
+    tiktok.report = simulate([five[1]!, five[3]!], [TRAFFIC!]); // TikTok has rows on 2 of the 5 days
+    const result = await sync();
+    expect(result).toMatchObject({ outcome: "ok", skipped: 0 });
+    const { rows, total } = await spendBy(ws.id);
+    const byDay = (d: string) => total((r) => r.name === TRAFFIC!.name && r.day === d);
+    expect(byDay(five[1]!)).toBe(sumSpend(tiktok.report, TRAFFIC!.id, five[1]));
+    expect(byDay(five[3]!)).toBe(sumSpend(tiktok.report, TRAFFIC!.id, five[3]));
+    // Days without a TikTok row keep the uploaded numbers. Note: "ads.csv" was
+    // uploaded after "daily.csv" and already replaced that file's day five[0].
+    expect([byDay(five[0]!), byDay(five[2]!), byDay(five[4]!)]).toEqual([70, 500, 500]);
+    expect(rows.filter((r) => r.name === TRAFFIC!.name && r.day === five[1]).length).toBe(1); // no double counting
+  });
+
+  it("keeps a summary export that reaches outside the window and leaves out the sync's overlapping days", async () => {
+    const ws = await freshKhr("ws-p5-summary");
+    const w = await window();
+    const from = day(w.start, -10);
+    const to = day(w.start, 4);
+    await upload(ws.id, "tiktok", [{ campaign: TRAFFIC!.name, campaignId: TRAFFIC!.id, from, to, spend: 99_000 }], "summary.csv");
+    const syncDays = [w.start, day(w.start, 4), day(w.start, 5), day(w.start, 6)];
+    tiktok.report = simulate(syncDays, [TRAFFIC!]);
+    const result = await sync();
+    expect(result).toMatchObject({ outcome: "ok", rows: 4, skipped: 2 });
+    const { total } = await spendBy(ws.id);
+    expect(total((r) => r.day === from && r.to === to)).toBe(99_000); // the whole summary stays, incl. its 10 days before the window
+    expect(total((r) => r.name === TRAFFIC!.name)).toBe(99_000 + sumSpend(tiktok.report, TRAFFIC!.id, day(w.start, 5)) + sumSpend(tiktok.report, TRAFFIC!.id, day(w.start, 6)));
+
+    // When every returned day is covered by that summary: nothing is written.
+    tiktok.report = simulate([w.start], [TRAFFIC!]);
+    expect(await sync()).toMatchObject({ outcome: "skipped", skipped: 1, importId: null });
+
+    // A summary entirely inside the window, with TikTok rows in it, is replaced.
+    const inside = await freshKhr("ws-p5-summary-inside");
+    await upload(inside.id, "tiktok", [{ campaign: TRAFFIC!.name, campaignId: TRAFFIC!.id, from: day(w.end, -3), to: w.end, spend: 12_345 }], "inside.csv");
+    tiktok.report = simulate([day(w.end, -3), day(w.end, -2), day(w.end, -1), w.end], [TRAFFIC!]);
+    expect((await sync()).outcome).toBe("ok");
+    expect((await spendBy(inside.id)).total((r) => r.name === TRAFFIC!.name)).toBe(sumSpend(tiktok.report, TRAFFIC!.id));
+  });
+
+  it("a later sync without some campaigns or days keeps their earlier synced numbers", async () => {
+    const ws = await freshKhr("ws-p5-partial");
+    const w = await window();
+    tiktok.report = simulate([day(w.end, -2), day(w.end, -1)]);
+    const first = sumSpend(tiktok.report);
+    await sync();
+    tiktok.report = simulate([day(w.end, -1), w.end], [TRAFFIC!], 1.3); // only one campaign, partly new days
+    await sync();
+    const { total } = await spendBy(ws.id);
+    expect(total((r) => r.name !== TRAFFIC!.name)).toBe(first - sumSpend(simulate([day(w.end, -2), day(w.end, -1)], [TRAFFIC!])));
+    expect(total((r) => r.name === TRAFFIC!.name)).toBe(sumSpend(simulate([day(w.end, -2)], [TRAFFIC!])) + sumSpend(tiktok.report));
+  });
+
+  it("undo after a narrow sync: brings back exactly what it replaced, also from the middle of a chain", async () => {
+    const ws = await freshKhr("ws-p5-undo");
+    const w = await window();
+    const { db: d } = await db();
+    const { undoImport } = await import("@/lib/data/imports");
+    const [d1, d2] = [day(w.end, -2), day(w.end, -1)];
+    const csv = await upload(ws.id, "tiktok", [d1, d2].flatMap((date) => [
+      { campaign: TRAFFIC!.name, campaignId: TRAFFIC!.id, date, spend: 100 },
+      { campaign: "KH | Other (CSV only)", date, spend: 10 },
+    ]), "first.csv");
+    expect(csv.importId).toBeTruthy();
+    tiktok.report = simulate([d1], [TRAFFIC!]);
+    const s1 = await sync(); // replaces TRAFFIC on d1 only
+    const after = await spendBy(ws.id);
+    expect(after.total(() => true)).toBe(sumSpend(tiktok.report) + 100 + 20);
+    // A newer upload of the whole period (replaces everything TikTok in d1..d2).
+    await upload(ws.id, "tiktok", [d1, d2].map((date) => ({ campaign: TRAFFIC!.name, campaignId: TRAFFIC!.id, date, spend: 300 })), "newer.csv");
+    expect((await spendBy(ws.id)).total(() => true)).toBe(600);
+    await undoImport(d, ws.id, s1.importId!); // the middle import
+    expect((await spendBy(ws.id)).total(() => true)).toBe(600); // what s1 replaced now belongs to newer.csv: not counted twice
+    const { db: d2b, schema, eq } = await db();
+    const [newer] = await d2b.select().from(schema.imports).where(eq(schema.imports.fileName, "newer.csv"));
+    await undoImport(d, ws.id, newer!.id);
+    expect((await spendBy(ws.id)).total(() => true)).toBe(220); // first.csv is back in full
+
+    // Undo of the newest sync restores only the campaign-days it replaced.
+    tiktok.report = simulate([d2], [TRAFFIC!]);
+    const s2 = await sync();
+    expect((await spendBy(ws.id)).total(() => true)).toBe(100 + 20 + sumSpend(tiktok.report));
+    await undoImport(d, ws.id, s2.importId!);
+    expect((await spendBy(ws.id)).total(() => true)).toBe(220);
+  });
+});
+
+function sumSpend(rows: Record<string, unknown>[], campaignId?: string, onDay?: string) {
+  const list = rows.filter((r) => {
+    const dims = r.dimensions as Record<string, string>;
+    return (!campaignId || dims.campaign_id === campaignId) && (!onDay || dims.stat_time_day.startsWith(onDay));
+  });
+  return Math.round(list.reduce((s, r) => s + Number((r.metrics as Record<string, string>).spend), 0) * 100) / 100;
+}
+
+// Realistic month: a traffic campaign whose cost per click rises ~60% in the last
+// week, a steady video-views campaign, and a lead-generation campaign. TikTok's
+// leads metric is not synced; its `conversion` (the optimization event) carries
+// the lead campaign's results, as for TikTok CSV exports.
+function month(w: { start: string; end: string }) {
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < 30; i++) {
+    const date = day(w.start, i);
+    const late = i >= 23;
+    const wobble = 1 + ((i * 7) % 5) / 100;
+    const m = (o: Record<string, number | string>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === "number" ? v.toFixed(k === "spend" ? 2 : 0) : v]));
+    const base = { conversion: 0, complete_payment: 0, app_install: 0, registration: 0, follows: 2, likes: 30, comments: 2, shares: 1 };
+    rows.push({ dimensions: { campaign_id: CAMPAIGNS[0]!.id, stat_time_day: `${date} 00:00:00` }, metrics: m({ ...base, campaign_name: CAMPAIGNS[0]!.name, objective_type: "TRAFFIC", campaign_budget: "200000.00", spend: 80000 * wobble, impressions: 60000, clicks: late ? 125 : 200, reach: 41000, total_landing_page_view: late ? 90 : 150, video_play_actions: 30000 }) });
+    rows.push({ dimensions: { campaign_id: CAMPAIGNS[1]!.id, stat_time_day: `${date} 00:00:00` }, metrics: m({ ...base, campaign_name: CAMPAIGNS[1]!.name, objective_type: "LEAD_GENERATION", campaign_budget: "-", spend: 50000 * wobble, impressions: 30000, clicks: 150, conversion: 20, reach: 22000, total_landing_page_view: 0, video_play_actions: 12000 }) });
+    rows.push({ dimensions: { campaign_id: CAMPAIGNS[2]!.id, stat_time_day: `${date} 00:00:00` }, metrics: m({ ...base, campaign_name: CAMPAIGNS[2]!.name, objective_type: "VIDEO_VIEWS", campaign_budget: "120000.00", spend: 40000 * wobble, impressions: 90000, clicks: 60, reach: 70000, total_landing_page_view: 0, video_play_actions: 45000 }) });
+  }
+  return rows;
+}
+
+describe("TikTok Sync: the analysis journey", () => {
+  beforeEach(resetReport);
+
+  it("Sync Now → stored rows → campaign dashboard → insights, in KHR, with missing measures shown as unavailable", async () => {
+    const ws = await freshKhr("ws-p5-journey");
+    const w = await window();
+    tiktok.report = month(w);
+    expect((await sync()).outcome).toBe("ok");
+    const { loadAnalysisTrusted, loadImportColumns } = await import("@/lib/data/workspaces");
+    const { viewModel } = await import("@/lib/analysis/viewModel");
+    const a = (await loadAnalysisTrusted(ws.id))!;
+
+    // The default view: the last 7 synced days against the 7 before, in the account's currency.
+    expect(a.workspace.currency).toBe("KHR");
+    expect(a.selection.b).toEqual({ from: day(w.end, -6), to: w.end });
+    const traffic = a.campaigns.find((c) => c.info.name === CAMPAIGNS[0]!.name)!;
+    const spendB = sumSpend(tiktok.report.filter((r) => String((r.dimensions as Record<string, string>).stat_time_day) >= day(w.end, -6)), CAMPAIGNS[0]!.id);
+    expect(traffic.info.objective).toBe("traffic");
+    expect(traffic.b.spend).toBeCloseTo(spendB, 2);
+    expect(traffic.kpiB).toBeCloseTo(spendB / (125 * 7), 6); // cost per click from TikTok's destination clicks
+    expect(traffic.kpiB! / traffic.kpiA!).toBeGreaterThan(1.4);
+    expect(a.campaigns.find((c) => c.info.name === CAMPAIGNS[1]!.name)!.info.objective).toBe("leads");
+    expect(a.campaigns.find((c) => c.info.name === CAMPAIGNS[2]!.name)!.info.objective).toBe("video_views");
+
+    // Insights and recommendations come from the unchanged engine.
+    expect(a.findings.some((f) => f.campaignName === CAMPAIGNS[0]!.name && f.platform === "tiktok")).toBe(true);
+    const v = viewModel(a, a.coverage.dailyFrom!);
+    expect(v.levels.campaign.find((r) => r.name === CAMPAIGNS[0]!.name)!.label).toBeTruthy();
+
+    // Missing measures stay missing after storage and read-back: not in the import's
+    // columns, not in what the engine trusts, and "—" (null) on the dashboard.
+    const columns = [...(await loadImportColumns(ws.id)).values()][0]!;
+    for (const k of ["thruplays", "leads", "messages", "conversionValue", "clicksAll", "leadFormOpens"] as const) {
+      expect(columns.has(k)).toBe(false);
+      for (const c of a.campaigns) expect(c.availB.has(k)).toBe(false);
+    }
+    for (const c of a.campaigns) expect(c.availB.has("reach")).toBe(false); // 7 daily reaches can't be added up
+    for (const r of v.levels.campaign) {
+      expect(r.reach).toBeNull();
+      expect(r.frequency).toBeNull();
+      expect(r.revenue).toBeNull();
+    }
+    const leads = v.levels.campaign.find((r) => r.name === CAMPAIGNS[1]!.name)!;
+    expect(leads.results).toBe(20 * 7); // through TikTok conversions, not the unsynced leads metric
+  });
+
+  it("the engine sees exactly the same numbers as an equivalent uploaded export", async () => {
+    const w = await window();
+    const synced = await freshKhr("ws-p5-same-a");
+    tiktok.report = month(w);
+    await sync();
+    const uploaded = await account(A, "ws-p5-same-b", "KHR");
+    const { normalizeTikTokReport } = await import("@/lib/tiktok/report");
+    const { commitImport } = await import("@/lib/data/imports");
+    const { db: d } = await db();
+    const report = normalizeTikTokReport(month(w), w);
+    await commitImport(d, { workspaceId: uploaded.id, fileName: "same.csv", platform: "tiktok", level: "campaign", granularity: "daily", period: report.period!, currency: "KHR", attribution: null, warnings: [], columns: report.columns, rows: report.rows });
+    const { loadAnalysisTrusted } = await import("@/lib/data/workspaces");
+    const strip = async (id: string) => {
+      const a = (await loadAnalysisTrusted(id))!;
+      return {
+        campaigns: a.campaigns.map((c) => [c.info.name, c.mode, c.kpiA, c.kpiB, c.verdict, c.confidence, [...c.availB].sort()]).sort(),
+        findings: a.findings.map((f) => [f.detector, f.campaignName, f.priority, f.confidence, f.title]).sort(),
+        objectives: a.objectives.map((o) => [o.objective, o.kpiA, o.kpiB, o.kpiMissing]),
+      };
+    };
+    expect(await strip(synced.id)).toEqual(await strip(uploaded.id));
+  });
+
+});
+
+describe("TikTok Sync: lock, retries and time limits (ready for scheduled jobs)", () => {
+  beforeEach(resetReport);
+
+  it("a run that lost its lock writes nothing and cannot release the new holder's lock", async () => {
+    const ws = await freshKhr("ws-p5-lock");
+    const w = await window();
+    tiktok.report = simulate([w.end]);
+    const { db: d, schema, eq } = await db();
+    // While this run is reading, its lock expires and another run takes over.
+    tiktok.onReport = async () => {
+      await d.update(schema.tiktokSyncs).set({ lockToken: "other-run", lockedUntil: new Date(Date.now() + 3_600_000) }).where(eq(schema.tiktokSyncs.workspaceId, ws.id));
+    };
+    await expect(sync()).rejects.toMatchObject({ code: "busy" });
+    expect(await activeFacts(ws.id)).toHaveLength(0);
+    expect(await d.select().from(schema.tiktokSyncImports).where(eq(schema.tiktokSyncImports.workspaceId, ws.id))).toHaveLength(0);
+    const [row] = await d.select().from(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.workspaceId, ws.id));
+    expect(row).toMatchObject({ lockToken: "other-run" }); // not cleared by the losing run
+  });
+
+  it("a crashed run's lock expires, so the account is never stuck", async () => {
+    const ws = await freshKhr("ws-p5-crash");
+    const w = await window();
+    const { db: d, schema } = await db();
+    await d.insert(schema.tiktokSyncs).values({ workspaceId: ws.id, userId: A, advertiserId: ADVERTISER, lockToken: "crashed", lockedUntil: new Date(clock - 1000), startedAt: new Date(clock - 11 * 60_000) });
+    tiktok.report = simulate([w.end]);
+    expect((await sync()).outcome).toBe("ok");
+  });
+
+  it("retries temporary TikTok failures on a page, but not permanent ones", async () => {
+    await freshKhr("ws-p5-retry");
+    const w = await window();
+    tiktok.report = simulate([w.end]);
+    tiktok.failPage = 1;
+    tiktok.failTimes = 2; // rate-limited twice, then fine
+    tiktok.failCode = 40100;
+    expect((await sync()).outcome).toBe("ok");
+    expect(tiktok.reportCalls.map((c) => c.page)).toEqual([1, 1, 1]);
+
+    resetReport();
+    tiktok.report = simulate([day(w.end, -1)]);
+    tiktok.failPage = 1;
+    tiktok.failCode = 40002; // a bad request: final
+    await expect(sync()).rejects.toMatchObject({ code: "provider" });
+    expect(tiktok.reportCalls).toHaveLength(1);
+  });
+
+  it("stops at the time budget without writing, and frees the lock", async () => {
+    const ws = await freshKhr("ws-p5-timeout");
+    const w = await window();
+    const many = Array.from({ length: 400 }, (_, i) => ({ id: String(1840000000000000 + i), name: `KH | Slow ${i}`, objective: "TRAFFIC", budget: "-" }));
+    tiktok.report = simulate([day(w.end, -2), day(w.end, -1), w.end], many); // 2 pages
+    const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
+    let t = later().getTime();
+    tiktok.onReport = async () => {
+      t += 3 * 60_000; // each page takes 3 minutes
+    };
+    await expect(syncTikTokAdvertiser(A, ADVERTISER, { now: () => new Date(t), sleep: async () => {} })).rejects.toMatchObject({ code: "timeout" });
+    expect(await activeFacts(ws.id)).toHaveLength(0);
+    const { tikTokSyncStatus } = await import("@/lib/tiktok/sync");
+    expect((await tikTokSyncStatus(A)).find((s) => s.workspaceId === ws.id)).toMatchObject({ running: false, outcome: "failed", errorCode: "timeout" });
+  });
+
+  it("refreshes an access token that would expire during the run before reading", async () => {
+    await freshKhr("ws-p5-token");
+    const at = new Date(); // real time: the token's expiry is compared with it
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    const w = syncWindow("Asia/Phnom_Penh", at);
+    const { db: d, schema, eq } = await db();
+    // Valid for 6 more minutes: enough for a page view (5-minute margin), not for a sync run.
+    await d.update(schema.tiktokConnections).set({ accessExpiresAt: new Date(at.getTime() + 6 * 60_000) }).where(eq(schema.tiktokConnections.userId, A));
+    const refreshes = tiktok.refreshes;
+    tiktok.report = simulate([w.end]);
+    const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
+    expect((await syncTikTokAdvertiser(A, ADVERTISER, { now: () => at, sleep: async () => {} })).outcome).toBe("ok");
+    expect(tiktok.refreshes).toBe(refreshes + 1);
   });
 });

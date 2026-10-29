@@ -1,8 +1,8 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { imports } from "../db/schema";
-import { commitImport, type ImportDiff } from "../data/imports";
+import { imports, tiktokSyncImports } from "../db/schema";
+import { commitImport, NothingToImportError, type ImportDiff } from "../data/imports";
 import { checkImportLimit, checkRowCount } from "../integration/limits";
 import { MEASURE_LABEL } from "../metrics/availability";
 import type { MeasureKey } from "../metrics/measures";
@@ -10,22 +10,26 @@ import type { TikTokMcpServer } from "./config";
 import { TikTokMcp } from "./mcp";
 import { fetchTikTokCampaignDaily, normalizeTikTokReport, syncWindow, TIKTOK_MEASURES, TIKTOK_UNAVAILABLE, TikTokReportError } from "./report";
 import { checkTikTokTarget, sameCurrency, tikTokAccessToken, TikTokConnectError, type Deps } from "./service";
-import { acquireSyncLock, finishSync, listLinks, listSyncs, ownedWorkspace, readConnection, readSync } from "./store";
+import { acquireSyncLock, finishSync, holdSyncLock, listLinks, listSyncs, ownedWorkspace, readConnection, readSync, SYNC_BUDGET_MS } from "./store";
 
 // Sync Now: reads one linked advertiser's last 30 complete days from TikTok
 // (read-only) and imports them into the linked ad account as one report.
 //
 // - Ownership, the sample flag and the currency are re-checked on every sync.
-// - One sync per ad account at a time, across servers (lock + one-minute cooldown).
-// - All pages are read before anything is written; one bad page writes nothing.
-// - The import itself is one transaction (commitImport): overlapping days from
-//   earlier reports of this platform are replaced and kept for undo, exactly like
-//   uploading a newer export. Earlier reports are never deleted or retired.
-// - An empty report writes nothing, so it can never hide stored data, and the
-//   replaced range is only the days TikTok actually returned.
+// - One sync per ad account at a time, across servers: a lock with a per-run
+//   token, re-checked inside the import transaction, so a run that ran out of
+//   time can never write; plus a one-minute cooldown.
+// - All pages are read (temporary failures retried, 4-minute budget) before
+//   anything is written; one bad page writes nothing.
+// - The import itself is one transaction (commitImport with syncScope): it
+//   replaces stored data only where it brings TikTok's new number for the same
+//   campaign and day, kept for undo. Unrelated campaigns, other uploads and summary
+//   exports reaching outside the window are never hidden. Earlier reports are
+//   never deleted or retired.
+// - An empty report writes nothing, so it can never hide stored data.
 // - Identical data to the last synced report (still active) writes nothing.
 
-export type TikTokSyncOutcome = "ok" | "unchanged" | "empty";
+export type TikTokSyncOutcome = "ok" | "unchanged" | "empty" | "skipped";
 
 export interface TikTokSyncResult {
   outcome: TikTokSyncOutcome;
@@ -37,6 +41,8 @@ export interface TikTokSyncResult {
   timezone: string;
   importId: string | null;
   diff: ImportDiff | null;
+  // Rows left out because an uploaded multi-day report already covers those days.
+  skipped: number;
   unavailable: { measure: MeasureKey; label: string; reason: string }[];
 }
 
@@ -55,13 +61,18 @@ export async function syncTikTokAdvertiser(userId: string, advertiserId: string,
   const full = await checkImportLimit(link.workspaceId);
   if (full) throw new TikTokConnectError("import_limit");
 
-  if (!(await acquireSyncLock(userId, advertiserId, link.workspaceId, now))) throw new TikTokConnectError("busy");
+  const lockToken = await acquireSyncLock(userId, advertiserId, link.workspaceId, now);
+  if (!lockToken) throw new TikTokConnectError("busy");
+  const finish = (result: Parameters<typeof finishSync>[3]) => finishSync(userId, link.workspaceId, lockToken, result, clock());
+  const deadline = now.getTime() + SYNC_BUDGET_MS;
   const previous = await readSync(userId, link.workspaceId);
   try {
-    const token = await tikTokAccessToken(userId, deps);
+    // A token that stays valid for the whole run (refreshed first if needed).
+    const token = await tikTokAccessToken(userId, { ...deps, minValidMs: SYNC_BUDGET_MS + 5 * 60 * 1000 });
     const client = new TikTokMcp(connection.server as TikTokMcpServer, token, deps.fetcher);
     await client.initialize();
-    const report = normalizeTikTokReport(await fetchTikTokCampaignDaily(client, advertiserId, window, deps.sleep), window);
+    const list = await fetchTikTokCampaignDaily(client, advertiserId, window, deps.sleep, deadline, () => clock().getTime());
+    const report = normalizeTikTokReport(list, window);
     if (checkRowCount(report.rows.length)) throw new TikTokReportError("too_large", "Report too large");
     const base = {
       window,
@@ -70,11 +81,12 @@ export async function syncTikTokAdvertiser(userId: string, advertiserId: string,
       campaigns: new Set(report.rows.map((r) => r.campaignId)).size,
       currency,
       timezone: advertiser.timezone ?? "",
+      skipped: 0,
       unavailable: unavailableMeasures(report.columns, report.rows.length > 0),
     };
 
     if (!report.period) {
-      await finishSync(userId, link.workspaceId, { outcome: "empty", errorCode: null, rows: 0, periodStart: null, periodEnd: null }, clock());
+      await finish({ outcome: "empty", errorCode: null, rows: 0, periodStart: null, periodEnd: null });
       return { ...base, outcome: "empty", importId: null, diff: null };
     }
 
@@ -82,7 +94,7 @@ export async function syncTikTokAdvertiser(userId: string, advertiserId: string,
     if (previous?.fingerprint === report.fingerprint && previous.importId) {
       const [last] = await db.select({ status: imports.status }).from(imports).where(and(eq(imports.id, previous.importId), eq(imports.workspaceId, link.workspaceId)));
       if (last?.status === "active") {
-        await finishSync(userId, link.workspaceId, { outcome: "unchanged", errorCode: null, rows: report.rows.length, periodStart: report.period.start, periodEnd: report.period.end }, clock());
+        await finish({ outcome: "unchanged", errorCode: null, rows: report.rows.length, periodStart: report.period.start, periodEnd: report.period.end });
         return { ...base, outcome: "unchanged", importId: previous.importId, diff: null };
       }
     }
@@ -92,31 +104,46 @@ export async function syncTikTokAdvertiser(userId: string, advertiserId: string,
     if (!ws) throw new TikTokConnectError("workspace");
     if (ws.isSample) throw new TikTokConnectError("sample");
     if (!sameCurrency(ws.currency, currency)) throw new TikTokConnectError("currency");
+    if (clock().getTime() > deadline) throw new TikTokReportError("timeout", "The sync took too long");
 
-    const { importId, diff } = await commitImport(db, {
-      workspaceId: link.workspaceId,
-      fileName: `TikTok sync · ${advertiser.name} · ${report.period.start} to ${report.period.end}`.slice(0, 200),
-      platform: "tiktok",
-      level: "campaign",
-      granularity: "daily",
-      period: report.period,
-      currency,
-      attribution: null,
-      warnings: [
-        `Synced read-only from TikTok. Amounts are in ${currency} and dates in the advertiser's time zone (${advertiser.timezone}), as TikTok reports them.`,
-        ...base.unavailable.map((u) => `${u.label}: ${u.reason}.`),
-      ],
-      columns: report.columns,
-      rows: report.rows,
-    });
-    await finishSync(userId, link.workspaceId, {
-      outcome: "ok", errorCode: null, rows: report.rows.length, periodStart: report.period.start, periodEnd: report.period.end, importId, fingerprint: report.fingerprint,
-    }, clock());
-    return { ...base, outcome: "ok", importId, diff };
+    let committed;
+    try {
+      committed = await commitImport(db, {
+        workspaceId: link.workspaceId,
+        fileName: `TikTok sync · ${advertiser.name} · ${report.period.start} to ${report.period.end}`.slice(0, 200),
+        platform: "tiktok",
+        level: "campaign",
+        granularity: "daily",
+        period: report.period,
+        currency,
+        attribution: null,
+        warnings: [
+          `Synced read-only from TikTok. Amounts are in ${currency} and dates in the advertiser's time zone (${advertiser.timezone}), as TikTok reports them.`,
+          ...base.unavailable.map((u) => `${u.label}: ${u.reason}.`),
+        ],
+        columns: report.columns,
+        rows: report.rows,
+        syncScope: { window },
+        onCommit: async (tx, importId) => {
+          // Only the run that still holds the lock may write; otherwise everything rolls back.
+          if (!(await holdSyncLock(tx, link.workspaceId, lockToken, clock()))) throw new TikTokConnectError("busy");
+          await tx.insert(tiktokSyncImports).values({ importId, workspaceId: link.workspaceId, advertiserId, windowStart: window.start, windowEnd: window.end });
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof NothingToImportError)) throw error;
+      // Every returned day is already covered by an uploaded multi-day report that the sync keeps.
+      await finish({ outcome: "skipped", errorCode: null, rows: 0, periodStart: report.period.start, periodEnd: report.period.end });
+      return { ...base, outcome: "skipped", skipped: error.skipped, importId: null, diff: null };
+    }
+    const { importId, diff, skipped } = committed;
+    await finish({ outcome: "ok", errorCode: null, rows: report.rows.length - skipped, periodStart: report.period.start, periodEnd: report.period.end, importId, fingerprint: report.fingerprint });
+    return { ...base, outcome: "ok", skipped, importId, diff };
   } catch (error) {
-    const code: TikTokConnectError["code"] = error instanceof TikTokConnectError ? error.code : error instanceof TikTokReportError ? "report" : "provider";
+    const code: TikTokConnectError["code"] =
+      error instanceof TikTokConnectError ? error.code : error instanceof TikTokReportError ? (error.code === "timeout" ? "timeout" : "report") : "provider";
     // The previous fingerprint and import stay, so a later identical sync is still recognised.
-    await finishSync(userId, link.workspaceId, { outcome: "failed", errorCode: code, rows: null, periodStart: null, periodEnd: null }, clock());
+    await finish({ outcome: "failed", errorCode: code, rows: null, periodStart: null, periodEnd: null });
     throw new TikTokConnectError(code);
   }
 }

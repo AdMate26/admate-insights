@@ -14,8 +14,17 @@ const MAX_BYTES = 4 * 1024 * 1024;
 type Json = Record<string, unknown>;
 type Tool = { name: string; annotations?: { readOnlyHint?: boolean }; inputSchema?: { required?: string[]; properties?: Record<string, unknown> } };
 
+// TikTok business codes worth retrying after a pause: request rate limit and
+// temporary system errors. Anything else (bad request, permissions) is final.
+const RETRYABLE_CODES = new Set([40100, 50000, 50002]);
+
 export class TikTokMcpError extends Error {
-  constructor(public readonly code: "forbidden_tool" | "schema" | "provider" | "unauthorized", message: string) {
+  constructor(
+    public readonly code: "forbidden_tool" | "schema" | "provider" | "unauthorized",
+    message: string,
+    // A temporary failure (network, timeout, rate limit, TikTok busy): safe to try again.
+    public readonly retryable = false,
+  ) {
     super(message);
     this.name = "TikTokMcpError";
   }
@@ -71,10 +80,10 @@ export class TikTokMcp {
         signal: AbortSignal.timeout(25_000),
       });
     } catch {
-      throw new TikTokMcpError("provider", "TikTok could not be reached");
+      throw new TikTokMcpError("provider", "TikTok could not be reached", true);
     }
     if (response.status === 401 || response.status === 403) throw new TikTokMcpError("unauthorized", "TikTok refused the authorization");
-    if (!response.ok) throw new TikTokMcpError("provider", "TikTok request failed");
+    if (!response.ok) throw new TikTokMcpError("provider", "TikTok request failed", response.status === 429 || response.status >= 500);
     if (method === "initialize") this.session = response.headers.get("mcp-session-id");
     if (notification) return {};
     const envelope = await readBody(response, id);
@@ -112,7 +121,9 @@ export class TikTokMcp {
         throw new TikTokMcpError("schema", "TikTok returned an unexpected format");
       }
     }
-    if (!isObject(payload) || payload.code !== 0 || !isObject(payload.data)) throw new TikTokMcpError("provider", "TikTok returned an error");
+    if (!isObject(payload) || payload.code !== 0 || !isObject(payload.data)) {
+      throw new TikTokMcpError("provider", "TikTok returned an error", isObject(payload) && RETRYABLE_CODES.has(Number(payload.code)));
+    }
     return payload.data;
   }
 }

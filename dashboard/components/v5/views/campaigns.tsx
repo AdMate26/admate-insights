@@ -379,8 +379,8 @@ function keyDifference(a: Row, b: Row, money: (v: number) => string) {
   if (better.cvr != null && worse.cvr != null) {
     add("more of the people who see it click", better.ctr, worse.ctr, 1, (x) => pct(x, 2));
     add("more of the people who click go on to act", better.cvr, worse.cvr, 1, (x) => pct(x, 1));
-  } else add("more of the people who see it act", better.impressions ? better.results / better.impressions : null, worse.impressions ? worse.results / worse.impressions : null, 1, (x) => pct(x, 2));
-  if (better.mode === "roas" && better.results > 0 && worse.results > 0) add("each order is worth more", better.revenue / better.results, worse.revenue / worse.results, 1, money);
+  } else add("more of the people who see it act", better.impressions && better.results !== null ? better.results / better.impressions : null, worse.impressions && worse.results !== null ? worse.results / worse.impressions : null, 1, (x) => pct(x, 2));
+  if (better.mode === "roas" && better.results && worse.results && better.revenue !== null && worse.revenue !== null) add("each order is worth more", better.revenue / better.results, worse.revenue / worse.results, 1, money);
   const m = terms.sort((x, y) => y.val - x.val)[0];
   if (!m || m.val <= 0) return "";
   const gap = higher(better.mode) ? better.kpi / worse.kpi - 1 : 1 - better.kpi / worse.kpi;

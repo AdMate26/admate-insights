@@ -82,9 +82,9 @@ export function Explorer({ saved: initialSaved }: { saved: { id: string; name: s
   const subtotal = (list: Row[]) => {
     const spend = list.reduce((s, r) => s + r.spend, 0);
     const same = list.every((r) => r.mode === list[0].mode && r.objective === list[0].objective);
-    const results = list.reduce((s, r) => s + r.results, 0);
-    const revenue = list.reduce((s, r) => s + r.revenue, 0);
-    const k = !same || !list.length ? null : list[0].mode === "roas" ? (spend > 0 ? revenue / spend : null) : list[0].mode === "cpm" ? null : results > 0 ? spend / results : null;
+    const results = list.every((r) => r.results !== null) ? list.reduce((s, r) => s + (r.results ?? 0), 0) : null;
+    const revenue = list.reduce((s, r) => s + (r.revenue ?? 0), 0);
+    const k = !same || !list.length ? null : list[0].mode === "roas" ? (spend > 0 ? revenue / spend : null) : list[0].mode === "cpm" ? null : results ? spend / results : null;
     return { spend, results: same ? results : null, kpi: k, mode: list[0]?.mode, kpiShort: list[0]?.kpiShort };
   };
   const cell = (r: Row, c: ExCol) => {

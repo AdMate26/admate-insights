@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import type { DB } from "../db/client";
-import { breakdowns, entities, entityAliases, facts, imports } from "../db/schema";
+import { breakdowns, entities, entityAliases, facts, imports, tiktokSyncImports } from "../db/schema";
 import { emptyMeasures, MEASURE_KEYS, sumMeasures, type MeasureKey, type Measures } from "../metrics/measures";
 import type { Objective } from "../metrics/objectives";
 import type { Platform } from "../ingest/headers";
@@ -29,6 +29,22 @@ export interface CommitArgs {
   matches?: Record<string, string>;
   // A breakdown export for Audience insight: stored in `breakdowns`, never in `facts`.
   breakdown?: BreakdownKind | null;
+  // TikTok Sync Now only: replace narrowly instead of everything of the platform
+  // in the period (see syncReplacement). `window` = the dates asked from TikTok.
+  syncScope?: { window: { start: string; end: string } } | null;
+  // Runs inside the same transaction once the rows are written; throwing rolls
+  // the whole import back (used to record a sync and re-check its lock).
+  onCommit?: (tx: Tx, importId: string) => Promise<void>;
+}
+
+export type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
+
+/** A sync whose every row is already covered by a kept multi-day report: nothing to write. */
+export class NothingToImportError extends Error {
+  constructor(public readonly skipped: number) {
+    super("Nothing left to import");
+    this.name = "NothingToImportError";
+  }
 }
 
 export interface ImportDiff {
@@ -41,7 +57,7 @@ type EntityRow = typeof entities.$inferSelect;
 
 // Import normalized rows. Overlapping data from earlier uploads of the same
 // platform is replaced (newest wins) and kept for undo (PRD F3).
-export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId: string; diff: ImportDiff | null }> {
+export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId: string; diff: ImportDiff | null; skipped: number }> {
   const importId = randomUUID();
   const { workspaceId, platform, period } = args;
 
@@ -151,10 +167,11 @@ export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId
         .where(and(eq(breakdowns.workspaceId, workspaceId), eq(breakdowns.platform, platform), eq(breakdowns.kind, kind), eq(breakdowns.active, true), lte(breakdowns.periodStart, period.end), gte(breakdowns.periodEnd, period.start)));
       const values = [...acc.values()].map(({ m, ...v }) => ({ ...v, measures: m }));
       for (let i = 0; i < values.length; i += 1000) await tx.insert(breakdowns).values(values.slice(i, i + 1000));
-      return { importId, diff: null };
+      if (args.onCommit) await args.onCommit(tx, importId);
+      return { importId, diff: null, skipped: 0 };
     }
 
-    const factRows: (typeof facts.$inferInsert)[] = [];
+    let factRows: (typeof facts.$inferInsert)[] = [];
     for (const r of args.rows) {
       const day = { start: r.date ?? period.start, end: r.date ?? period.end };
       const camp = resolve("campaign", null, r.campaignId, r.campaign, r, day);
@@ -174,10 +191,21 @@ export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId
     if (newAliases.length) await tx.insert(entityAliases).values(newAliases).onConflictDoNothing();
 
     // ---------- newest upload wins on overlap ----------
-    const overlapping = await tx
+    const range = args.syncScope?.window ?? period;
+    let overlapping = await tx
       .select()
       .from(facts)
-      .where(and(eq(facts.workspaceId, workspaceId), eq(facts.platform, platform), eq(facts.active, true), lte(facts.periodStart, period.end), gte(facts.periodEnd, period.start)));
+      .where(and(eq(facts.workspaceId, workspaceId), eq(facts.platform, platform), eq(facts.active, true), lte(facts.periodStart, range.end), gte(facts.periodEnd, range.start)));
+    let skipped = 0;
+    if (args.syncScope) {
+      const pick = syncReplacement(overlapping, factRows, args.syncScope);
+      overlapping = pick.replace;
+      factRows = pick.rows;
+      skipped = pick.skipped;
+      if (!factRows.length) throw new NothingToImportError(skipped);
+      const days = factRows.map((f) => f.periodStart!).sort();
+      await tx.update(imports).set({ rowCount: factRows.length, periodStart: days[0], periodEnd: days[days.length - 1] }).where(eq(imports.id, importId));
+    }
     let diff: ImportDiff | null = null;
     if (overlapping.length) {
       const replacedIds = [...new Set(overlapping.map((f) => f.importId))];
@@ -199,8 +227,51 @@ export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId
     }
 
     for (let i = 0; i < factRows.length; i += 1000) await tx.insert(facts).values(factRows.slice(i, i + 1000));
-    return { importId, diff };
+    if (args.onCommit) await args.onCommit(tx, importId);
+    return { importId, diff, skipped };
   });
+}
+
+type FactSlot = { importId: string; campaignId: string; periodStart: string; periodEnd: string };
+
+/**
+ * What a TikTok sync may replace. A sync only hides stored data where it brings
+ * TikTok's own new number for the same campaign and day:
+ * - campaigns not in this sync: untouched (whatever their source)
+ * - single-day data (earlier syncs, uploads, any level): replaced only on the
+ *   days the sync has a row for that campaign. A day TikTok no longer returns
+ *   keeps its earlier number rather than disappearing.
+ * - multi-day data (summary exports): replaced only when it lies inside the
+ *   window and the sync has rows in it; otherwise it is kept and the sync's rows
+ *   for those days are left out, so nothing is counted twice or hidden
+ */
+export function syncReplacement<F extends FactSlot, R extends { campaignId: string; periodStart?: string | null }>(
+  candidates: F[],
+  rows: R[],
+  scope: { window: { start: string; end: string } },
+): { replace: F[]; rows: R[]; skipped: number } {
+  const days = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const set = days.get(r.campaignId) ?? new Set<string>();
+    set.add(r.periodStart!);
+    days.set(r.campaignId, set);
+  }
+  const replace: F[] = [];
+  const kept: F[] = [];
+  for (const f of candidates) {
+    const synced = days.get(f.campaignId);
+    if (!synced) continue;
+    if (f.periodStart === f.periodEnd) {
+      if (synced.has(f.periodStart)) replace.push(f);
+      continue;
+    }
+    const inside = f.periodStart >= scope.window.start && f.periodEnd <= scope.window.end;
+    const covered = [...synced].some((d) => d >= f.periodStart && d <= f.periodEnd);
+    if (inside && covered) replace.push(f);
+    else kept.push(f);
+  }
+  const keptRows = rows.filter((r) => !kept.some((f) => f.campaignId === r.campaignId && r.periodStart! >= f.periodStart && r.periodStart! <= f.periodEnd));
+  return { replace, rows: keptRows, skipped: rows.length - keptRows.length };
 }
 
 type FactLike = Partial<Record<(typeof MEASURE_KEYS)[number], number | null>>;
@@ -231,8 +302,12 @@ export async function undoImport(db: DB, workspaceId: string, importId: string):
     const owner = (r: { periodStart: string; periodEnd: string }) => later.find((l) => l.periodStart <= r.periodEnd && l.periodEnd >= r.periodStart)?.id ?? null;
 
     await tx.delete(facts).where(eq(facts.importId, importId));
-    const replacedFacts = later.length ? await tx.select({ id: facts.id, periodStart: facts.periodStart, periodEnd: facts.periodEnd }).from(facts).where(eq(facts.replacedBy, importId)) : [];
-    for (const [to, ids] of groupBy(replacedFacts, owner)) {
+    const replacedFacts = later.length
+      ? await tx.select({ id: facts.id, importId: facts.importId, campaignId: facts.campaignId, periodStart: facts.periodStart, periodEnd: facts.periodEnd }).from(facts).where(eq(facts.replacedBy, importId))
+      : [];
+    // TikTok syncs replace narrowly (syncReplacement): ask each newer sync whether it would have taken the row.
+    const syncOwner = await syncAwareOwner(tx, workspaceId, later, replacedFacts);
+    for (const [to, ids] of groupBy(replacedFacts, (f) => syncOwner(f) ?? null)) {
       for (let i = 0; i < ids.length; i += 1000) {
         await tx.update(facts).set(to ? { replacedBy: to } : { active: true, replacedBy: null }).where(inArray(facts.id, ids.slice(i, i + 1000)));
       }
@@ -250,6 +325,40 @@ export async function undoImport(db: DB, workspaceId: string, importId: string):
 
     await tx.update(imports).set({ status: "undone" }).where(eq(imports.id, importId));
   });
+}
+
+// For each row coming back from an undo: the first newer import that would have
+// replaced it. Plain uploads replace by period; syncs by syncReplacement's rule.
+async function syncAwareOwner(tx: Tx, workspaceId: string, later: { id: string; periodStart: string; periodEnd: string }[], rows: FactSlot[]) {
+  if (!later.length || !rows.length) return () => null;
+  const ids = later.map((l) => l.id);
+  const syncs = new Map(
+    (await tx.select().from(tiktokSyncImports).where(and(eq(tiktokSyncImports.workspaceId, workspaceId), inArray(tiktokSyncImports.importId, ids)))).map((x) => [x.importId, x]),
+  );
+  const syncDays = new Map<string, Map<string, Set<string>>>();
+  for (const l of later) {
+    if (!syncs.has(l.id)) continue;
+    const byCampaign = new Map<string, Set<string>>();
+    for (const f of await tx.select({ campaignId: facts.campaignId, day: facts.periodStart }).from(facts).where(eq(facts.importId, l.id))) {
+      const set = byCampaign.get(f.campaignId) ?? new Set<string>();
+      set.add(f.day);
+      byCampaign.set(f.campaignId, set);
+    }
+    syncDays.set(l.id, byCampaign);
+  }
+  return (r: FactSlot): string | null => {
+    for (const l of later) {
+      const sync = syncs.get(l.id);
+      if (!sync) {
+        if (l.periodStart <= r.periodEnd && l.periodEnd >= r.periodStart) return l.id;
+        continue;
+      }
+      if (r.periodStart < sync.windowStart || r.periodEnd > sync.windowEnd) continue;
+      const rows = [...(syncDays.get(l.id)?.get(r.campaignId) ?? [])].map((d) => ({ campaignId: r.campaignId, periodStart: d }));
+      if (syncReplacement([r], rows, { window: { start: sync.windowStart, end: sync.windowEnd } }).replace.length) return l.id;
+    }
+    return null;
+  };
 }
 
 function groupBy<T extends { id: number | string }>(rows: T[], key: (r: T) => string | null): Map<string | null, T["id"][]> {

@@ -462,7 +462,7 @@ export function BegHome() {
     return !d || isOpen(d);
   })[0];
   const others = goals.slice(3);
-  const chartGoal = goals.find((o) => o.mode !== "cpm" && o.results > 0);
+  const chartGoal = goals.find((o) => o.mode !== "cpm" && (o.results ?? 0) > 0);
   const series = chartGoal ? { resultLabel: chartGoal.resultLabel, days: chartGoal.daily.map((d) => ({ date: d.date, results: d.results })) } : null;
   let takeaway: React.ReactNode = null;
   if (series && chartGoal) {

@@ -482,6 +482,8 @@ export const tiktokSyncs = pgTable("tiktok_syncs", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   advertiserId: text("advertiser_id").notNull(),
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  // Random per run: only the run holding the lock may write or release it.
+  lockToken: text("lock_token"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   // ok | unchanged | empty | failed
@@ -494,3 +496,19 @@ export const tiktokSyncs = pgTable("tiktok_syncs", {
   // SHA-256 of the normalized rows of the last committed sync (rerun protection).
   fingerprint: text("fingerprint"),
 });
+
+// Which imports came from TikTok Sync Now, for which advertiser and asked dates.
+// A sync replaces earlier data narrowly (lib/data/imports.ts, syncScope), and undo
+// needs to know that to hand replaced rows to the right newer import.
+export const tiktokSyncImports = pgTable(
+  "tiktok_sync_imports",
+  {
+    importId: text("import_id").primaryKey().references(() => imports.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    advertiserId: text("advertiser_id").notNull(),
+    windowStart: date("window_start", { mode: "string" }).notNull(),
+    windowEnd: date("window_end", { mode: "string" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("tiktok_sync_imports_ws_idx").on(t.workspaceId, t.advertiserId)],
+);
