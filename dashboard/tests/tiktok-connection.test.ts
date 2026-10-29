@@ -189,6 +189,19 @@ async function db() {
 beforeAll(async () => {
   process.env.ADMATE_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), "admate-tiktok-"));
   delete process.env.DATABASE_URL;
+  // Optional: run this whole file against a real, EMPTY, throwaway Postgres (for
+  // example a staging database branch made for the test) to exercise true
+  // concurrent transactions. Default: the embedded database.
+  const realPostgres = process.env.ADMATE_TEST_DATABASE_URL?.trim();
+  if (realPostgres) {
+    process.env.DATABASE_URL = realPostgres;
+    const pg = await import("pg");
+    const { drizzle } = await import("drizzle-orm/node-postgres");
+    const { migrate } = await import("drizzle-orm/node-postgres/migrator");
+    const pool = new pg.default.Pool({ connectionString: realPostgres, max: 1 });
+    await migrate(drizzle({ client: pool }), { migrationsFolder: path.join(process.cwd(), "drizzle") });
+    await pool.end();
+  }
   process.env.TIKTOK_CONNECT_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   // Create and migrate the embedded database once, before the timed tests.
   await (await import("@/lib/db/client")).getDb();
@@ -1293,4 +1306,74 @@ describe("TikTok Sync: rolling history", () => {
     expect(msg).not.toMatch(/\$\d/);
     expect(msg).toMatch(/KHR/);
   });
+});
+
+// ---- Phase 7: concurrent uploads, undo and syncing --------------------------
+describe("Concurrent uploads, undo and TikTok syncing on one account", () => {
+  beforeEach(resetReport);
+
+  it("always ends exactly as if the three had run one after another", async () => {
+    await connectAs("a");
+    const base = Date.now();
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    const w = syncWindow("Asia/Phnom_Penh", new Date(base));
+    const [d1, d2, d3, d4] = [day(w.end, -3), day(w.end, -2), day(w.end, -1), w.end];
+    const T = P6[0]!;
+    const { db: d } = await db();
+    const { undoImport } = await import("@/lib/data/imports");
+    let version = 0; // the TikTok numbers revise between the first and second sync
+    tiktok.reportFn = (start, end) =>
+      simulate([d1, d2, d3, d4].filter((x) => x >= start && x <= end && (version > 0 || x !== d4)), CAMPAIGNS, version > 0 ? 1.25 : 1);
+
+    // Same starting point in every account: one sync, then an upload of T on d2–d3.
+    let n = 0;
+    async function prepared() {
+      const ws = await account(A, `ws-p7-${n++}`, "KHR");
+      await linkTo(A, ws.id);
+      version = 0;
+      await syncAs(A, new Date(base));
+      const first = await upload(ws.id, "tiktok", [d2, d3].map((date) => ({ campaign: T.name, campaignId: T.id, date, spend: 500 })), "first.csv");
+      version = 1;
+      return { ws: ws.id, first: first.importId };
+    }
+    const ops = {
+      upload: (ws: string) => upload(ws, "tiktok", [d3, d4].map((date) => ({ campaign: T.name, campaignId: T.id, date, spend: 900 })), "second.csv"),
+      undo: (ws: string, first: string) => undoImport(d, ws, first),
+      sync: () => syncAs(A, new Date(base + 2 * 60_000)),
+    };
+    type Op = keyof typeof ops;
+    const run = (op: Op, ws: string, first: string) => (op === "sync" ? ops.sync() : op === "undo" ? ops.undo(ws, first) : ops.upload(ws));
+
+    // Every one-after-another order.
+    const orders: Op[][] = [["upload", "undo", "sync"], ["upload", "sync", "undo"], ["undo", "upload", "sync"], ["undo", "sync", "upload"], ["sync", "upload", "undo"], ["sync", "undo", "upload"]];
+    const outcomes = new Map<string, string>();
+    for (const order of orders) {
+      const { ws, first } = await prepared();
+      for (const op of order) await run(op, ws, first);
+      outcomes.set(JSON.stringify(await activeRows(ws)), order.join(" → "));
+    }
+    expect(outcomes.size).toBeGreaterThan(1); // the order matters, so the check below means something
+
+    // Now all three at once, with varying timing inside the sync.
+    for (let round = 0; round < 8; round++) {
+      const { ws, first } = await prepared();
+      tiktok.onReport = () => new Promise((r) => setTimeout(r, (round * 7) % 25));
+      const results = await Promise.allSettled([ops.upload(ws), ops.undo(ws, first), ops.sync()]);
+      tiktok.onReport = null;
+      expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+      const rows = JSON.stringify(await activeRows(ws));
+      expect(outcomes.has(rows), `round ${round}: not equal to any one-after-another order`).toBe(true);
+
+      // Nothing hidden by, or left from, an undone import; the sync lock is free.
+      const { schema } = await db();
+      const { and, eq, inArray } = await import("drizzle-orm");
+      const undone = (await d.select({ id: schema.imports.id }).from(schema.imports).where(and(eq(schema.imports.workspaceId, ws), eq(schema.imports.status, "undone")))).map((x) => x.id);
+      if (undone.length) {
+        expect(await d.select().from(schema.facts).where(inArray(schema.facts.importId, undone))).toHaveLength(0);
+        expect(await d.select().from(schema.facts).where(inArray(schema.facts.replacedBy, undone))).toHaveLength(0);
+      }
+      const [lock] = await d.select().from(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.workspaceId, ws));
+      expect(lock).toMatchObject({ lockToken: null, lockedUntil: null, outcome: "ok" });
+    }
+  }, 120_000);
 });

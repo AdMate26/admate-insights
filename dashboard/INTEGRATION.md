@@ -83,7 +83,7 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `recommendation_viewed` event, `analysis_viewed` for demo visitors (signed-in: server) |
 | `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections`, `0013_tiktok_syncs` and `0014_tiktok_sync_imports` |
-| `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer import that would have replaced it (no double counting); undoing the newest report is unchanged; TikTok sync history still counts as a newer import there. TikTok syncs replace narrowly (`syncScope`): only the same campaign and day; uploads keep their rule; `onCommit` hook inside the transaction |
+| `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer import that would have replaced it (no double counting); undoing the newest report is unchanged; TikTok sync history still counts as a newer import there. TikTok syncs replace narrowly (`syncScope`): only the same campaign and day; uploads keep their rule; `onCommit` hook inside the transaction; imports and undos of one account are serialized with a row lock on the account (no double counting under concurrent transactions) |
 | `lib/analysis/viewModel.ts` | modified | Dashboard rows show reach, frequency, results and revenue as unavailable (null, "—") when the data lacks them or reach was added up; the analysis engine is unchanged |
 | `lib/analysis/alerts.ts` | modified | Treats an unavailable result count as 0 for its volume check (as before) |
 | `components/v5/views/audience.tsx` | modified | Adds up possibly-unavailable results and revenue as 0 (as before) |
@@ -143,6 +143,7 @@ Everything not listed here is byte-identical to the source commit
 | `drizzle/meta/0013_snapshot.json` | added | Drizzle snapshot for 0013 |
 | `drizzle/0014_tiktok_sync_imports.sql` | added | Sync imports table and sync lock token (local database only) |
 | `drizzle/meta/0014_snapshot.json` | added | Drizzle snapshot for 0014 |
+| `TIKTOK-STAGING-PLAN.md` | added | Phase 7 plan for hosted multi-user staging (not set up): architecture, settings, TikTok staging client, isolation, migrations, tests, costs, risks, approval gates |
 | `TIKTOK-SYNC-PLAN.md` | added | Phase 5 audit, fixes, capacity design and the plan for daily sync, reminders and hosted testing |
 | `drizzle/0011_user_visits.sql` | added | Migration for `user_visits` (apply to the dashboard database before go-live) |
 | `drizzle/meta/0011_snapshot.json` | added | Drizzle snapshot for 0011 |
@@ -167,7 +168,7 @@ Everything not listed here is byte-identical to the source commit
 | `lib/integration/read-only.tsx` | added | Read-only flag for visitors (what the screen offers) |
 | `scripts/check-integration.mjs` | added | Verifies the two files above |
 | `scripts/e2e-proxy.mjs` | added | End-to-end test through the website's `/app` proxy (local only) |
-| `tests/tiktok-connection.test.ts` | added | TikTok: access control, replay, session mismatch, rotation, isolation, disconnect, Sync Now with simulated reports |
+| `tests/tiktok-connection.test.ts` | added | TikTok: access control, replay, session mismatch, rotation, isolation, disconnect, Sync Now with simulated reports, rolling history, and concurrent upload, undo and sync (optionally against a real throwaway Postgres via `ADMATE_TEST_DATABASE_URL`) |
 | `tests/tiktok-oauth.test.ts` | added | TikTok: OAuth and encryption primitives |
 | `tests/analytics-server.test.ts` | added | Server-side analytics: sign-up, visits, cleaned paths, denial cases |
 | `tests/analytics.test.ts` | added | Analytics privacy filter cases for dashboard events |

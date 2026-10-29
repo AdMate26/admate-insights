@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import type { DB } from "../db/client";
-import { breakdowns, entities, entityAliases, facts, imports, tiktokSyncImports } from "../db/schema";
+import { breakdowns, entities, entityAliases, facts, imports, tiktokSyncImports, workspaces } from "../db/schema";
 import { emptyMeasures, MEASURE_KEYS, sumMeasures, type MeasureKey, type Measures } from "../metrics/measures";
 import type { Objective } from "../metrics/objectives";
 import type { Platform } from "../ingest/headers";
@@ -39,6 +39,16 @@ export interface CommitArgs {
 
 export type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0];
 
+// Imports and undos of one account run one after another. Without this, two
+// transactions committing at the same moment on a hosted Postgres (an upload and
+// a TikTok sync, say) could both read the same rows as current, both replace
+// them and both add their own: the same days counted twice. The row lock is
+// held until the transaction ends; later statements see what the previous one
+// committed. Other accounts are not affected.
+async function lockAccount(tx: Tx, workspaceId: string) {
+  await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId)).for("update");
+}
+
 /** A sync whose every row is already covered by a kept multi-day report: nothing to write. */
 export class NothingToImportError extends Error {
   constructor(public readonly skipped: number) {
@@ -62,6 +72,7 @@ export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId
   const { workspaceId, platform, period } = args;
 
   return db.transaction(async (tx) => {
+    await lockAccount(tx, workspaceId);
     await tx.insert(imports).values({
       id: importId, workspaceId, platform, fileName: args.fileName, level: args.level, granularity: args.granularity,
       periodStart: period.start, periodEnd: period.end, rowCount: args.rows.length, currency: args.currency,
@@ -289,6 +300,7 @@ function toMeasures(f: FactLike): Measures {
 // later brings it back. Undoing the newest upload works exactly as before.
 export async function undoImport(db: DB, workspaceId: string, importId: string): Promise<void> {
   await db.transaction(async (tx) => {
+    await lockAccount(tx, workspaceId);
     const [imp] = await tx.select().from(imports).where(and(eq(imports.id, importId), eq(imports.workspaceId, workspaceId)));
     if (!imp || imp.status !== "active") return;
     // Newer imports of the same platform and kind still holding data (active, or
