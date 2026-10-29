@@ -56,6 +56,7 @@ function EnterDashboard() {
       // enterDashboard only ever returns a path inside /app.
       const next = new URLSearchParams(window.location.search).get("next");
       const outcome = await enterDashboard({ accessToken: data.session?.access_token, next });
+      // A completed sign-up is recorded by the dashboard's server (analytics).
       if (outcome.kind === "dashboard") window.location.replace(outcome.href);
       else if (outcome.kind === "login") void navigate({ to: "/login", replace: true });
       else {

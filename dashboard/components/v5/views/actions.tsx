@@ -4,12 +4,65 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useV5 } from "../ctx";
 import { usePage } from "../page";
-import { ConfDots, Empty, ImpactChip, KindTag, Legend, PathCrumbs, PrioChip, SectionHead } from "../bits";
+import { ConfDots, Empty, ImpactChip, KindTag, PathCrumbs, PrioChip, SectionHead } from "../bits";
 import { ORow, TCard } from "../rows";
-import { decidedItems, decisions, DETECTOR_NAME, isOpen, kindOf, optimizeQueue, plain, plural, statusText, type Item } from "../core";
+import { decidedItems, decisions, DETECTOR_NAME, isOpen, kindOf, openProblems, optimizeQueue, plain, plural, statusText, type Item } from "../core";
 
 // The decisions page of each view: Beginner To-do, Intermediate Optimize and the
-// Advanced Actions work queue with bulk decisions.
+// Advanced Actions work queue with bulk decisions. Each opens with "at a glance"
+// so people know what is going on before the list.
+
+// ---------- At a glance ----------
+function GlanceStat({ k, cls, onFilter, children }: { k: string; cls: string; onFilter?: (k: string) => void; children: React.ReactNode }) {
+  return onFilter ? (
+    <button type="button" className={`stat ${cls}`} onClick={() => onFilter(k)}>
+      {children}
+    </button>
+  ) : (
+    <span className={`stat ${cls}`}>{children}</span>
+  );
+}
+
+function Glance({ onFilter, beginner = false }: { onFilter?: (k: string) => void; beginner?: boolean }) {
+  const { shown, f } = useV5();
+  const { vm, open } = usePage();
+  const v = vm!;
+  // The same counts and total as the Overview's status bar.
+  const probs = openProblems(v, shown);
+  const opps = v.opportunities.filter((d) => isOpen(d) && shown(d));
+  const high = probs.filter((d) => d.priority === "high").length;
+  const atStake = probs.reduce((s, d) => s + (d.impact?.known ? d.impact.amount : 0), 0);
+  const top = beginner ? null : optimizeQueue(v, "open", "impact", shown)[0];
+  const say = v.summaryFacts?.headline;
+  return (
+    <section className="glance" aria-label="At a glance">
+      {say && <p className="say">{beginner ? plain(say) : say}</p>}
+      <div className="statusbar">
+        <GlanceStat k="fix" cls={probs.length ? "hi" : ""} onFilter={onFilter}>
+          <span className="num">{probs.length}</span> {probs.length === 1 ? "problem" : "problems"}
+          {high > 0 && ` (${high} high)`}
+          {atStake > 0 && (
+            <>
+              {" "}
+              · <span className="num">{f.money(atStake)}</span> at stake
+            </>
+          )}
+        </GlanceStat>
+        <GlanceStat k="grow" cls={opps.length ? "good" : ""} onFilter={onFilter}>
+          <span className="num">{opps.length}</span> {opps.length === 1 ? "opportunity" : "opportunities"}
+        </GlanceStat>
+      </div>
+      {top && (
+        <button type="button" className="glance-top" onClick={() => open(top.key)}>
+          <span className="start">Start here</span>
+          <span className="t">{top.title}</span>
+          <ImpactChip impact={top.impact} />
+          <span className="link small">Open →</span>
+        </button>
+      )}
+    </section>
+  );
+}
 
 // ---------- Beginner: Things to do ----------
 export function BegTodo() {
@@ -21,8 +74,8 @@ export function BegTodo() {
   const watching = v.signals.filter(isOpen).length + [...v.problems, ...v.opportunities].filter((d) => isOpen(d) && shown(d) && d.priority === "low").length;
   return (
     <>
-      <section className="section">
-        <SectionHead title="Things to do" hint="Most important first, with the steps. Tick them off as you go." />
+      <Glance beginner />
+      <section className="section" aria-label="Things to do">
         {list.length ? (
           <div style={{ display: "grid", gap: 12 }}>
             {list.map((d, i) => (
@@ -77,8 +130,9 @@ export function IntOptimize() {
   const counts = Object.fromEntries(Object.keys(OPT_NAMES).map((k) => [k, optimizeQueue(v, k, "impact", shown).length]));
   const list = optimizeQueue(v, filter, sort, shown);
   return (
-    <section className="section">
-      <SectionHead title="Optimize" hint="Every problem and opportunity once, ranked by the money involved. Open one to investigate why." />
+    <>
+    <Glance onFilter={setFilter} />
+    <section className="section" aria-label="Optimize">
       <div className="toolbar">
         <div className="filters" role="group" aria-label="Show">
           {Object.keys(OPT_NAMES).map((k) => (
@@ -97,7 +151,6 @@ export function IntOptimize() {
           </select>
         </label>
       </div>
-      <Legend />
       {list.length ? (
         <div className="rows">
           {list.map((d, i) => (
@@ -107,8 +160,12 @@ export function IntOptimize() {
       ) : (
         <Empty title="Nothing here" text={OPT_EMPTY[filter]} />
       )}
-      <p className="small-note">Money at stake looks back only: the extra cost, lost revenue or savings against what AdMate expected (an item’s own past, your target or similar items). It is not a forecast.</p>
+      <details className="small">
+        <summary>What “at stake” means</summary>
+        <p className="small-note">Money at stake looks back only: the extra cost, lost revenue or savings against what AdMate expected (an item’s own past, your target or similar items). It is not a forecast.</p>
+      </details>
     </section>
+    </>
   );
 }
 
@@ -145,9 +202,17 @@ export function AdvActions() {
     toast(`${plural(keys.length, "item")}: ${kind === "done" ? "marked as action taken" : kind === "remind" ? "reminder in 3 days" : kind === "restore" ? "back on the list" : "dismissed"}`);
     await decideMany(keys, kind, kind === "remind" ? 3 : kind === "dismissed" ? "Not relevant" : undefined);
   };
+  // Status says "Open" on every row of the open tabs, so it only shows under Done.
+  const showStatus = filter === "done";
   return (
-    <section className="section">
-      <SectionHead title="Actions" hint="Every item once. Tick several to decide in bulk; click a row to investigate." />
+    <>
+    <Glance
+      onFilter={(k) => {
+        setFilter(k);
+        setSel(new Set());
+      }}
+    />
+    <section className="section" aria-label="Actions">
       <div className="toolbar">
         <div className="filters" role="group" aria-label="Show">
           {Object.keys(ACT_NAMES).map((k) => (
@@ -182,7 +247,7 @@ export function AdvActions() {
       </div>
       {list.length ? (
         <div className="tablewrap">
-          <table className="tbl dense" style={{ minWidth: 980 }}>
+          <table className="tbl dense" style={{ minWidth: 820 }}>
             <thead>
               <tr>
                 <th>
@@ -190,10 +255,9 @@ export function AdvActions() {
                 </th>
                 <th>Priority</th>
                 <th>Item</th>
-                <th>Check</th>
                 <th className="r">Money at stake</th>
                 <th>Confidence</th>
-                <th>Status</th>
+                {showStatus && <th>Status</th>}
               </tr>
             </thead>
             <tbody>
@@ -209,18 +273,21 @@ export function AdvActions() {
                     <div className="nm">
                       <KindTag kind={kindOf(d)} /> {d.title}
                     </div>
-                    {d.where && (
-                      <div className="sub">
-                        <PathCrumbs where={d.where} />
-                      </div>
-                    )}
+                    <div className="sub">
+                      {DETECTOR_NAME[d.detector] ?? d.detector}
+                      {d.where && (
+                        <>
+                          {" · "}
+                          <PathCrumbs where={d.where} />
+                        </>
+                      )}
+                    </div>
                   </td>
-                  <td className="small">{DETECTOR_NAME[d.detector] ?? d.detector}</td>
                   <td className="r">{d.impact && d.impact.amount > 0 ? <ImpactChip impact={d.impact} /> : <span className="muted">—</span>}</td>
                   <td>
                     <ConfDots c={d.confidence} />
                   </td>
-                  <td className="small">{isOpen(d) ? "Open" : statusText(d)}</td>
+                  {showStatus && <td className="small">{statusText(d)}</td>}
                 </tr>
               ))}
             </tbody>
@@ -255,5 +322,6 @@ export function AdvActions() {
         </div>
       )}
     </section>
+    </>
   );
 }

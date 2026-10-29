@@ -7,6 +7,7 @@ import { usePage } from "../page";
 import { ConfDots, DeltaChip, DriverChip as DriverChipInline, Empty, SectionHead, Src, T } from "../bits";
 import { DailyChart, DriverBars, goalSeries, SimpleBars, Spark } from "../charts";
 import { GoLink, ORow, TCard } from "../rows";
+import { PerfOverview } from "../Performance";
 import {
   byGoalSpend, D0, decisions, driverSentence, fmtDay, firstSentence, higher, ICONCH, impactWord, isOpen, n0, OFF, openProblems, optimizeQueue, pct, plain, plural,
   presetName, signed, singular, STATE, TONE, WEEKDAYS, type Goal, type VM,
@@ -56,6 +57,7 @@ export function AdvOverview({ alerts }: { alerts: number }) {
           <span className="num">{alerts}</span> {alerts === 1 ? "alert" : "alerts"}
         </GoLink>
       </div>
+      <PerfOverview goals={goals.slice(0, 3)} all={goals} sel={trend.objective} onPick={(o) => setTrend(o.objective)} />
       <section className="section">
         <SectionHead title="Goals" hint={`${v.label}${v.compareLabel ? ` vs ${v.compareLabel}` : ""}${v.history ? ` · history ${v.history}` : ""}`} />
         <div className="tablewrap">
@@ -297,8 +299,8 @@ export function IntOverview() {
   const opps = v.opportunities.filter((d) => isOpen(d) && shown(d));
   const atStake = probs.reduce((s, d) => s + (d.impact?.known ? d.impact.amount : 0), 0);
   const trend = goals.find((o) => o.objective === trendObj) ?? goals[0];
-  const top = goals.slice(0, 4);
-  const rest = goals.slice(4);
+  const top = goals.slice(0, 3);
+  const rest = goals.slice(3);
   const changed = goals
     .filter((o) => o.change != null && Math.abs(o.change) >= 0.05 && o.previous != null)
     .sort((a, b) => b.spend * Math.abs(b.change!) - a.spend * Math.abs(a.change!))
@@ -325,13 +327,8 @@ export function IntOverview() {
           <Src k="read" /> {v.oneLine}
         </p>
       )}
-      <section className="section" aria-labelledby="kr-h">
-        <SectionHead id="kr-h" title="Key results" hint={`Your biggest goals${v.compareLabel ? `, ▲▼ vs ${v.compareLabel}` : ""}. Click one to see its trend.`} />
-        <div className="tiles">
-          {top.map((o) => (
-            <GoalTile key={o.objective} o={o} sel={o === trend} onPick={() => setTrend(o.objective)} />
-          ))}
-        </div>
+      <PerfOverview goals={top} all={goals} sel={trend.objective} onPick={(o) => setTrend(o.objective)} />
+      <section className="section" aria-label="Trend">
         {rest.length > 0 && (
           <p>
             <button className="link" type="button" onClick={() => setMore((x) => !x)}>
@@ -515,6 +512,7 @@ export function BegHome() {
           </p>
         )}
       </section>
+      <PerfOverview goals={goals.slice(0, 3)} all={goals} beginner />
       <section className="section" aria-labelledby="bp-h">
         <SectionHead id="bp-h" title={top ? "Fix this first" : "Your next step"} hint={top ? "The most urgent problem, and how to fix it step by step" : "No problems found. Here’s the best thing to do next."} />
         {next ? <TCard d={next} i={0} big /> : <Empty title="Nothing needs doing right now" text="AdMate checks again after your next upload." />}

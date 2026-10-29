@@ -47,6 +47,17 @@ export function PrioChip({ p }: { p: string | null | undefined }) {
     </span>
   );
 }
+// Priority as quiet coloured words, for one-line summaries under a title.
+export function PrioText({ p }: { p: string | null | undefined }) {
+  if (!p) return null;
+  return <span className={`ptext ${p}`}>{p === "monitor" ? "Monitor" : `${p[0].toUpperCase()}${p.slice(1)} priority`}</span>;
+}
+// A quiet "·" between parts of a one-line summary.
+export const Dot = () => (
+  <span className="dot" aria-hidden="true">
+    ·
+  </span>
+);
 export function ConfDots({ c }: { c: string | null | undefined }) {
   const n = ({ high: 3, medium: 2, low: 1 } as Record<string, number>)[c ?? ""] ?? 1;
   return (

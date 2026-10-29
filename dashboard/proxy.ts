@@ -19,7 +19,7 @@ const PUBLIC = ["/api/session", "/api/internal/public-demo", "/api/cron"];
 // sent by the browser is always removed first. The dashboard root (/app) is not
 // included: signed-out visitors there still go to sign-in.
 const VISITOR_HEADER = "x-admate-public-demo";
-const VISITOR_PAGES = /^\/(demo|c\/[^/]+(\/(actions|campaigns|audience|reports|settings|upload|alerts|recommendations|compare|data|portfolio|explorer|budget))?)$/;
+const VISITOR_PAGES = /^\/(demo|c\/[^/]+(\/(actions|campaigns|audience|reports|settings|upload|alerts|recommendations|compare|data|portfolio|explorer|budget|geography|report))?)$/;
 const VISITOR_API = ["/api/counts", "/api/v5/daily", "/api/v5/detail"];
 
 export function proxy(request: NextRequest) {

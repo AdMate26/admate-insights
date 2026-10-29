@@ -8,6 +8,8 @@ import { viewModel } from "./analysis/viewModel";
 import { makeFmt } from "./fmt5";
 import { alertStateTrusted } from "./data/alerts";
 import { loadAnalysisTrusted } from "./data/workspaces";
+import { digestCaption, digestCard } from "./telegramCard";
+import { BASE_PATH, publicOrigin } from "./integration/paths";
 
 // AdMate's Telegram bot. The bot token is the founder's (TELEGRAM_BOT_TOKEN in Vercel),
 // never stored in code. People link their chat by sending the bot a one-time code
@@ -41,8 +43,44 @@ export async function sendTelegram(chatId: string, text: string, opts: { html?: 
   }));
 }
 
+// One photo with a short caption and link buttons: a single message in the chat.
+export async function sendTelegramPhoto(chatId: string, png: ArrayBuffer, caption: string, buttons: { text: string; url: string }[] = []) {
+  const t = token();
+  if (!t) return false;
+  const form = new FormData();
+  form.set("chat_id", chatId);
+  form.set("photo", new Blob([png], { type: "image/png" }), "admate-alerts.png");
+  form.set("caption", caption);
+  form.set("parse_mode", "HTML");
+  if (buttons.length) form.set("reply_markup", JSON.stringify({ inline_keyboard: [buttons] }));
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${t}/sendPhoto`, { method: "POST", body: form });
+    const j = (await res.json()) as { ok: boolean; description?: string };
+    if (!j.ok) console.warn(`[admate] telegram sendPhoto failed: ${j.description ?? res.status}`);
+    return j.ok;
+  } catch (err) {
+    console.warn("[admate] telegram sendPhoto failed:", err);
+    return false;
+  }
+}
+
+// The alert as one picture message; the full text message if the picture can't be sent.
+export async function sendAccountMessage(chatId: string, m: NonNullable<Awaited<ReturnType<typeof accountMessage>>>) {
+  try {
+    const png = await digestCard(m.digest).arrayBuffer();
+    if (await sendTelegramPhoto(chatId, png, digestCaption(m.digest), m.buttons)) return true;
+  } catch (err) {
+    console.warn("[admate] telegram card failed:", err);
+  }
+  return sendTelegram(chatId, m.text, { html: true, buttons: m.buttons });
+}
+
 // The public address for links in messages (Telegram only accepts https links).
 function siteLink(path: string) {
+  // AdMate integration: people open the dashboard at the website's /app, never at
+  // this app's own (protected) deployment address.
+  const site = publicOrigin();
+  if (site) return site.startsWith("https://") ? site + BASE_PATH + path : null;
   const host = process.env.ADMATE_SITE_URL?.trim().replace(/\/+$/, "") || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
   return host.startsWith("https://") ? host + path : null;
 }
@@ -77,7 +115,7 @@ export async function accountMessage(workspaceId: string) {
   const open = siteLink(`/c/${workspaceId}/actions`);
   const settings = siteLink(`/c/${workspaceId}/alerts`);
   const buttons = [...(open ? [{ text: "🔎 Open in AdMate", url: open }] : []), ...(settings ? [{ text: "⚙️ Alert settings", url: settings }] : [])];
-  return { lines, text: digestHtml(digest), buttons };
+  return { lines, digest, text: digestHtml(digest), buttons };
 }
 
 const digest = (lines: string[]) => createHash("sha256").update(lines.join("\n")).digest("hex");
@@ -94,7 +132,7 @@ export async function sendAfterUpload(userId: string, workspaceId: string) {
   const d = digest(m.lines);
   const [last] = await db.select().from(alertSends).where(and(eq(alertSends.userId, userId), eq(alertSends.workspaceId, workspaceId))).orderBy(desc(alertSends.sentAt)).limit(1);
   if (last?.digest === d) return;
-  if (await sendTelegram(link.chatId, m.text, { html: true, buttons: m.buttons })) await db.insert(alertSends).values({ userId, workspaceId, digest: d, kind: "now" });
+  if (await sendAccountMessage(link.chatId, m)) await db.insert(alertSends).values({ userId, workspaceId, digest: d, kind: "now" });
 }
 
 // On a schedule (called every hour): people whose chosen day and hour is now, in their time zone.
@@ -116,7 +154,7 @@ export async function sendScheduled(now = new Date()) {
       if (recent.length) continue;
       const m = await accountMessage(w.id);
       if (!m) continue;
-      if (await sendTelegram(l.chatId, m.text, { html: true, buttons: m.buttons })) {
+      if (await sendAccountMessage(l.chatId, m)) {
         await db.insert(alertSends).values({ userId: l.userId, workspaceId: w.id, digest: digest(m.lines), kind: "scheduled" });
         sent++;
       }

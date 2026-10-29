@@ -69,4 +69,18 @@ describe("alerts", () => {
     expect(new Set(names).size).toBe(names.length);
     expect(alertDigest("X", v, { ...ALERT_DEFAULT, on: false }, [], {}, f).allClear).toBe(true);
   });
+
+  it("the digest also names the campaigns doing great enough to consider more budget", () => {
+    expect(v.great.length).toBeGreaterThan(0);
+    const d = alertDigest("Lotus", v, { ...ALERT_DEFAULT, good: true }, [], {}, f);
+    expect(d.scale.length).toBeGreaterThan(0);
+    expect(d.scale.length).toBeLessThanOrEqual(2);
+    expect(d.scale[0].name).toBe(v.great[0].campaign);
+    // Listed once: a budget candidate is not repeated as good news.
+    const good = d.groups.filter((g) => g.sev === "good").flatMap((g) => g.items.map((i) => i.name));
+    for (const g of d.scale) expect(good).not.toContain(g.name);
+    expect(digestHtml(d)).toContain("CONSIDER MORE BUDGET");
+    expect(d.sub).toContain("to grow");
+    expect(alertDigest("X", v, { ...ALERT_DEFAULT, on: false }, [], {}, f).scale).toEqual([]);
+  });
 });

@@ -6,6 +6,8 @@ import { getDb } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import { publicOrigin } from "@/lib/integration/paths";
 import { createSampleAccount } from "@/lib/sample/load";
+import { after } from "next/server";
+import { captureServer, serverAnalyticsOn } from "@/lib/analytics-server";
 
 // Session bridge (AdMate integration, INTEGRATION.md).
 //
@@ -58,10 +60,16 @@ export async function POST(request: Request) {
     // First entry: their own copy of the sample account, exactly as Project B
     // gave every new account at sign-up.
     await createSampleAccount(user.id);
+    // Analytics (signed-in usage, recorded by the server): a completed sign-up.
+    if (serverAnalyticsOn()) {
+      const method = user.provider === "google" ? "google" : "email_code";
+      after(() => captureServer({ event: "signup_completed", userId: user.id, email: user.email, properties: { method } }));
+    }
   }
 
   await startSession(user.id);
-  return json(200, { ok: true });
+  // `first` lets the website count a completed sign-up (analytics, if allowed).
+  return json(200, created.length > 0 ? { ok: true, first: true } : { ok: true });
 }
 
 export async function DELETE(request: Request) {

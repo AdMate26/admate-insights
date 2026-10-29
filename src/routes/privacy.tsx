@@ -50,7 +50,7 @@ function Heading({ n }: { n: number }) {
 
 function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" effectiveDate="October 24, 2026">
+    <LegalPage title="Privacy Policy" effectiveDate="October 28, 2026">
       <section className="rounded-xl border border-border bg-muted/40 p-5">
         <p className="font-semibold text-foreground">The short version</p>
         <ul className="mt-2">
@@ -163,13 +163,21 @@ function PrivacyPage() {
         <Heading n={4} />
         <p>
           AdMate's numbers, scores and alerts are calculated by our own software. AI is used only to
-          write explanations, summaries and suggested next steps.
+          write explanations, summaries, suggested next steps and answers to your questions.
         </p>
         <p>
           When you use AI features with uploaded reports, the relevant report information, your
           questions and relevant conversation history are sent to our AI provider to generate that
-          text. AdMate does not send information retrieved through the Meta connection to AI
-          features. If this changes, we will update this policy before it happens.
+          text. Our AI provider is Anthropic (in the United States), which makes the Claude models.
+          Anthropic processes this information on our behalf to write the text and, under its
+          commercial terms, does not use it to train its models. AdMate does not send information
+          retrieved through the Meta connection to AI features. If this changes, we will update this
+          policy before it happens.
+        </p>
+        <p>
+          The <strong className="text-foreground">AdMate Assistant</strong> answers questions you
+          ask about your results. For each answer, we record how much AI it used, to count your AI
+          credits and to keep costs under control.
         </p>
       </section>
 
@@ -205,11 +213,28 @@ function PrivacyPage() {
       <section id="cookies">
         <Heading n={7} />
         <p>
-          We use browser storage and session cookies to keep you signed in. Website statistics and
-          product analytics help us understand how the service is used. Product analytics may link
-          page interactions and session recordings to your AdMate user ID and email. Session
-          recordings may include content shown on a page; anything you type into forms is masked.
-          You can limit analytics with your browser's privacy settings.
+          We use browser storage and session cookies to keep you signed in, and to remember your
+          cookie choice. Website statistics count page visits without using cookies.
+        </p>
+        <p>
+          <strong className="text-foreground">When you are signed in</strong>, AdMate records how
+          you use the service so we can run and improve it: the dashboard pages you open, when and
+          for how long, your sign-up, and when you view an analysis. AdMate&apos;s server records
+          this with your AdMate user ID and account email address, without tracking cookies, and
+          sends it to our product analytics provider (PostHog, in the United States).
+        </p>
+        <p>
+          <strong className="text-foreground">On our public pages and demo</strong>, analytics
+          cookies are used only if you choose <strong className="text-foreground">Accept</strong> in
+          our cookie notice. They then record the pages you visit, how long you stay and key steps
+          such as uploading a report (whether it worked, never its contents or file name). You can
+          change this choice at any time with{" "}
+          <strong className="text-foreground">Cookie settings</strong> at the bottom of our pages or
+          in the dashboard menu.
+        </p>
+        <p>
+          Product analytics never records your screen, and we do not send it your report data or
+          anything you type.
         </p>
       </section>
 

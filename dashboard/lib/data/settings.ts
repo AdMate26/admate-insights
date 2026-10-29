@@ -1,25 +1,18 @@
 import "server-only";
 import { cache } from "react";
-import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getCurrentUser } from "../auth/session";
 import { getDb } from "../db/client";
 import { savedViews, userSettings } from "../db/schema";
 import { parseExState, type ExState } from "../explorer";
-import { DEMO_LEVEL_COOKIE, isLevel, type Level } from "../levels";
+import type { Level } from "../levels";
 
-// The signed-in person's view, or null until they answer the welcome question.
+// The signed-in person's view. AdMate has one view now, Advanced, for everyone: an
+// earlier choice of Beginner or Intermediate is no longer read (saveLevel stays for
+// old links that still post a choice).
 export const getLevel = cache(async (): Promise<Level | null> => {
   const user = await getCurrentUser();
-  if (!user) return null;
-  // AdMate integration: a public demo visitor's view is kept in a cookie.
-  if (user.readOnly) {
-    const v = (await cookies()).get(DEMO_LEVEL_COOKIE)?.value;
-    return isLevel(v) ? v : null;
-  }
-  const db = await getDb();
-  const [row] = await db.select({ level: userSettings.level }).from(userSettings).where(eq(userSettings.userId, user.id));
-  return row && isLevel(row.level) ? row.level : null;
+  return user ? "advanced" : null;
 });
 
 export async function saveLevel(userId: string, level: Level) {

@@ -7,8 +7,9 @@ import { useV5, usePeriodQuery, type View } from "./ctx";
 import { Drawer } from "./Drawer";
 import { SummaryModal } from "./Summary";
 import { Assistant } from "./Assistant";
-import { detailOf, keyForEntity, type Item, type Level, type VM } from "./core";
+import { detailOf, keyForEntity, kindOf, type Item, type Level, type VM } from "./core";
 import { apiPath } from "@/lib/integration/paths";
+import { track } from "@/lib/analytics";
 
 // One v5 page: its view of the analysis (vm), the item panel, the summary report,
 // the Assistant and short confirmations. Decisions are saved to the account and
@@ -63,8 +64,15 @@ function patch(vm: VM, local: Record<string, Status>): VM {
 }
 
 export function V5Page({ vm: serverVm, page, askAvailable = false, children }: { vm: VM | null; page: string; askAvailable?: boolean; children: ReactNode }) {
-  const { ws, level, readOnly } = useV5();
+  const { ws, level, readOnly, isSample } = useV5();
   const { params } = usePeriodQuery();
+  // Analytics (only if allowed): which kind of account, never its name or numbers.
+  const account = readOnly ? "demo" : isSample ? "sample" : "own";
+  const hasData = !!serverVm;
+  useEffect(() => {
+    // Signed-in people's analysis views are recorded by the server (/api/activity).
+    if (readOnly && hasData && (page === "overview" || page === "home")) track("analysis_viewed", { account, view: level });
+  }, [ws, page, hasData, account, level, readOnly]);
   const [local, setLocal] = useState<Record<string, Status>>({});
   // New numbers from the server replace the optimistic decisions.
   const [seenVm, setSeenVm] = useState(serverVm);
@@ -95,17 +103,20 @@ export function V5Page({ vm: serverVm, page, askAvailable = false, children }: {
       if (!vm) return;
       const k = key ?? (opts.entity ? keyForEntity(vm, opts.entity.level, opts.entity.id) : null);
       if (!k) return;
-      if (!detailOf(vm, k)) {
+      let item = detailOf(vm, k);
+      if (!item) {
         const q = new URLSearchParams({ ...params, ws, key: k });
         const d = await fetch(apiPath(`/api/v5/detail?${q}`))
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null);
         if (!d) return toast("That item couldn’t be opened. Reload the page and try again.");
         setLoaded((m) => ({ ...m, [k]: d }));
+        item = d as Item;
       }
       setDrawer({ key: k, depth: opts.depth ?? level, entity: opts.entity ?? null });
+      if (item?.detector) track("recommendation_viewed", { account, view: level, detector: item.detector, kind: kindOf(item) });
     },
-    [vm, level, params, ws, toast],
+    [vm, level, params, ws, toast, account],
   );
   const decide = useCallback(
     async (key: string, kind: string, extra?: string | number, quiet?: boolean) => {

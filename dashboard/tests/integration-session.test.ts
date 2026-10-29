@@ -97,6 +97,8 @@ describe("session bridge", () => {
     const { route, session } = await modules();
     const res = await route.POST(bridge("POST", { token: "owner.jwt.sig" }));
     expect(res.status).toBe(200);
+    // First entry: the website counts a completed sign-up from this (analytics).
+    expect(await res.json()).toEqual({ ok: true, first: true });
     expect(authCalls).toEqual(["https://auth.supabase.test/auth/v1/user"]);
     const cookie = jar.get("admate_session");
     expect(cookie?.value).toBeTruthy();
@@ -111,7 +113,9 @@ describe("session bridge", () => {
   it("owner again: no second sample account, the old session is replaced", async () => {
     const { route } = await modules();
     const first = jar.get("admate_session")?.value;
-    expect((await route.POST(bridge("POST", { token: "owner.jwt.sig" }))).status).toBe(200);
+    const again = await route.POST(bridge("POST", { token: "owner.jwt.sig" }));
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ ok: true }); // not a new sign-up
     expect((await route.POST(bridge("POST", { token: "owner.jwt.sig" }))).status).toBe(200);
     expect(jar.get("admate_session")?.value).not.toBe(first);
     const c = await counts(OWNER);
