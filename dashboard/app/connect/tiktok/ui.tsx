@@ -18,7 +18,7 @@ type SyncResult = {
   campaigns: number;
   currency: string;
   timezone: string;
-  diff: { replaced: unknown[] } | null;
+  replaced: number; // earlier reports whose overlapping days were replaced
   skipped: number;
   unavailable: { measure: string; label: string; reason: string }[];
 };
@@ -52,7 +52,7 @@ function syncSummary(r: SyncResult): string {
   if (r.outcome === "skipped") {
     return `Every day TikTok returned is already covered by a summary report you uploaded, so nothing was written. Undo that report in Reports if you want TikTok's daily numbers instead.`;
   }
-  const replaced = r.diff?.replaced.length ? " Earlier data for the same campaigns and days was replaced and can be brought back with Undo in Reports." : "";
+  const replaced = r.replaced ? " Earlier data for the same campaigns and days was replaced and can be brought back with Undo in Reports." : "";
   const skipped = r.skipped ? ` ${r.skipped} rows were left out because a summary report you uploaded already covers those days.` : "";
   return `Imported ${r.rows - r.skipped} daily rows for ${r.campaigns} campaign${r.campaigns === 1 ? "" : "s"} (${r.period?.start} to ${r.period?.end}). Amounts are in ${r.currency}, as TikTok reports them.${replaced}${skipped}`;
 }
@@ -113,14 +113,30 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
     if (!workspaceId) return;
     if (await call("/api/tiktok/advertisers", { method: "POST", headers: json, body: JSON.stringify({ advertiserId, workspaceId }) })) await load();
   };
+  // Sync Now answers straight away and continues in the background; the page
+  // asks for the outcome every 2 seconds (for up to 6 minutes).
   const sync = async (advertiserId: string) => {
     setSynced(null);
+    const startedAt = Date.now();
+    const started = await call("/api/tiktok/sync", { method: "POST", headers: json, body: JSON.stringify({ advertiserId }) });
+    if (!started) return; // keep the error message on screen
     setSyncing(advertiserId);
-    const body = (await call("/api/tiktok/sync", { method: "POST", headers: json, body: JSON.stringify({ advertiserId }) })) as SyncResult | null;
+    let status: (LastSync & { summary: SyncResult | null }) | null = null;
+    for (let i = 0; i < 180; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const res = await fetch(apiPath(`/api/tiktok/sync?advertiserId=${advertiserId}`), { credentials: "same-origin" }).catch(() => null);
+      const body = res?.ok ? await res.json().catch(() => null) : null;
+      const s = body?.status ?? null;
+      if (s && !s.running && s.finishedAt && Date.parse(s.finishedAt) >= startedAt - 60_000) {
+        status = s;
+        break;
+      }
+    }
     setSyncing(null);
-    if (!body) return; // keep the error message on screen
     await load();
-    setSynced({ advertiserId, result: body });
+    if (!status) setError("The sync is taking longer than expected. Check again in a few minutes.");
+    else if (status.outcome === "failed" || !status.summary) setError(MESSAGES[status.errorCode ?? ""] ?? "Something went wrong.");
+    else setSynced({ advertiserId, result: status.summary });
   };
 
   return (
@@ -179,7 +195,7 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
                           Open {account.name}
                         </Link>
                       )}
-                      <button className={buttonClass.primary} disabled={busy} onClick={() => sync(a.id)}>
+                      <button className={buttonClass.primary} disabled={busy || !!syncing} onClick={() => sync(a.id)}>
                         {syncing === a.id ? "Syncing…" : "Sync now"}
                       </button>
                     </span>

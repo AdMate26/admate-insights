@@ -42,7 +42,7 @@ changes budgets.
    - both use the same currency (`currency` error otherwise)
 
    `DELETE ?advertiserId=` removes a link. The list also shows each link's last sync.
-5. `POST /app/api/tiktok/sync {advertiserId}` is Sync Now (see below).
+5. `POST /app/api/tiktok/sync {advertiserId}` is Sync Now (see below). It answers `202` within seconds after the checks and the lock. The sync then continues in the background, and the page polls `GET /app/api/tiktok/sync?advertiserId=` for the outcome, kept in `tiktok_syncs.summary`. No request is held open for minutes behind the website's `/app` relay.
 
 ## Tokens
 
@@ -100,7 +100,7 @@ imports them into the linked ad account as one report.
 - **Rolling history:** only the 7 newest syncs per advertiser can be undone.
   Older syncs become history: their numbers stay, they can't be undone, and they
   never count toward the 50-upload limit (`lib/tiktok/history.ts`).
-- **Time limit and retries:** reading has a 4-minute budget. A page with a
+- **Time limit and retries:** reading has a 3-minute budget (the route allows 300 s on Vercel). A page with a
   temporary TikTok failure is retried twice. The access token is refreshed first
   if it wouldn't last the run.
 - **Limits:** the account's 50-report limit and the 50,000-row limit apply as for
@@ -146,14 +146,14 @@ from attribute metrics.
 Campaign status is not synced: it needs `campaign_get`, which is not read-only on
 this server.
 
-## Database (`drizzle/0012_tiktok_connections.sql`, `0013_tiktok_syncs.sql`, `0014_tiktok_sync_imports.sql`)
+## Database (`drizzle/0012_tiktok_connections.sql`, `0013_tiktok_syncs.sql`, `0014_tiktok_sync_imports.sql`, `0015_tiktok_sync_summary.sql`)
 
 | Table | Contents |
 | --- | --- |
 | `tiktok_connections` | One row per person: encrypted tokens, expiries, the server path, status, token version |
 | `tiktok_oauth_states` | Pending attempts: state hash, session hash, encrypted verifier, expiry |
 | `tiktok_advertiser_links` | (person, advertiser) → one of the person's ad accounts (one advertiser per account) |
-| `tiktok_syncs` | Per ad account: sync lock and its per-run token, last outcome, row count, dates, import ID and data fingerprint (no tokens, no report numbers) |
+| `tiktok_syncs` | Per ad account: sync lock and its per-run token, last outcome, row count, dates, import ID, data fingerprint and a summary for the status poll (no tokens, no report numbers) |
 | `tiktok_sync_imports` | Which imports came from Sync Now: advertiser and asked dates (for narrow replacement and undo) |
 
 Every query filters by the signed-in person's ID (`lib/tiktok/store.ts`), matching the

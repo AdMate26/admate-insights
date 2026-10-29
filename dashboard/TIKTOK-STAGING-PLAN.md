@@ -223,7 +223,7 @@ Sign-in: Supabase project "admate-staging" (Auth + profiles only, sign-ups close
 - any automatic-sync switch (none exists)
 
 **Neon `admate-tiktok-staging`** (Free, AWS Singapore):
-1. Apply migrations `0000`–`0014` once, with the owner's direct URL entered
+1. Apply migrations `0000`–`0015` once, with the owner's direct URL entered
    privately. Use `scripts/migrate.mjs`; it's the same migrator the app uses.
 2. Create the runtime role, then hand its pooled URL to Vercel:
    ```sql
@@ -285,7 +285,7 @@ That is real advertising data, so treat it as production-grade:
 ## 6. Migration compatibility
 
 - **`main` / production:** `0000`–`0011`.
-- **PR #39** adds `0012`–`0014`, which are new tables only:
+- **PR #39** adds `0012`–`0015`: new tables, plus one new column on its own table (`tiktok_syncs.summary`):
   - `tiktok_connections`, `tiktok_oauth_states`, `tiktok_advertiser_links`
   - `tiktok_syncs` (with `lock_token`)
   - `tiktok_sync_imports`
@@ -300,7 +300,7 @@ That is real advertising data, so treat it as production-grade:
     last one applied. A Meta migration merged after TikTok's, but timestamped
     earlier, would be **silently skipped**.
   - **The fix:** before either merges, rebase Meta onto `main` and regenerate its
-    migration after the last merged one (`0015` if TikTok merges first).
+    migration after the last merged one (`0016` if TikTok merges first).
   - **No table conflicts:** both use their own table prefixes.
   - **RLS difference:** Meta uses RLS with a restricted role. The TikTok tables
     rely on per-person filtering in code, like the rest of the dashboard. If RLS
@@ -384,3 +384,196 @@ only pass or fail and counts, never tokens or campaign data.
   name is later claimed by someone else, PKCE still makes intercepted codes
   useless. Delete or stop using the staging TikTok client at the end anyway.
 - **Real ad data at a new processor (Neon):** keep it short-lived; delete at G10.
+
+## 11. Phase 7b updates (2026-10-29)
+
+**G0b, the old preview builds.** All `admate-insights` deployments were listed
+(69 kept by Vercel; the oldest from 25 Sep). 46 are Preview builds made before
+the G0 change at 16:05 UTC, so they still carry the Telegram secrets, and those
+from 17 Oct onwards the Meta token too.
+
+- **Proposed for deletion:** 45 builds. Every one is a Preview build:
+  - all belong to branches whose PRs are **merged**, except 9 of PR #39 and 2 of
+    `main` (redeploys from 25 Sep and 14 Oct)
+  - PR #39's 9 are all **superseded**: its current preview was built after G0,
+    without the secrets
+  - the only links pointing at any of them are 15 `admate-insights-git-<branch>`
+    preview links of merged branches
+- **Untouched:**
+  - the production deployments and `www.admate.site`
+  - every build made after G0
+  - one command-line build made by Codex on 29 Oct (no branch). It may belong to
+    other work, so it's kept unless you say otherwise.
+- **Who could run code with the secrets:** you (39 builds), the AI assistants
+  working under your account (6), and the teammate Neat88 (1, write access).
+  Fork builds are blocked (Git fork protection on), and the previews sit behind
+  Vercel Authentication.
+- **Recommendation:** delete the 45. No immediate rotation is needed, because
+  only trusted collaborators ever had code running with the secrets. Rotate the
+  Telegram bot token at the next planned production change (cheap, via
+  BotFather), and renew the Meta token on its normal schedule. Rotate at once if
+  anyone with push access since 7 Sep is no longer trusted.
+
+**The 120-second Vercel proxy timeout.** It applies to rewrites to external
+backends ([changelog](https://vercel.com/changelog/cdn-origin-timeout-increased-to-two-minutes)).
+A local build with Vercel's output format showed that with the bypass secret,
+`/app` is **not** a rewrite: no `/app` route in `config.json`, and the secret
+isn't in it. Every `/app` request runs in the website's own function, which then
+calls the dashboard.
+
+Even so, a 3–4-minute answer would still have to beat several timers:
+- 300 s per function
+- Node's default 300 s wait for response headers
+- possibly Vercel's 120 s wait for the first byte between the two deployments
+
+**Changed (code, not deployed):**
+- `POST /api/tiktok/sync` now answers **202 within seconds**, after the checks and
+  the lock. The sync runs in the background (`after()`, `maxDuration = 300`), with
+  a 3-minute read budget.
+- The page polls `GET /api/tiktok/sync?advertiserId=` every 2 seconds.
+- The outcome and its summary are kept in `tiktok_syncs.summary` (migration
+  `0015`, local only).
+
+So no request is held open, and the same start/run split serves the future
+scheduler.
+
+## 12. Exact setup runbook (for G2–G4; nothing done yet)
+
+### G2: paid Supabase organization (you, when ready for the tester sessions)
+1. supabase.com, then **New organization**: name `AdMate Staging`, plan **Pro**.
+   Keep the **spend cap on** (the default), so there's no usage overage. Your
+   existing "AdMate" organization stays on Free.
+2. In that organization, **New project**: name `admate-staging`, region
+   **Southeast Asia (Singapore)**, compute **Micro**. Generate the database
+   password and store it in your password manager. You won't need to give it to
+   me.
+
+### G3: staging Auth and email (you in the browser; I prepare and verify)
+1. **SQL Editor:** paste the `profiles` SQL I put on your clipboard. It's exactly
+   `supabase/migrations/20260903071150_…sql`: the table, RLS, the three own-row
+   policies and the new-user trigger. Run it once.
+2. **Authentication → Sign In / Providers → Email:**
+   - Email: on
+   - **Allow new users to sign up: off**
+   - Confirm email: on
+   - Email OTP length: **6** (the website expects 6 digits)
+   - Google: off
+3. **Authentication → URL Configuration:**
+   - Site URL: `https://admate-tiktok-staging.vercel.app`
+   - Redirect URLs: `https://admate-tiktok-staging.vercel.app/**`
+4. **Resend** (resend.com, the account production uses), then API Keys →
+   **Create API key**:
+   - name `AdMate staging Supabase`
+   - permission **Sending access**
+   - domain **admate.site**
+
+   Copy it once, straight into the next step. Never use the production key here.
+5. **Supabase → Authentication → Emails → SMTP Settings**, then Enable custom
+   SMTP:
+
+   | Field | Value |
+   | --- | --- |
+   | Sender email | `staging@admate.site` |
+   | Sender name | `AdMate (staging)` |
+   | Host | `smtp.resend.com` |
+   | Port | `465` |
+   | Username | `resend` |
+   | Password | the new staging key |
+
+   Then **Rate Limits:** emails sent per hour = **10**.
+6. **Optional:** start the email template subjects with `[Staging]`.
+7. **Authentication → Users → Add user → Create new user**, once per tester, with
+   **Auto Confirm User** on and no password needed (they sign in with an email
+   code). Send me each tester's **User UID**. Those go into
+   `TIKTOK_CONNECT_ALLOWED_USER_IDS`.
+8. **Project Settings → API:** the Project URL and the publishable key are public
+   values for G6. The service role key is **never** used in staging.
+
+**I verify, read-only:**
+- the table and policies exist
+- sign-ups are refused for an uninvited address
+- an invited tester gets a 6-digit code from `staging@admate.site`
+
+### G4: Neon dashboard database (you create it; you run one command; I verify)
+1. neon.com (the account Meta staging uses), then **New project**:
+   - name `admate-tiktok-staging`
+   - Postgres 17
+   - region **AWS Asia Pacific (Singapore)**
+   - Free plan
+2. **Apply the dashboard migrations `0000`–`0015`.** In your Terminal, run the
+   following. It asks for the owner connection string without showing it (copy
+   the **direct**, non-pooled one from Neon → Connect):
+   ```bash
+   cd ~/Documents/GitHub/admate-insights-tiktok/dashboard && read -rs "DATABASE_URL?Neon owner URL (hidden): " && export DATABASE_URL && ~/.local/node/bin/node scripts/migrate.mjs; unset DATABASE_URL
+   ```
+3. **Create the restricted runtime user** in the Neon **SQL Editor**, as the
+   owner.
+   - First, generate a password and keep it on your screen only (built-in
+     functions, no extension needed):
+     ```sql
+     select replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '') as new_password;
+     ```
+   - Then run the following, pasting that value in place of `<password>`:
+     ```sql
+     CREATE ROLE admate_runtime LOGIN PASSWORD '<password>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION;
+     GRANT CONNECT ON DATABASE neondb TO admate_runtime;
+     GRANT USAGE ON SCHEMA public TO admate_runtime;
+     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO admate_runtime;
+     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO admate_runtime;
+     ```
+   No access to the `drizzle` migrations schema, and it can't create or alter
+   tables. Imports lock the account row (`SELECT … FOR UPDATE`), which needs
+   only `UPDATE` on `workspaces`, granted above.
+4. **Build the runtime connection string** from Neon's **pooled** string, with
+   user `admate_runtime` and that password, keeping `?sslmode=require`. You
+   paste it into Vercel at G6 as `DATABASE_URL`, Preview `staging/tiktok`,
+   Sensitive.
+5. **Check, run in the SQL Editor:**
+   ```sql
+   select rolsuper, rolbypassrls, rolcreatedb, rolcreaterole from pg_roles where rolname = 'admate_runtime'; -- all false
+   select count(*) from drizzle.__drizzle_migrations; -- 16
+   ```
+6. **Real-Postgres test run:** in Neon, **Create branch** `test-run` from the
+   empty, migrated database. Run the full TikTok test file against it:
+   ```bash
+   cd ~/Documents/GitHub/admate-insights-tiktok/dashboard && read -rs "ADMATE_TEST_DATABASE_URL?test-run branch owner URL (hidden): " && export ADMATE_TEST_DATABASE_URL && ~/.local/node/bin/npx vitest run tests/tiktok-connection.test.ts; unset ADMATE_TEST_DATABASE_URL
+   ```
+   Then delete the `test-run` branch. Over the network the file takes longer;
+   its time limits are raised automatically when `ADMATE_TEST_DATABASE_URL` is
+   set.
+
+## 13. Tester readiness (needed before paying)
+
+- **At least 2 people besides yourself is better; 2 total is the minimum.** Each
+  needs:
+  - their own email inbox, invited at G3
+  - their **own TikTok for Business login**, with access to at least one
+    advertiser (admin, operator or analyst in its Business Center)
+  - a computer browser
+- **For historical data:** Sync Now reads only the **last 30 complete days**. So
+  "an advertiser with history" means **spend within the last 30 days**; older
+  history isn't synced. Note its **currency and time zone**: the tester's
+  staging ad account must use the same currency.
+- **Your AdMate1027 is only right for the "no campaigns" case.** It's KHR, with
+  no spend.
+- **Each tester authorizes TikTok themselves** on the staging site. AdMate never
+  asks for TikTok passwords.
+
+## 14. Final cost and resource checklist (before the paid step)
+
+| Item | Who | Cost | When |
+| --- | --- | --- | --- |
+| Supabase organization "AdMate Staging" on Pro, project `admate-staging` (Micro) | You | **$25 a month** + tax (the $10 credit covers Micro); spend cap on | G2, only when testers are ready |
+| Resend staging-only API key | You | $0 (shares production's free 100/day) | G3 |
+| Neon Free project `admate-tiktok-staging`, plus a temporary `test-run` branch | You create; you run one command | $0 | G4 |
+| GitHub branch `staging/tiktok` (prepared locally, not pushed) | Claude | $0 | G5 |
+| Vercel projects `admate-tiktok-staging` and `admate-tiktok-dashboard-staging` (Hobby) | Claude | $0 | G6 |
+| TikTok staging OAuth client | Claude | $0 | G7, after the addresses are confirmed |
+| Production, Cloud Run, Meta | nobody | unchanged | none |
+
+**After testing (G10):**
+- cancel the Pro organization (or delete the project)
+- delete the Neon project
+- delete or keep the Vercel projects
+- remove the Resend key
+- each tester disconnects TikTok

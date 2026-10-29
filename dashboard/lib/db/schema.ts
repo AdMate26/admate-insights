@@ -495,6 +495,9 @@ export const tiktokSyncs = pgTable("tiktok_syncs", {
   importId: text("import_id"),
   // SHA-256 of the normalized rows of the last committed sync (rerun protection).
   fingerprint: text("fingerprint"),
+  // What the last finished sync found (counts, dates, unavailable measures), for
+  // the status poll. No report numbers, no tokens.
+  summary: jsonb("summary"),
 });
 
 // Which imports came from TikTok Sync Now, for which advertiser and asked dates.

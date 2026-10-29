@@ -9,8 +9,16 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// Work a route hands to `after()` (Sync Now's background run) is collected here.
+const afterTasks: Promise<unknown>[] = [];
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (task: () => unknown) => void afterTasks.push(Promise.resolve().then(task)),
+}));
 // The first test in this file sets up the embedded database and a sample account.
-vi.setConfig({ testTimeout: 20_000 });
+// Against a real, remote Postgres (ADMATE_TEST_DATABASE_URL) every query crosses the network.
+const SLOW = process.env.ADMATE_TEST_DATABASE_URL ? 10 : 1;
+vi.setConfig({ testTimeout: 20_000 * SLOW });
 
 let jar = new Map<string, { value: string; options?: Record<string, unknown> }>();
 vi.mock("next/headers", () => ({
@@ -205,7 +213,7 @@ beforeAll(async () => {
   process.env.TIKTOK_CONNECT_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   // Create and migrate the embedded database once, before the timed tests.
   await (await import("@/lib/db/client")).getDb();
-}, 60_000);
+}, 60_000 * SLOW);
 
 beforeEach(() => {
   process.env.ADMATE_PUBLIC_ORIGIN = ORIGIN;
@@ -689,8 +697,15 @@ describe("TikTok Sync Now", () => {
     process.env.TIKTOK_CONNECT_ENABLED = "true";
     await d.delete(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.workspaceId, ws.id)); // the route runs on the real clock, not the test's
     const ok = await post({ advertiserId: ADVERTISER });
-    expect(ok.status).toBe(200);
-    expect(JSON.stringify(await ok.json())).not.toMatch(/acc-|ref-|Bearer/);
+    expect(ok.status).toBe(202); // answered at once; the reading and writing continue in the background
+    expect(await ok.json()).toMatchObject({ started: true, window: { start: expect.any(String), end: expect.any(String) } });
+    await Promise.all(afterTasks.splice(0));
+    const polled = await route.GET(req(`/api/tiktok/sync?advertiserId=${ADVERTISER}`));
+    const body = await polled.json();
+    expect(body.status).toMatchObject({ running: false, outcome: "ok", summary: { outcome: "ok", currency: "KHR", rows: 3, campaigns: 3 } });
+    expect(JSON.stringify(body)).not.toMatch(/acc-|ref-|Bearer/);
+    expect((await post({ advertiserId: ADVERTISER })).status).toBe(409); // a second click right away: busy, nothing started
+    expect((await route.GET(req("/api/tiktok/sync?advertiserId=x"))).status).toBe(400);
   });
 
   it("never calls write tools or the general tool runner", async () => {
@@ -1198,7 +1213,7 @@ describe("TikTok Sync: rolling history", () => {
     await undoImport(d, wsA.id, old.id);
     expect(await activeRows(wsA.id)).toEqual(before);
     expect((await importsOf(wsA.id)).find((i) => i.id === old.id)!.status).toBe("history");
-  }, 240_000);
+  }, 240_000 * SLOW);
 
   it("syncs never use up the upload allowance; uploads keep their limit", async () => {
     await connectAs("a");
@@ -1375,5 +1390,5 @@ describe("Concurrent uploads, undo and TikTok syncing on one account", () => {
       const [lock] = await d.select().from(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.workspaceId, ws));
       expect(lock).toMatchObject({ lockToken: null, lockedUntil: null, outcome: "ok" });
     }
-  }, 120_000);
+  }, 120_000 * SLOW);
 });

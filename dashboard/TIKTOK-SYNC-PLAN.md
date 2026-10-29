@@ -2,7 +2,7 @@
 
 Status on 2026-10-29 (Phases 5–6): everything below is on the draft branch
 `codex/tiktok-mcp-oauth-foundation` (PR #39) and local only. Nothing is deployed,
-no shared database has the TikTok migrations (`0012`–`0014`), and scheduled
+no shared database has the TikTok migrations (`0012`–`0015`), and scheduled
 sync is **not** implemented. Phase 6 needed no new migration.
 
 ## 1. What a sync may replace (fixed in Phase 5)
@@ -145,7 +145,7 @@ Other tests cover:
 
 | Gap found in Phase 4 | Fix |
 | --- | --- |
-| The 5-minute lock could lapse while a slow read (up to 50 pages × 25 s) went on, so a second run could start and both could write | Reading has a 4-minute budget (`SYNC_BUDGET_MS`), the lock lasts 10 minutes, and each run has a random lock token. The import transaction re-checks and extends the lock, so a run that lost it rolls back. Only the holder can release it. |
+| The 5-minute lock could lapse while a slow read (up to 50 pages × 25 s) went on, so a second run could start and both could write | Reading has a 3-minute budget (`SYNC_BUDGET_MS`; 4 minutes in Phase 5), the lock lasts 10 minutes, and each run has a random lock token. The import transaction re-checks and extends the lock, so a run that lost it rolls back. Only the holder can release it. |
 | A crashed run blocked the account | The lock expires (10 minutes) and a new run takes over (tested) |
 | One temporary TikTok error failed the whole sync | Each page is retried twice (after 1 s and 4 s) for network errors, timeouts, HTTP 429/5xx and TikTok codes 40100/50000/50002. Other errors are final. |
 | An access token could expire mid-run | Sync asks for a token valid for the whole budget plus 5 minutes, refreshing first if needed |
@@ -204,7 +204,7 @@ TikTok's authorization lasts a fixed 30 days (`refresh_expires_at`).
 ## 7. Proposal: hosted multi-user testing (not set up)
 
 1. **A separate staging database** for the dashboard (not `admate-dashboard`),
-   with migrations `0012`–`0014` applied there only, after approval.
+   with migrations `0012`–`0015` applied there only, after approval.
 2. **A Vercel Preview environment with a stable preview domain:**
    - `TIKTOK_CONNECT_ENABLED=true` and a tester allowlist, in the Preview scope
      only

@@ -51,11 +51,27 @@ export interface TikTokSyncResult {
   unavailable: { measure: MeasureKey; label: string; reason: string }[];
 }
 
-export async function syncTikTokAdvertiser(
+type SyncDeps = Deps & { sleep?: (ms: number) => Promise<void>; keepRecentSyncs?: number };
+
+/** What a finished sync found, kept for the status poll (counts and dates only). */
+export type TikTokSyncSummary = Pick<TikTokSyncResult, "outcome" | "window" | "period" | "rows" | "campaigns" | "currency" | "timezone" | "skipped" | "unavailable"> & { replaced: number };
+
+/** Sync Now from start to finish in one call (tests; later the scheduler). */
+export async function syncTikTokAdvertiser(userId: string, advertiserId: string, deps: SyncDeps = {}): Promise<TikTokSyncResult> {
+  return (await startTikTokSync(userId, advertiserId, deps)).run();
+}
+
+/**
+ * The quick part of Sync Now, answered to the person straight away: every check
+ * and the lock. The returned `run` reads TikTok and writes (in the background on
+ * Vercel, so no request is held open for minutes) and records the outcome with
+ * a summary that the page polls for.
+ */
+export async function startTikTokSync(
   userId: string,
   advertiserId: string,
-  deps: Deps & { sleep?: (ms: number) => Promise<void>; keepRecentSyncs?: number } = {},
-): Promise<TikTokSyncResult> {
+  deps: SyncDeps = {},
+): Promise<{ window: { start: string; end: string }; run: () => Promise<TikTokSyncResult> }> {
   const link = (await listLinks(userId)).find((l) => l.advertiserId === advertiserId);
   if (!link) throw new TikTokConnectError("advertiser");
   const connection = await readConnection(userId);
@@ -73,6 +89,11 @@ export async function syncTikTokAdvertiser(
   const finish = (result: Parameters<typeof finishSync>[3]) => finishSync(userId, link.workspaceId, lockToken, result, clock());
   const deadline = now.getTime() + SYNC_BUDGET_MS;
   const previous = await readSync(userId, link.workspaceId);
+  const done = async (result: TikTokSyncResult, record: Parameters<typeof finishSync>[3]) => {
+    await finish({ ...record, summary: summaryOf(result) });
+    return result;
+  };
+  const run = async (): Promise<TikTokSyncResult> => {
   try {
     // A token that stays valid for the whole run (refreshed first if needed).
     const token = await tikTokAccessToken(userId, { ...deps, minValidMs: SYNC_BUDGET_MS + 5 * 60 * 1000 });
@@ -93,16 +114,17 @@ export async function syncTikTokAdvertiser(
     };
 
     if (!report.period) {
-      await finish({ outcome: "empty", errorCode: null, rows: 0, periodStart: null, periodEnd: null });
-      return { ...base, outcome: "empty", importId: null, diff: null };
+      return done({ ...base, outcome: "empty", importId: null, diff: null }, { outcome: "empty", errorCode: null, rows: 0, periodStart: null, periodEnd: null });
     }
 
     const db = await getDb();
     if (previous?.fingerprint === report.fingerprint && previous.importId) {
       const [last] = await db.select({ status: imports.status }).from(imports).where(and(eq(imports.id, previous.importId), eq(imports.workspaceId, link.workspaceId)));
       if (last?.status === "active") {
-        await finish({ outcome: "unchanged", errorCode: null, rows: report.rows.length, periodStart: report.period.start, periodEnd: report.period.end });
-        return { ...base, outcome: "unchanged", importId: previous.importId, diff: null };
+        return done(
+          { ...base, outcome: "unchanged", importId: previous.importId, diff: null },
+          { outcome: "unchanged", errorCode: null, rows: report.rows.length, periodStart: report.period.start, periodEnd: report.period.end },
+        );
       }
     }
 
@@ -142,12 +164,16 @@ export async function syncTikTokAdvertiser(
     } catch (error) {
       if (!(error instanceof NothingToImportError)) throw error;
       // Every returned day is already covered by an uploaded multi-day report that the sync keeps.
-      await finish({ outcome: "skipped", errorCode: null, rows: 0, periodStart: report.period.start, periodEnd: report.period.end });
-      return { ...base, outcome: "skipped", skipped: error.skipped, importId: null, diff: null };
+      return done(
+        { ...base, outcome: "skipped", skipped: error.skipped, importId: null, diff: null },
+        { outcome: "skipped", errorCode: null, rows: 0, periodStart: report.period.start, periodEnd: report.period.end },
+      );
     }
     const { importId, diff, skipped } = committed;
-    await finish({ outcome: "ok", errorCode: null, rows: report.rows.length - skipped, periodStart: report.period.start, periodEnd: report.period.end, importId, fingerprint: report.fingerprint });
-    return { ...base, outcome: "ok", skipped, importId, diff, history };
+    return done(
+      { ...base, outcome: "ok", skipped, importId, diff, history },
+      { outcome: "ok", errorCode: null, rows: report.rows.length - skipped, periodStart: report.period.start, periodEnd: report.period.end, importId, fingerprint: report.fingerprint },
+    );
   } catch (error) {
     const code: TikTokConnectError["code"] =
       error instanceof TikTokConnectError
@@ -158,9 +184,16 @@ export async function syncTikTokAdvertiser(
             ? "provider"
             : "storage"; // a database failure: the transaction rolled back, nothing changed
     // The previous fingerprint and import stay, so a later identical sync is still recognised.
-    await finish({ outcome: "failed", errorCode: code, rows: null, periodStart: null, periodEnd: null });
+    await finish({ outcome: "failed", errorCode: code, rows: null, periodStart: null, periodEnd: null, summary: null });
     throw new TikTokConnectError(code);
   }
+  };
+  return { window, run };
+}
+
+function summaryOf(r: TikTokSyncResult): TikTokSyncSummary {
+  const { outcome, window, period, rows, campaigns, currency, timezone, skipped, unavailable } = r;
+  return { outcome, window, period, rows, campaigns, currency, timezone, skipped, unavailable, replaced: r.diff?.replaced.length ?? 0 };
 }
 
 function unavailableMeasures(columns: MeasureKey[], hasRows: boolean) {
@@ -182,5 +215,6 @@ export async function tikTokSyncStatus(userId: string) {
     rows: s.rows,
     periodStart: s.periodStart,
     periodEnd: s.periodEnd,
+    summary: (s.summary as TikTokSyncSummary | null) ?? null,
   }));
 }
