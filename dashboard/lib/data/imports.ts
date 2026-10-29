@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import type { DB } from "../db/client";
 import { breakdowns, entities, entityAliases, facts, imports } from "../db/schema";
 import { emptyMeasures, MEASURE_KEYS, sumMeasures, type MeasureKey, type Measures } from "../metrics/measures";
@@ -212,14 +212,53 @@ function toMeasures(f: FactLike): Measures {
 }
 
 // Undo an upload: remove its data and bring back what it replaced.
+// When a newer upload has since replaced part of this one, the data this upload
+// had replaced is handed to that newer upload instead of coming back (it would
+// otherwise be counted twice next to the newer data); undoing the newer upload
+// later brings it back. Undoing the newest upload works exactly as before.
 export async function undoImport(db: DB, workspaceId: string, importId: string): Promise<void> {
   await db.transaction(async (tx) => {
     const [imp] = await tx.select().from(imports).where(and(eq(imports.id, importId), eq(imports.workspaceId, workspaceId)));
     if (!imp || imp.status !== "active") return;
+    // Newer active uploads of the same platform and kind, oldest first: the first
+    // one overlapping a row is the upload that would have replaced it.
+    const later = (
+      await tx
+        .select({ id: imports.id, createdAt: imports.createdAt, periodStart: imports.periodStart, periodEnd: imports.periodEnd })
+        .from(imports)
+        .where(and(eq(imports.workspaceId, workspaceId), eq(imports.platform, imp.platform), eq(imports.kind, imp.kind), eq(imports.status, "active"), gt(imports.createdAt, imp.createdAt)))
+    ).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const owner = (r: { periodStart: string; periodEnd: string }) => later.find((l) => l.periodStart <= r.periodEnd && l.periodEnd >= r.periodStart)?.id ?? null;
+
     await tx.delete(facts).where(eq(facts.importId, importId));
+    const replacedFacts = later.length ? await tx.select({ id: facts.id, periodStart: facts.periodStart, periodEnd: facts.periodEnd }).from(facts).where(eq(facts.replacedBy, importId)) : [];
+    for (const [to, ids] of groupBy(replacedFacts, owner)) {
+      for (let i = 0; i < ids.length; i += 1000) {
+        await tx.update(facts).set(to ? { replacedBy: to } : { active: true, replacedBy: null }).where(inArray(facts.id, ids.slice(i, i + 1000)));
+      }
+    }
     await tx.update(facts).set({ active: true, replacedBy: null }).where(eq(facts.replacedBy, importId));
+
     await tx.delete(breakdowns).where(eq(breakdowns.importId, importId));
+    const replacedBreakdowns = later.length ? await tx.select({ id: breakdowns.id, periodStart: breakdowns.periodStart, periodEnd: breakdowns.periodEnd }).from(breakdowns).where(eq(breakdowns.replacedBy, importId)) : [];
+    for (const [to, ids] of groupBy(replacedBreakdowns, owner)) {
+      for (let i = 0; i < ids.length; i += 1000) {
+        await tx.update(breakdowns).set(to ? { replacedBy: to } : { active: true, replacedBy: null }).where(inArray(breakdowns.id, ids.slice(i, i + 1000)));
+      }
+    }
     await tx.update(breakdowns).set({ active: true, replacedBy: null }).where(eq(breakdowns.replacedBy, importId));
+
     await tx.update(imports).set({ status: "undone" }).where(eq(imports.id, importId));
   });
+}
+
+function groupBy<T extends { id: number | string }>(rows: T[], key: (r: T) => string | null): Map<string | null, T["id"][]> {
+  const out = new Map<string | null, T["id"][]>();
+  for (const r of rows) {
+    const k = key(r);
+    const list = out.get(k) ?? [];
+    list.push(r.id);
+    out.set(k, list);
+  }
+  return out;
 }

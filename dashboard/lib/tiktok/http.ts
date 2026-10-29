@@ -39,6 +39,11 @@ const STATUS: Record<TikTokConnectErrorCode, number> = {
   provider: 502,
   advertiser: 403,
   workspace: 403,
+  sample: 403,
+  currency: 409,
+  busy: 409,
+  import_limit: 409,
+  report: 502,
 };
 
 /** A fixed error code for the browser; never provider text, tokens or stack traces. */

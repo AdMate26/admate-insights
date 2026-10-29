@@ -13,7 +13,7 @@ import {
   revokeTikTokToken,
   TikTokOAuthError,
 } from "./oauth";
-import { consumeAttempt, deleteConnection, listLinks, ownsWorkspace, readConnection, saveAttempt, saveConnection, saveLink } from "./store";
+import { consumeAttempt, deleteConnection, listLinks, ownedWorkspace, readConnection, saveAttempt, saveConnection, saveLink } from "./store";
 
 // TikTok connection lifecycle for one signed-in person. Tokens are decrypted
 // only here, only for that person, and never returned to the browser or logged.
@@ -25,7 +25,12 @@ export type TikTokConnectErrorCode =
   | "reauth_required" // the 30-day authorization ended or was revoked
   | "provider" // TikTok unavailable
   | "advertiser" // not among this person's authorized advertisers
-  | "workspace"; // not this person's ad account
+  | "workspace" // not this person's ad account
+  | "sample" // the sample account never takes real data
+  | "currency" // the advertiser's currency differs from the ad account's (never converted)
+  | "busy" // a sync is running or just ran for this account
+  | "import_limit" // the account already holds the maximum number of reports
+  | "report"; // TikTok's report was unusable (format, dates, size or time zone)
 
 export class TikTokConnectError extends Error {
   constructor(public readonly code: TikTokConnectErrorCode) {
@@ -208,14 +213,26 @@ export async function tikTokAdvertisers(userId: string, deps: Deps = {}): Promis
 }
 
 /**
- * Links one of this person's authorized advertisers to one of their own ad
- * accounts. Both are re-checked: the advertiser against TikTok right now, the
- * account against the database.
+ * Checks that an advertiser may feed an ad account: the account is this person's
+ * own real (not sample) account, the advertiser is authorized right now at
+ * TikTok, and both use the same currency (AdMate never converts money).
+ * Used both when linking and before every sync.
  */
-export async function linkTikTokAdvertiser(userId: string, advertiserId: string, workspaceId: string, deps: Deps = {}) {
-  if (!(await ownsWorkspace(userId, workspaceId))) throw new TikTokConnectError("workspace");
+export async function checkTikTokTarget(userId: string, advertiserId: string, workspaceId: string, deps: Deps = {}): Promise<TikTokAdvertiser> {
+  const ws = await ownedWorkspace(userId, workspaceId);
+  if (!ws) throw new TikTokConnectError("workspace");
+  if (ws.isSample) throw new TikTokConnectError("sample");
   const advertiser = (await tikTokAdvertisers(userId, deps)).find((a) => a.id === advertiserId);
   if (!advertiser) throw new TikTokConnectError("advertiser");
+  if (!sameCurrency(advertiser.currency, ws.currency)) throw new TikTokConnectError("currency");
+  return advertiser;
+}
+
+export const sameCurrency = (a: string | null, b: string | null) => !!a && !!b && a.trim().toUpperCase() === b.trim().toUpperCase();
+
+/** Links one of this person's authorized advertisers to one of their own ad accounts (see checkTikTokTarget). */
+export async function linkTikTokAdvertiser(userId: string, advertiserId: string, workspaceId: string, deps: Deps = {}) {
+  const advertiser = await checkTikTokTarget(userId, advertiserId, workspaceId, deps);
   await saveLink(userId, { advertiserId, workspaceId, advertiserName: advertiser.name, currency: advertiser.currency, timezone: advertiser.timezone });
 }
 

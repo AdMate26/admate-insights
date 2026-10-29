@@ -1,11 +1,14 @@
-# TikTok for Business connection (MCP), Phase 2
+# TikTok for Business connection (MCP), Phases 2–4
 
 Each signed-in AdMate person can connect their own TikTok for Business account
 through TikTok's hosted MCP server. AdMate can then list the advertisers they
 authorized and link one to each of their own ad accounts.
 
-**Read-only.** AdMate can call only `auth_advertiser_get` and
-`advertiser_info_get`. It never creates, edits or pauses ads or changes budgets.
+**Read-only.** AdMate can call only `auth_advertiser_get`, `advertiser_info_get`
+and `report_integrated_get`. Each must also be listed by TikTok as read-only.
+It never calls write tools or the general `tool_execute` (so not `campaign_get`,
+which is only reachable through it). It never creates, edits or pauses ads or
+changes budgets.
 
 **Off by default.** Every route and the page answer 404 unless
 `TIKTOK_CONNECT_ENABLED=true`. Only Supabase user IDs listed in
@@ -33,8 +36,13 @@ authorized and link one to each of their own ad accounts.
    person's connection, attempts and links.
 4. `GET /app/api/tiktok/advertisers` lists the authorized advertisers live from
    TikTok, using that person's token, plus their links. `POST {advertiserId, workspaceId}`
-   links one of them. It re-checks the advertiser against TikTok and that the ad
-   account belongs to the person. `DELETE ?advertiserId=` removes a link.
+   links one of them. It re-checks that:
+   - the advertiser is authorized at TikTok right now
+   - the ad account belongs to the person and is not the sample
+   - both use the same currency (`currency` error otherwise)
+
+   `DELETE ?advertiserId=` removes a link. The list also shows each link's last sync.
+5. `POST /app/api/tiktok/sync {advertiserId}` is Sync Now (see below).
 
 ## Tokens
 
@@ -53,17 +61,89 @@ authorized and link one to each of their own ad accounts.
   `not_connected`, `reauth_required`, `provider`, `advertiser`, `workspace`). They
   never include provider text or tokens, and nothing is logged.
 
-## Database (`drizzle/0012_tiktok_connections.sql`, new tables only)
+## Sync Now (Phase 4)
+
+It reads the linked advertiser's last **30 complete days** in the advertiser's own time
+zone (today is still changing, and 30 days is TikTok's limit for daily rows). It
+imports them into the linked ad account as one report.
+
+- **Fixed request:** campaign level, `campaign_id` × `stat_time_day`, all
+  campaign statuses (deleted campaigns too), 1,000 rows a page. It reads every page
+  (max 50, 200 ms apart) before writing anything. If a page fails, or the row
+  count changes between pages, nothing is written.
+- **Checked on every sync, again right before writing:**
+  - the account is the person's own real account
+  - the advertiser is still authorized
+  - the currencies match
+
+  A link pointing at someone else's account is refused.
+- **No conversion:** money stays in the advertiser's currency and days stay in
+  its time zone, exactly as TikTok reports them.
+- **One transaction:** the write uses the same `commitImport` as file uploads.
+  Overlapping days from earlier TikTok reports in that account are replaced
+  (newest wins) and kept for Undo in Reports. Earlier reports are never deleted
+  or retired.
+- **Empty report:** nothing is written, so stored data is never hidden. The
+  replaced range is only the first to last day TikTok actually returned.
+- **Reruns:** if the numbers are identical to the last sync (still active),
+  nothing is written ("already up to date"). Only one sync per account runs at a
+  time, across servers (`tiktok_syncs` lock, freed after 5 minutes if a server
+  crashes). There is a one-minute pause between syncs.
+- **Limits:** the account's 50-report limit and the 50,000-row limit apply as for
+  uploads.
+- **Undo history:** undoing an older report whose days a newer one has since
+  replaced now hands its replaced data to that newer report instead of restoring
+  it next to it (it used to be counted twice). Undoing the newest report works as
+  before.
+- **No scheduled sync:** it runs only when the person clicks Sync now.
+
+### Metrics
+
+Every name below was checked live (read-only, 2026-10-29). One unknown name makes
+TikTok refuse the whole report.
+
+| AdMate measure | TikTok metric | Meaning |
+| --- | --- | --- |
+| spend | `spend` | Cost in the advertiser's currency |
+| impressions | `impressions` | |
+| link clicks | `clicks` | "Clicks (destination)", same as the CSV import |
+| reach | `reach` | Daily estimated unique reach; never added up across days or campaigns, so period reach shows as unavailable |
+| conversions | `conversion` | Optimization-event conversions |
+| purchases | `complete_payment` | Website purchases |
+| installs, registrations | `app_install`, `registration` | |
+| landing page views | `total_landing_page_view` | |
+| video views | `video_play_actions` | Video plays |
+| follows | `follows` | |
+| engagements | `likes` + `comments` + `shares` | Same sum as the CSV import |
+
+Campaign name, objective (`objective_type`) and budget (`campaign_budget`) come
+from attribute metrics.
+
+**Left unavailable (never zero):**
+- **Clicks (all):** `clicks_all` is refused.
+- **ThruPlays:** `video_views_p100` counts plays to 100%, which is a different
+  measure from a ThruPlay.
+- **Leads:** `form` / `onsite_form` need checking with a lead-generation advertiser.
+- **Conversations:** the messaging metrics are refused.
+- **Conversion value:** `total_complete_payment_rate` needs checking with a sales
+  advertiser.
+- **Lead form opens.**
+
+Campaign status is not synced: it needs `campaign_get`, which is not read-only on
+this server.
+
+## Database (`drizzle/0012_tiktok_connections.sql`, `0013_tiktok_syncs.sql`, new tables only)
 
 | Table | Contents |
 | --- | --- |
 | `tiktok_connections` | One row per person: encrypted tokens, expiries, the server path, status, token version |
 | `tiktok_oauth_states` | Pending attempts: state hash, session hash, encrypted verifier, expiry |
 | `tiktok_advertiser_links` | (person, advertiser) → one of the person's ad accounts (one advertiser per account) |
+| `tiktok_syncs` | Per ad account: sync lock, last outcome, row count, dates, import ID and data fingerprint (no tokens, no report numbers) |
 
 Every query filters by the signed-in person's ID (`lib/tiktok/store.ts`), matching the
-rest of this dashboard database (Data API off, no browser access). The migration
-has **not** been applied to any shared database.
+rest of this dashboard database (Data API off, no browser access). The migrations
+have **not** been applied to any shared database; only to the local embedded one.
 
 ## Settings (all server-only)
 

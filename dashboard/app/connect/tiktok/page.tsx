@@ -21,7 +21,7 @@ export default async function ConnectTikTokPage({ searchParams }: PageProps<"/co
         Read-only: AdMate reads your advertiser accounts and reports. It never creates, edits or pauses ads, and never changes
         budgets. TikTok&apos;s authorization lasts 30 days; after that you reconnect.
       </p>
-      <TikTokConnect status={status} result={result} accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} />
+      <TikTokConnect status={status} result={result} accounts={accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, isSample: a.isSample }))} />
     </main>
   );
 }

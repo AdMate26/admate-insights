@@ -3,10 +3,11 @@ import type { TikTokMcpServer } from "./config";
 
 // Minimal, read-only client for TikTok for Business MCP. Only the tools in
 // READ_TOOLS can ever be called; each must also be listed by the server as
-// read-only, and calls with unknown required parameters are refused (the live
-// tool schemas are verified during the first real-account test).
+// read-only, and calls with unknown required parameters are refused. Write
+// tools and the general `tool_execute` are never allowed (verified live in
+// Phase 3/4: `report_integrated_get` is listed with readOnlyHint=true).
 
-export const READ_TOOLS = new Set(["auth_advertiser_get", "advertiser_info_get"]);
+export const READ_TOOLS = new Set(["auth_advertiser_get", "advertiser_info_get", "report_integrated_get"]);
 const PROTOCOL_VERSION = "2025-06-18";
 const MAX_BYTES = 4 * 1024 * 1024;
 

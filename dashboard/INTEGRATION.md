@@ -82,11 +82,13 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `recommendation_viewed` event, `analysis_viewed` for demo visitors (signed-in: server) |
-| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits` and `0012_tiktok_connections` |
+| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections` and `0013_tiktok_syncs` |
+| `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer overlapping report instead of restoring it (no double counting); undoing the newest report is unchanged |
+| `lib/ingest/normalize.ts` | modified | Exports `objectiveFromPlatformText` and `objectiveFromMetrics` for the TikTok sync (no behavior change) |
 | `components/v5/views/alerts.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor changes show the sign-up note instead of saving; `telegram_connected` event |
 | `instrumentation-client.ts` | modified | PostHog starts only after consent (`lib/analytics.ts`) |
 | `lib/analytics.ts` | modified | Cookie-consent PostHog in the browser: no replay/autocapture, privacy filter; page views only for demo visitors (`trackPageview`) |
-| `lib/db/schema.ts` | modified | `user_visits` table (current visit per signed-in person, for analytics); TikTok tables `tiktok_connections`, `tiktok_oauth_states`, `tiktok_advertiser_links` |
+| `lib/db/schema.ts` | modified | `user_visits` table (current visit per signed-in person, for analytics); TikTok tables `tiktok_connections`, `tiktok_oauth_states`, `tiktok_advertiser_links`, `tiktok_syncs` |
 | `components/v5/views/campaigns.tsx` | modified | Visitors get the sign-up note instead of changing a goal or funnel role |
 | `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
@@ -121,6 +123,7 @@ Everything not listed here is byte-identical to the source commit
 | `app/api/tiktok/connection/route.ts` | added | TikTok: connection status and disconnect |
 | `app/api/tiktok/oauth/callback/route.ts` | added | TikTok: OAuth callback (one-use state, same session) |
 | `app/api/tiktok/oauth/start/route.ts` | added | TikTok: starts OAuth with PKCE |
+| `app/api/tiktok/sync/route.ts` | added | TikTok: Sync Now for one linked advertiser (counts and dates only in the answer) |
 | `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side) |
 | `app/demo/route.ts` | added | `/app/demo`: own sample or the public demo |
 | `app/connect/tiktok/page.tsx` | added | TikTok connection test page (404 unless enabled and allowlisted) |
@@ -129,6 +132,8 @@ Everything not listed here is byte-identical to the source commit
 | `components/PageTracker.tsx` | added | Page views: server for signed-in people, browser (after consent) for demo visitors |
 | `drizzle/0012_tiktok_connections.sql` | added | Migration for the TikTok tables (new tables only; not applied anywhere yet) |
 | `drizzle/meta/0012_snapshot.json` | added | Drizzle snapshot for 0012 |
+| `drizzle/0013_tiktok_syncs.sql` | added | Migration for the Sync Now lock and last-sync state (new table only; local database only) |
+| `drizzle/meta/0013_snapshot.json` | added | Drizzle snapshot for 0013 |
 | `drizzle/0011_user_visits.sql` | added | Migration for `user_visits` (apply to the dashboard database before go-live) |
 | `drizzle/meta/0011_snapshot.json` | added | Drizzle snapshot for 0011 |
 | `integration.lock.json` | added | Source commit file hashes |
@@ -138,10 +143,12 @@ Everything not listed here is byte-identical to the source commit
 | `lib/tiktok/config.ts` | added | TikTok: off-by-default settings, tester allowlist, exact callback URL |
 | `lib/tiktok/crypto.ts` | added | TikTok: PKCE and AES-256-GCM token encryption bound to person and purpose |
 | `lib/tiktok/http.ts` | added | TikTok: request guard (feature, session, allowlist, same site) and fixed error codes |
-| `lib/tiktok/mcp.ts` | added | TikTok: read-only MCP client (two allowed tools) and advertiser listing |
+| `lib/tiktok/mcp.ts` | added | TikTok: read-only MCP client (three allowed tools, never `tool_execute`) and advertiser listing |
 | `lib/tiktok/oauth.ts` | added | TikTok: OAuth discovery, code exchange, refresh, revocation |
-| `lib/tiktok/service.ts` | added | TikTok: connect, status, single-flight token refresh with rotation, disconnect, advertiser links |
-| `lib/tiktok/store.ts` | added | TikTok: per-person database access |
+| `lib/tiktok/report.ts` | added | TikTok: fixed read-only campaign-by-day report, pagination, metric mapping (unavailable, never zero) |
+| `lib/tiktok/service.ts` | added | TikTok: connect, status, single-flight token refresh with rotation, disconnect, advertiser links (own real account, same currency) |
+| `lib/tiktok/store.ts` | added | TikTok: per-person database access, sync lock |
+| `lib/tiktok/sync.ts` | added | TikTok: Sync Now (re-checks, lock, empty-report and rerun protection, one-transaction import) |
 | `lib/auth/supabase.ts` | added | Supabase token check (also returns the sign-in provider for sign-up analytics) |
 | `lib/integration/limits.ts` | added | Upload and account limits, file content checks |
 | `lib/integration/paths.ts` | added | Base path, API paths, website URLs |
@@ -149,7 +156,7 @@ Everything not listed here is byte-identical to the source commit
 | `lib/integration/read-only.tsx` | added | Read-only flag for visitors (what the screen offers) |
 | `scripts/check-integration.mjs` | added | Verifies the two files above |
 | `scripts/e2e-proxy.mjs` | added | End-to-end test through the website's `/app` proxy (local only) |
-| `tests/tiktok-connection.test.ts` | added | TikTok: access control, replay, session mismatch, rotation, isolation, disconnect |
+| `tests/tiktok-connection.test.ts` | added | TikTok: access control, replay, session mismatch, rotation, isolation, disconnect, Sync Now with simulated reports |
 | `tests/tiktok-oauth.test.ts` | added | TikTok: OAuth and encryption primitives |
 | `tests/analytics-server.test.ts` | added | Server-side analytics: sign-up, visits, cleaned paths, denial cases |
 | `tests/analytics.test.ts` | added | Analytics privacy filter cases for dashboard events |

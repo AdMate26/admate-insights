@@ -1,6 +1,7 @@
 import { requireTikTokUser, sameOrigin, tiktokFailure, tiktokJson } from "@/lib/tiktok/http";
 import { deleteLink } from "@/lib/tiktok/store";
 import { linkTikTokAdvertiser, tikTokAdvertiserLinks, tikTokAdvertisers } from "@/lib/tiktok/service";
+import { tikTokSyncStatus } from "@/lib/tiktok/sync";
 
 // Read-only list of the advertisers the signed-in person authorized (live from
 // TikTok with their own token) and their links to their own ad accounts.
@@ -12,8 +13,11 @@ export async function GET() {
   const guard = await requireTikTokUser();
   if (guard instanceof Response) return guard;
   try {
-    const [advertisers, links] = await Promise.all([tikTokAdvertisers(guard.user.id), tikTokAdvertiserLinks(guard.user.id)]);
-    return tiktokJson({ advertisers, links: links.map((l) => ({ advertiserId: l.advertiserId, workspaceId: l.workspaceId })) });
+    const [advertisers, links, syncs] = await Promise.all([tikTokAdvertisers(guard.user.id), tikTokAdvertiserLinks(guard.user.id), tikTokSyncStatus(guard.user.id)]);
+    return tiktokJson({
+      advertisers,
+      links: links.map((l) => ({ advertiserId: l.advertiserId, workspaceId: l.workspaceId, lastSync: syncs.find((s) => s.workspaceId === l.workspaceId && s.advertiserId === l.advertiserId) ?? null })),
+    });
   } catch (error) {
     return tiktokFailure(error);
   }

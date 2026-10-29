@@ -473,3 +473,24 @@ export const tiktokAdvertiserLinks = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.advertiserId] }), uniqueIndex("tiktok_advertiser_links_ws_idx").on(t.workspaceId)],
 );
+
+// Sync Now state for one linked ad account: a lock so only one sync writes into
+// the account at a time (across servers), and the outcome of the last run.
+// Holds no tokens and no report numbers.
+export const tiktokSyncs = pgTable("tiktok_syncs", {
+  workspaceId: text("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  advertiserId: text("advertiser_id").notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  // ok | unchanged | empty | failed
+  outcome: text("outcome"),
+  errorCode: text("error_code"),
+  rows: integer("rows"),
+  periodStart: date("period_start", { mode: "string" }),
+  periodEnd: date("period_end", { mode: "string" }),
+  importId: text("import_id"),
+  // SHA-256 of the normalized rows of the last committed sync (rerun protection).
+  fingerprint: text("fingerprint"),
+});

@@ -8,6 +8,7 @@ import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 // The first test in this file sets up the embedded database and a sample account.
 vi.setConfig({ testTimeout: 20_000 });
 
@@ -43,6 +44,12 @@ const tiktok = {
   issued: 0,
   mcpTokens: [] as string[],
   readOnly: true,
+  currency: "USD",
+  // Simulated campaign-by-day report: every row TikTok would hold, served page by page.
+  report: [] as Record<string, unknown>[],
+  reportCalls: [] as Record<string, unknown>[],
+  failPage: 0, // answer this page with a TikTok error
+  shiftTotal: false, // pretend the report changed between pages
 };
 function issue() {
   tiktok.issued += 1;
@@ -97,13 +104,29 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
         tools: [
           { name: "auth_advertiser_get", annotations: { readOnlyHint: tiktok.readOnly }, inputSchema: { type: "object", properties: {} } },
           { name: "advertiser_info_get", annotations: { readOnlyHint: true }, inputSchema: { type: "object", required: ["advertiser_ids"] } },
+          { name: "report_integrated_get", annotations: { readOnlyHint: true }, inputSchema: { type: "object", required: ["report_type", "dimensions"] } },
           { name: "campaign_create", annotations: { readOnlyHint: false }, inputSchema: { type: "object" } },
+          { name: "tool_execute", annotations: { readOnlyHint: false }, inputSchema: { type: "object" } },
         ],
       });
     if (rpc.method === "tools/call" && rpc.params?.name === "auth_advertiser_get")
       return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, message: "OK", data: { list: [{ advertiser_id: ADVERTISER, advertiser_name: "Lotus TikTok" }] } }) }] });
     if (rpc.params?.name === "advertiser_info_get")
-      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, data: { list: [{ advertiser_id: ADVERTISER, name: "Lotus TikTok", currency: "USD", timezone: "Asia/Phnom_Penh", status: "STATUS_ENABLE" }] } }) }] });
+      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, data: { list: [{ advertiser_id: ADVERTISER, name: "Lotus TikTok", currency: tiktok.currency, timezone: "Asia/Phnom_Penh", status: "STATUS_ENABLE" }] } }) }] });
+    if (rpc.params?.name === "report_integrated_get") {
+      const args = (rpc.params as { arguments: Record<string, unknown> }).arguments;
+      tiktok.reportCalls.push(args);
+      const page = Number(args.page ?? 1);
+      const size = Number(args.page_size ?? 10);
+      if (page === tiktok.failPage) return reply({ content: [{ type: "text", text: JSON.stringify({ code: 50000, message: "System error" }) }] });
+      const inRange = tiktok.report.filter((r) => {
+        const day = String((r.dimensions as Record<string, string>).stat_time_day).slice(0, 10);
+        return day >= String(args.start_date) && day <= String(args.end_date);
+      });
+      const total = inRange.length + (tiktok.shiftTotal && page > 1 ? 1 : 0);
+      const data = { list: inRange.slice((page - 1) * size, page * size), page_info: { page, page_size: size, total_number: total, total_page: Math.ceil(total / size) } };
+      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, message: "OK", data }) }] });
+    }
     return json({ jsonrpc: "2.0", id: rpc.id, error: { code: -32601, message: "no" } });
   }
   return new Response("not found", { status: 404 });
@@ -140,6 +163,12 @@ async function callback(state: string, code = `code:${state}`) {
   const { GET } = await import("@/app/api/tiktok/oauth/callback/route");
   const res = await GET(req(`/api/tiktok/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`, {}, null));
   return { status: res.status, result: new URL(res.headers.get("location") ?? "http://x/").searchParams.get("result") };
+}
+/** A real (not sample) ad account owned by `owner`. */
+async function account(owner: string, id: string, currency: string) {
+  const { db: d, schema } = await db();
+  await d.insert(schema.workspaces).values({ id, ownerId: owner, name: `Account ${id}`, currency }).onConflictDoUpdate({ target: schema.workspaces.id, set: { ownerId: owner, currency } });
+  return { id };
 }
 async function db() {
   const { getDb } = await import("@/lib/db/client");
@@ -312,14 +341,15 @@ describe("TikTok connection: advertisers and tenant isolation", () => {
     await signIn("a");
     await callback((await start()).state);
     const { db: d, schema, eq } = await db();
-    const [wsA] = await d.select().from(schema.workspaces).where(eq(schema.workspaces.ownerId, A));
+    const wsA = await account(A, "ws-a-usd", "USD");
+    const [sampleA] = await d.select().from(schema.workspaces).where(eq(schema.workspaces.ownerId, A));
     const status = await import("@/app/api/tiktok/connection/route");
     const adv = await import("@/app/api/tiktok/advertisers/route");
     const link = (advertiserId: string, workspaceId: string) => adv.POST(req("/api/tiktok/advertisers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advertiserId, workspaceId }) }));
 
     await signIn("b");
     await d.delete(schema.tiktokConnections).where(eq(schema.tiktokConnections.userId, B));
-    const [wsB] = await d.select().from(schema.workspaces).where(eq(schema.workspaces.ownerId, B));
+    const wsB = await account(B, "ws-b-usd", "USD");
     expect(await (await status.GET()).json()).toMatchObject({ connected: false, status: "not_connected" });
     expect((await adv.GET()).status).toBe(404); // B has no connection; never A's
     expect((await link(ADVERTISER, wsA!.id)).status).toBe(403); // A's ad account
@@ -327,8 +357,13 @@ describe("TikTok connection: advertisers and tenant isolation", () => {
     use("a");
     expect((await link(ADVERTISER, wsB!.id)).status).toBe(403); // B's ad account
     expect((await link("7999999999999", wsA!.id)).status).toBe(403); // not an advertiser A authorized
+    expect(sampleA!.isSample).toBe(true);
+    expect(await (await link(ADVERTISER, sampleA!.id)).json()).toEqual({ error: "sample" }); // never the sample account
+    const wsKhr = await account(A, "ws-a-khr", "KHR");
+    const wrongCurrency = await link(ADVERTISER, wsKhr.id); // USD advertiser, KHR account
+    expect([wrongCurrency.status, await wrongCurrency.json()]).toEqual([409, { error: "currency" }]);
     expect((await link(ADVERTISER, wsA!.id)).status).toBe(200);
-    expect((await (await adv.GET()).json()).links).toEqual([{ advertiserId: ADVERTISER, workspaceId: wsA!.id }]);
+    expect((await (await adv.GET()).json()).links).toEqual([{ advertiserId: ADVERTISER, workspaceId: wsA!.id, lastSync: null }]);
 
     use("b");
     const rows = await d.select().from(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, B));
@@ -349,5 +384,287 @@ describe("TikTok connection: advertisers and tenant isolation", () => {
     expect(await d.select().from(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, A))).toHaveLength(0);
     expect(await d.select().from(schema.tiktokConnections).where(eq(schema.tiktokConnections.userId, B))).toHaveLength(1);
     expect((await status.DELETE(req("/api/tiktok/connection", { method: "DELETE" }, "https://evil.example"))).status).toBe(403);
+  });
+});
+
+// ---- Sync Now -------------------------------------------------------------
+// Simulated but realistic TikTok rows: strings for numbers, "YYYY-MM-DD 00:00:00"
+// days, KHR amounts with two decimals, "-" where TikTok has no value.
+const CAMPAIGNS = [
+  { id: "1810000000000001", name: "KH | Traffic | Always on", objective: "TRAFFIC", budget: "200000.00" },
+  { id: "1810000000000002", name: "KH | Leads | Promo", objective: "LEAD_GENERATION", budget: "-" },
+  { id: "1810000000000003", name: "KH | Video views", objective: "VIDEO_VIEWS", budget: "120000.00" },
+];
+function simulate(days: string[], campaigns = CAMPAIGNS, factor = 1) {
+  const rows: Record<string, unknown>[] = [];
+  days.forEach((day, i) =>
+    campaigns.forEach((c, j) => {
+      const spend = Math.round((41000 + 1700 * i + 9000 * j) * factor * 100) / 100;
+      rows.push({
+        dimensions: { campaign_id: c.id, stat_time_day: `${day} 00:00:00` },
+        metrics: {
+          campaign_name: c.name, objective_type: c.objective, campaign_budget: c.budget,
+          spend: spend.toFixed(2), impressions: String(30000 + 500 * i), clicks: String(400 + 7 * i), reach: String(25000 + 300 * i),
+          conversion: "0", complete_payment: "0", app_install: "0", registration: "0", total_landing_page_view: String(300 + 5 * i),
+          video_play_actions: String(18000 + 200 * i), follows: "3", likes: "41", comments: "2", shares: "1",
+          // Extra fields TikTok may add are ignored.
+          video_views_p100: "900",
+        },
+      });
+    }),
+  );
+  return rows;
+}
+const day = (base: string, n: number) => new Date(Date.parse(`${base}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+describe("TikTok Sync Now", () => {
+  let clock = Date.now();
+  const later = () => {
+    clock += 2 * 60_000; // past the one-minute cooldown
+    return new Date(clock);
+  };
+  const noWait = async () => {};
+
+  async function linkedKhr() {
+    await signIn("a");
+    await callback((await start()).state);
+    tiktok.currency = "KHR";
+    const ws = await account(A, "ws-a-tiktok-khr", "KHR");
+    const { db: d, schema, eq } = await db();
+    await d.delete(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, A));
+    const { linkTikTokAdvertiser } = await import("@/lib/tiktok/service");
+    await linkTikTokAdvertiser(A, ADVERTISER, ws.id);
+    return ws;
+  }
+  async function activeFacts(workspaceId: string) {
+    const { db: d, schema } = await db();
+    const { and, eq } = await import("drizzle-orm");
+    return d.select().from(schema.facts).where(and(eq(schema.facts.workspaceId, workspaceId), eq(schema.facts.active, true)));
+  }
+  async function window() {
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    return syncWindow("Asia/Phnom_Penh", new Date(clock));
+  }
+  const sync = async () => (await import("@/lib/tiktok/sync")).syncTikTokAdvertiser(A, ADVERTISER, { now: later, sleep: noWait });
+
+  beforeEach(() => {
+    tiktok.report = [];
+    tiktok.reportCalls = [];
+    tiktok.failPage = 0;
+    tiktok.shiftTotal = false;
+    tiktok.currency = "KHR";
+  });
+
+  it("imports every page of a realistic report in KHR with advertiser-local dates and no conversion", async () => {
+    const ws = await linkedKhr();
+    const w = await window();
+    // 400 campaigns x 3 days = 1,200 rows: two pages of 1,000.
+    const many = Array.from({ length: 400 }, (_, i) => ({ id: String(1820000000000000 + i), name: `KH | Traffic ${i}`, objective: "TRAFFIC", budget: "50000.00" }));
+    tiktok.report = simulate([day(w.end, -2), day(w.end, -1), w.end], many);
+    const result = await sync();
+    expect(result).toMatchObject({ outcome: "ok", rows: 1200, campaigns: 400, currency: "KHR", timezone: "Asia/Phnom_Penh", period: { start: day(w.end, -2), end: w.end } });
+    expect(result.window).toEqual(w);
+
+    // Fixed read-only request; only page and dates vary.
+    expect(tiktok.reportCalls.map((c) => c.page)).toEqual([1, 2]);
+    const { TIKTOK_REPORT_METRICS } = await import("@/lib/tiktok/report");
+    for (const call of tiktok.reportCalls) {
+      expect(call).toEqual({
+        advertiser_id: ADVERTISER, report_type: "BASIC", data_level: "AUCTION_CAMPAIGN", dimensions: ["campaign_id", "stat_time_day"],
+        metrics: TIKTOK_REPORT_METRICS, start_date: w.start, end_date: w.end, page: call.page, page_size: 1000,
+        filtering: [{ field_name: "campaign_status", filter_type: "IN", filter_value: '["STATUS_ALL"]' }],
+      });
+    }
+
+    const facts = await activeFacts(ws.id);
+    expect(facts).toHaveLength(1200);
+    const sent = tiktok.report.reduce((s, r) => s + Number((r.metrics as Record<string, string>).spend), 0);
+    expect(facts.reduce((s, f) => s + f.spend, 0)).toBeCloseTo(sent, 2); // KHR as reported
+    expect(new Set(facts.map((f) => f.periodStart))).toEqual(new Set([day(w.end, -2), day(w.end, -1), w.end])); // TikTok's own days
+    expect(facts.every((f) => f.thruplays === 0 && f.clicksAll === 0)).toBe(true);
+
+    const { db: d, schema, eq } = await db();
+    const [imp] = await d.select().from(schema.imports).where(eq(schema.imports.id, result.importId!));
+    expect(imp).toMatchObject({ platform: "tiktok", currency: "KHR", granularity: "daily", level: "campaign", periodStart: day(w.end, -2), periodEnd: w.end });
+    // Unsupported measures are missing (unavailable), never zero-filled columns.
+    expect(imp!.columns).toEqual(["spend", "impressions", "reach", "linkClicks", "landingPageViews", "engagements", "follows", "videoViews", "installs", "registrations", "purchases", "conversions"]);
+    expect(result.unavailable.map((u) => u.measure)).toEqual(expect.arrayContaining(["thruplays", "clicksAll", "leads", "messages", "conversionValue"]));
+    expect(JSON.stringify(result)).not.toMatch(/acc-|ref-/);
+  });
+
+  it("maps TikTok meanings without silently equating different metrics", async () => {
+    const { normalizeTikTokReport } = await import("@/lib/tiktok/report");
+    const w = { start: "2026-10-01", end: "2026-10-30" };
+    const out = normalizeTikTokReport(simulate(["2026-10-05"]), w);
+    const [traffic, leads, video] = out.rows;
+    expect(traffic!.measures).toMatchObject({ linkClicks: 400, clicksAll: 0, reach: 25000, thruplays: 0, videoViews: 18000, engagements: 44, landingPageViews: 300 });
+    expect([traffic!.objective, leads!.objective, video!.objective]).toEqual(["traffic", "leads", "video_views"]);
+    expect([traffic!.budget, leads!.budget]).toEqual([200000, null]); // "-" = no campaign budget
+    expect(traffic!.date).toBe("2026-10-05");
+    // A metric TikTok reports as "-" everywhere is unavailable, not zero.
+    const noReach = simulate(["2026-10-05"]).map((r) => ({ ...r, metrics: { ...(r.metrics as object), reach: "-" } }));
+    expect(normalizeTikTokReport(noReach, w).columns).not.toContain("reach");
+    // Rows outside the asked dates, or two different rows for one campaign-day, are refused.
+    expect(() => normalizeTikTokReport(simulate(["2026-11-01"]), w)).toThrow(/outside/);
+    const twice = [...simulate(["2026-10-05"]), ...simulate(["2026-10-05"], CAMPAIGNS, 2)];
+    expect(() => normalizeTikTokReport(twice, w)).toThrow(/two different rows/);
+    expect(normalizeTikTokReport([...simulate(["2026-10-05"]), ...simulate(["2026-10-05"])], w).rows).toHaveLength(3); // exact repeats collapse
+  });
+
+  it("uses the advertiser's own time zone for the 30 complete days", async () => {
+    const { syncWindow } = await import("@/lib/tiktok/report");
+    // 20:00 UTC on 28 Oct is already 29 Oct 03:00 in UTC+7 (written Etc/GMT-7).
+    expect(syncWindow("Etc/GMT-7", new Date("2026-10-28T20:00:00Z"))).toEqual({ start: "2026-09-29", end: "2026-10-28" });
+    expect(syncWindow("America/Los_Angeles", new Date("2026-10-28T20:00:00Z"))).toEqual({ start: "2026-09-28", end: "2026-10-27" });
+    expect(() => syncWindow("Mars/Olympus", new Date())).toThrow();
+    expect(() => syncWindow(null, new Date())).toThrow();
+  });
+
+  it("an empty report writes nothing and leaves stored data untouched", async () => {
+    const ws = await linkedKhr();
+    const w = await window();
+    tiktok.report = simulate([day(w.end, -1), w.end]);
+    await sync();
+    const before = await activeFacts(ws.id);
+    expect(before.length).toBeGreaterThan(0);
+    const { db: d, schema, eq } = await db();
+    const imports = (await d.select().from(schema.imports).where(eq(schema.imports.workspaceId, ws.id))).length;
+
+    tiktok.report = []; // e.g. an advertiser with no campaigns
+    const result = await sync();
+    expect(result).toMatchObject({ outcome: "empty", rows: 0, campaigns: 0, period: null, importId: null });
+    expect((await activeFacts(ws.id)).map((f) => f.id).sort()).toEqual(before.map((f) => f.id).sort());
+    expect((await d.select().from(schema.imports).where(eq(schema.imports.workspaceId, ws.id))).length).toBe(imports);
+  });
+
+  it("does not re-import identical data, allows one sync at a time, and waits a minute between syncs", async () => {
+    const ws = await linkedKhr();
+    const w = await window();
+    tiktok.report = simulate([w.end], CAMPAIGNS, 0.7);
+    const first = await sync();
+    expect(first.outcome).toBe("ok");
+    const { db: d, schema, eq } = await db();
+    const count = async () => (await d.select().from(schema.imports).where(eq(schema.imports.workspaceId, ws.id))).length;
+    const imports = await count();
+    const again = await sync();
+    expect(again).toMatchObject({ outcome: "unchanged", importId: first.importId });
+    expect(await count()).toBe(imports); // nothing new written
+
+    tiktok.report = simulate([w.end], CAMPAIGNS, 1.1);
+    const at = later();
+    const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
+    const both = await Promise.allSettled([syncTikTokAdvertiser(A, ADVERTISER, { now: () => at, sleep: noWait }), syncTikTokAdvertiser(A, ADVERTISER, { now: () => at, sleep: noWait })]);
+    expect(both.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(both.find((r) => r.status === "rejected")).toMatchObject({ reason: { code: "busy" } });
+    // Right after a finished sync: too soon.
+    await expect(syncTikTokAdvertiser(A, ADVERTISER, { now: () => new Date(at.getTime() + 10_000), sleep: noWait })).rejects.toMatchObject({ code: "busy" });
+  });
+
+  it("a failed or changing report writes nothing and frees the lock", async () => {
+    const ws = await linkedKhr();
+    const w = await window();
+    const many = Array.from({ length: 400 }, (_, i) => ({ id: String(1830000000000000 + i), name: `KH | Reach ${i}`, objective: "REACH", budget: "-" }));
+    tiktok.report = simulate([day(w.end, -2), day(w.end, -1), w.end], many);
+    const before = (await activeFacts(ws.id)).length;
+
+    tiktok.failPage = 2; // page 1 arrives, page 2 fails
+    await expect(sync()).rejects.toMatchObject({ code: "provider" });
+    expect((await activeFacts(ws.id)).length).toBe(before);
+
+    tiktok.failPage = 0;
+    tiktok.shiftTotal = true; // the row count changes between pages
+    await expect(sync()).rejects.toMatchObject({ code: "report" });
+    expect((await activeFacts(ws.id)).length).toBe(before);
+
+    tiktok.shiftTotal = false;
+    expect((await sync()).outcome).toBe("ok"); // lock was released
+    const { tikTokSyncStatus } = await import("@/lib/tiktok/sync");
+    expect((await tikTokSyncStatus(A)).find((s) => s.workspaceId === ws.id)).toMatchObject({ running: false, outcome: "ok" });
+  });
+
+  it("a newer sync replaces only the days TikTok returned; undo brings earlier data back without double counting", async () => {
+    const ws = await linkedKhr();
+    const w = await window();
+    const { db: d, schema } = await db();
+    const { and, eq, inArray } = await import("drizzle-orm");
+    await d.delete(schema.imports).where(eq(schema.imports.workspaceId, ws.id)); // start clean
+    const spendOf = async () => Math.round((await activeFacts(ws.id)).reduce((s, f) => s + f.spend, 0) * 100) / 100;
+    const sum = (rows: Record<string, unknown>[]) => Math.round(rows.reduce((s, r) => s + Number((r.metrics as Record<string, string>).spend), 0) * 100) / 100;
+
+    const r1 = simulate([day(w.end, -3), day(w.end, -2), day(w.end, -1)]);
+    tiktok.report = r1;
+    const s1 = await sync();
+    const r2 = simulate([day(w.end, -1), w.end], CAMPAIGNS, 1.2); // overlaps one day
+    tiktok.report = r2;
+    const s2 = await sync();
+    expect(s2.diff!.replaced.map((x) => x.id)).toEqual([s1.importId]);
+    const r1Kept = r1.filter((r) => !String((r.dimensions as Record<string, string>).stat_time_day).startsWith(day(w.end, -1)));
+    expect(await spendOf()).toBe(sum([...r1Kept, ...r2])); // days before the overlap stay
+    const r3 = simulate([day(w.end, -1), w.end], CAMPAIGNS, 1.5);
+    tiktok.report = r3;
+    const s3 = await sync();
+    expect(await spendOf()).toBe(sum([...r1Kept, ...r3]));
+
+    const { undoImport } = await import("@/lib/data/imports");
+    await undoImport(d, ws.id, s2.importId!); // the middle sync
+    expect(await spendOf()).toBe(sum([...r1Kept, ...r3])); // no double counting next to the newest
+    await undoImport(d, ws.id, s3.importId!); // now the newest: the first sync's day comes back
+    expect(await spendOf()).toBe(sum(r1));
+    const left = await d.select().from(schema.imports).where(and(eq(schema.imports.workspaceId, ws.id), inArray(schema.imports.id, [s1.importId!, s2.importId!, s3.importId!])));
+    expect(Object.fromEntries(left.map((i) => [i.id, i.status]))).toEqual({ [s1.importId!]: "active", [s2.importId!]: "undone", [s3.importId!]: "undone" });
+  });
+
+  it("re-checks currency and ownership on every sync; one person's advertiser never reaches another's account", async () => {
+    const ws = await linkedKhr();
+    const w = await window();
+    tiktok.report = simulate([w.end]);
+    const { db: d, schema, eq } = await db();
+    const { and } = await import("drizzle-orm");
+    const wsB = await account(B, "ws-b-khr", "KHR");
+    const tiktokFactsIn = async (id: string) => (await d.select().from(schema.facts).where(and(eq(schema.facts.workspaceId, id), eq(schema.facts.platform, "tiktok")))).length;
+
+    // The ad account's currency was changed after linking: refused, nothing written.
+    await d.update(schema.workspaces).set({ currency: "USD" }).where(eq(schema.workspaces.id, ws.id));
+    const before = await tiktokFactsIn(ws.id);
+    await expect(sync()).rejects.toMatchObject({ code: "currency" });
+    expect(await tiktokFactsIn(ws.id)).toBe(before);
+    await d.update(schema.workspaces).set({ currency: "KHR" }).where(eq(schema.workspaces.id, ws.id));
+
+    // A link row pointing A's advertiser at B's account (tampered data): refused.
+    await d.update(schema.tiktokAdvertiserLinks).set({ workspaceId: wsB.id }).where(eq(schema.tiktokAdvertiserLinks.userId, A));
+    await expect(sync()).rejects.toMatchObject({ code: "workspace" });
+    expect(await tiktokFactsIn(wsB.id)).toBe(0);
+    await d.update(schema.tiktokAdvertiserLinks).set({ workspaceId: ws.id }).where(eq(schema.tiktokAdvertiserLinks.userId, A));
+
+    // B (connected, no link) cannot sync A's advertiser, through the service or the route.
+    await signIn("b");
+    await callback((await start()).state);
+    const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
+    await expect(syncTikTokAdvertiser(B, ADVERTISER, { now: later, sleep: noWait })).rejects.toMatchObject({ code: "advertiser" });
+    const route = await import("@/app/api/tiktok/sync/route");
+    const post = (body: unknown, origin: string | null = ORIGIN) => route.POST(req("/api/tiktok/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }, origin));
+    expect(await (await post({ advertiserId: ADVERTISER })).json()).toEqual({ error: "advertiser" });
+    expect(await tiktokFactsIn(wsB.id)).toBe(0);
+    expect((await post({ advertiserId: "x" })).status).toBe(400);
+    expect((await post({ advertiserId: ADVERTISER }, "https://evil.example")).status).toBe(403);
+    jar = new Map();
+    expect((await post({ advertiserId: ADVERTISER })).status).toBe(401);
+    await signIn("a");
+    process.env.TIKTOK_CONNECT_ENABLED = "false";
+    expect((await post({ advertiserId: ADVERTISER })).status).toBe(404);
+    process.env.TIKTOK_CONNECT_ENABLED = "true";
+    await d.delete(schema.tiktokSyncs).where(eq(schema.tiktokSyncs.workspaceId, ws.id)); // the route runs on the real clock, not the test's
+    const ok = await post({ advertiserId: ADVERTISER });
+    expect(ok.status).toBe(200);
+    expect(JSON.stringify(await ok.json())).not.toMatch(/acc-|ref-|Bearer/);
+  });
+
+  it("never calls write tools or the general tool runner", async () => {
+    const { TikTokMcp, READ_TOOLS } = await import("@/lib/tiktok/mcp");
+    expect([...READ_TOOLS].sort()).toEqual(["advertiser_info_get", "auth_advertiser_get", "report_integrated_get"]);
+    const client = new TikTokMcp(SERVER, "acc-x", fakeFetch as typeof fetch);
+    await client.initialize();
+    await expect(client.read("tool_execute", { tool_name: "campaign_get" })).rejects.toMatchObject({ code: "forbidden_tool" });
+    await expect(client.read("campaign_create", {})).rejects.toMatchObject({ code: "forbidden_tool" });
   });
 });
