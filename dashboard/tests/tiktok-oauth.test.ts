@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 import { createHash, randomBytes } from "node:crypto";
-import { TIKTOK_MCP_SERVERS, readTikTokOAuthConfig } from "./config";
-import { createTikTokPKCE, decryptTikTokSecret, encryptTikTokSecret } from "./crypto";
-import { buildTikTokAuthorizationUrl, exchangeTikTokOAuthCode, parseTikTokOAuthMetadata, refreshTikTokOAuthTokens } from "./oauth";
+import { TIKTOK_MCP_SERVERS, readTikTokOAuthConfig } from "@/lib/tiktok/config";
+import { createTikTokPKCE, decryptTikTokSecret, encryptTikTokSecret } from "@/lib/tiktok/crypto";
+import { buildTikTokAuthorizationUrl, exchangeTikTokOAuthCode, parseTikTokOAuthMetadata, refreshTikTokOAuthTokens } from "@/lib/tiktok/oauth";
 
 const config = {
   server: TIKTOK_MCP_SERVERS[0],
@@ -21,7 +23,7 @@ const metadata = parseTikTokOAuthMetadata({
 
 describe("TikTok OAuth foundations", () => {
   it("stays disabled without an explicit feature flag", () => {
-    expect(() => readTikTokOAuthConfig({} as NodeJS.ProcessEnv)).toThrow(/disabled/);
+    expect(() => readTikTokOAuthConfig({} as unknown as NodeJS.ProcessEnv)).toThrow(/disabled/);
   });
 
   it("constructs only an exact safe callback", () => {
@@ -29,7 +31,7 @@ describe("TikTok OAuth foundations", () => {
       TIKTOK_CONNECT_ENABLED: "true",
       TIKTOK_MCP_CLIENT_ID: "test-public-client",
       ADMATE_PUBLIC_ORIGIN: "http://localhost:3000",
-    } as NodeJS.ProcessEnv;
+    } as unknown as NodeJS.ProcessEnv;
     expect(readTikTokOAuthConfig(env).redirectUri).toBe(config.redirectUri);
     expect(() => readTikTokOAuthConfig({ ...env, ADMATE_PUBLIC_ORIGIN: "http://evil.example" })).toThrow();
     expect(() => readTikTokOAuthConfig({ ...env, TIKTOK_MCP_SERVER: "https://evil.example/mcp" })).toThrow();

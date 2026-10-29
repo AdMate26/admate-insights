@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import type { TikTokOAuthConfig } from "./config";
 
@@ -13,10 +14,20 @@ const metadataSchema = z.object({
 });
 export type TikTokOAuthMetadata = z.infer<typeof metadataSchema>;
 
+/** A failed OAuth call. `code` is a fixed label, never provider text or tokens. */
+export class TikTokOAuthError extends Error {
+  constructor(public readonly code: "invalid_grant" | "refresh_failed", message: string) {
+    super(message);
+    this.name = "TikTokOAuthError";
+  }
+}
+
 export function parseTikTokOAuthMetadata(input: unknown): TikTokOAuthMetadata {
   const metadata = metadataSchema.parse(input);
-  for (const key of ["authorization_endpoint", "token_endpoint"] as const) {
-    const endpoint = new URL(metadata[key]);
+  for (const key of ["authorization_endpoint", "token_endpoint", "revocation_endpoint"] as const) {
+    const value = metadata[key];
+    if (!value) continue;
+    const endpoint = new URL(value);
     if (endpoint.protocol !== "https:" || endpoint.hostname !== "business-api.tiktok.com" ||
         endpoint.username || endpoint.password) {
       throw new Error("Untrusted TikTok OAuth endpoint");
@@ -120,6 +131,68 @@ export async function refreshTikTokOAuthTokens(args: {
     cache: "no-store",
     redirect: "error",
   });
-  if (!response.ok) throw new Error("TikTok token refresh failed");
+  if (!response.ok) {
+    const code = tikTokOAuthErrorCode(await response.json().catch(() => null));
+    throw new TikTokOAuthError(code === "invalid_grant" ? "invalid_grant" : "refresh_failed", "TikTok token refresh failed");
+  }
   return parseTikTokOAuthTokens(await response.json());
+}
+
+const metadataCache = new Map<string, { at: number; metadata: TikTokOAuthMetadata }>();
+
+/**
+ * Discovers the OAuth endpoints for one MCP server path (tokens are bound to
+ * that path). The token and revocation endpoints must live under the same
+ * server's /oauth/ path. Cached for an hour per server.
+ */
+export async function fetchTikTokOAuthMetadata(
+  server: TikTokOAuthConfig["server"],
+  fetcher: typeof fetch = fetch,
+): Promise<TikTokOAuthMetadata> {
+  const cached = metadataCache.get(server);
+  if (cached && Date.now() - cached.at < 3_600_000) return cached.metadata;
+  const response = await fetcher(`${server}/oauth/.well-known/openid-configuration`, {
+    headers: { accept: "application/json" },
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error("TikTok OAuth discovery failed");
+  const metadata = parseTikTokOAuthMetadata(await response.json());
+  const base = `${server}/oauth/`;
+  for (const value of [metadata.token_endpoint, metadata.revocation_endpoint]) {
+    if (value && !value.startsWith(base)) throw new Error("TikTok OAuth endpoint is not bound to the MCP server");
+  }
+  metadataCache.set(server, { at: Date.now(), metadata });
+  return metadata;
+}
+
+/** Best-effort revocation (idempotent at TikTok). Never throws. */
+export async function revokeTikTokToken(args: {
+  metadata: TikTokOAuthMetadata;
+  token: string;
+  hint: "access_token" | "refresh_token";
+  fetcher?: typeof fetch;
+}): Promise<boolean> {
+  if (!args.metadata.revocation_endpoint || !args.token) return false;
+  try {
+    const response = await (args.fetcher ?? fetch)(args.metadata.revocation_endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: args.token, token_type_hint: args.hint }),
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** TikTok's error code from a failed token response (e.g. invalid_grant), or null. */
+export function tikTokOAuthErrorCode(body: unknown): string | null {
+  return body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string"
+    ? ((body as { error: string }).error.slice(0, 40))
+    : null;
 }

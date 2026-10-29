@@ -422,3 +422,54 @@ export const userVisits = pgTable("user_visits", {
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
 });
+
+// AdMate integration: TikTok for Business (MCP) connections, one per signed-in
+// person (lib/tiktok/). Tokens are AES-256-GCM encrypted and bound to the
+// person and purpose; nothing here is readable by the browser. Every query
+// filters by user_id (lib/tiktok/store.ts). Off unless TIKTOK_CONNECT_ENABLED.
+export const tiktokConnections = pgTable("tiktok_connections", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  server: text("server").notNull(), // the MCP server path the tokens are bound to
+  clientId: text("client_id").notNull(),
+  accessTokenEnc: text("access_token_enc"),
+  accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+  refreshTokenEnc: text("refresh_token_enc"),
+  // TikTok's authorization lasts a fixed window (30 days); refreshing does not extend it.
+  refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+  scope: text("scope").notNull(),
+  status: text("status").notNull().default("active"), // active | reauth_required
+  tokenVersion: integer("token_version").notNull().default(1),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+});
+
+// One pending sign-in attempt per person: the state is stored only as a hash,
+// tied to the dashboard session that started it, and used once (10 minutes).
+export const tiktokOauthStates = pgTable(
+  "tiktok_oauth_states",
+  {
+    stateHash: text("state_hash").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    sessionHash: text("session_hash").notNull(),
+    verifierEnc: text("verifier_enc").notNull(),
+    server: text("server").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("tiktok_oauth_states_user_idx").on(t.userId)],
+);
+
+// A TikTok advertiser the person chose to use for one of their own ad accounts.
+// Re-checked against TikTok with the person's own token before it is used.
+export const tiktokAdvertiserLinks = pgTable(
+  "tiktok_advertiser_links",
+  {
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    advertiserId: text("advertiser_id").notNull(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    advertiserName: text("advertiser_name"),
+    currency: text("currency"),
+    timezone: text("timezone"),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.advertiserId] }), uniqueIndex("tiktok_advertiser_links_ws_idx").on(t.workspaceId)],
+);

@@ -1,3 +1,4 @@
+import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 /** Fresh unpredictable state + verifier for each authorization attempt. */

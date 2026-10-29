@@ -1,6 +1,10 @@
+import "server-only";
+
 /**
  * TikTok for Business MCP OAuth configuration.
- * Off by default. No OAuth endpoints are exposed by this module.
+ * Off by default: every TikTok route answers 404 unless TIKTOK_CONNECT_ENABLED
+ * is "true", and only Supabase user IDs listed in TIKTOK_CONNECT_ALLOWED_USER_IDS
+ * may connect (an empty list admits nobody).
  */
 export const TIKTOK_MCP_SCOPE = "mcp:tt4b" as const;
 export const TIKTOK_MCP_SERVERS = [
@@ -58,4 +62,22 @@ export function readTikTokOAuthConfig(env: NodeJS.ProcessEnv = process.env): Tik
     redirectUri: new URL("/app/api/tiktok/oauth/callback", origin).toString(),
     scope: TIKTOK_MCP_SCOPE,
   };
+}
+
+const SUPABASE_USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Explicit tester allowlist (Supabase user IDs). Fails closed. */
+export function isTikTokUserAllowed(userId: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (!isTikTokConnectionEnabled(env) || !SUPABASE_USER_ID.test(userId)) return false;
+  return (env.TIKTOK_CONNECT_ALLOWED_USER_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .includes(userId);
+}
+
+/** Base64 AES-256 key for stored tokens (server-only secret). */
+export function readTikTokEncryptionKey(env: NodeJS.ProcessEnv = process.env): string {
+  const key = env.TIKTOK_CONNECT_ENCRYPTION_KEY?.trim();
+  if (!key) throw new Error("TikTok encryption key is not configured");
+  return key;
 }
