@@ -202,13 +202,22 @@ beforeAll(async () => {
   // concurrent transactions. Default: the embedded database.
   const realPostgres = process.env.ADMATE_TEST_DATABASE_URL?.trim();
   if (realPostgres) {
+    // Only a disposable database: the expected endpoint, and no user data in it.
+    const expected = process.env.ADMATE_TEST_EXPECT_ENDPOINT?.trim();
+    const host = new URL(realPostgres).hostname;
+    if (!expected || !host.startsWith(`${expected}.`)) throw new Error("Refused: ADMATE_TEST_DATABASE_URL is not the expected test endpoint (ADMATE_TEST_EXPECT_ENDPOINT).");
     process.env.DATABASE_URL = realPostgres;
     const pg = await import("pg");
     const { drizzle } = await import("drizzle-orm/node-postgres");
     const { migrate } = await import("drizzle-orm/node-postgres/migrator");
     const pool = new pg.default.Pool({ connectionString: realPostgres, max: 1 });
-    await migrate(drizzle({ client: pool }), { migrationsFolder: path.join(process.cwd(), "drizzle") });
-    await pool.end();
+    try {
+      await migrate(drizzle({ client: pool }), { migrationsFolder: path.join(process.cwd(), "drizzle") });
+      const { rows } = await pool.query("select (select count(*) from users)::int as users, (select count(*) from workspaces)::int as workspaces");
+      if (rows[0].users || rows[0].workspaces) throw new Error("Refused: the test database already holds users or accounts; use a fresh disposable branch.");
+    } finally {
+      await pool.end();
+    }
   }
   process.env.TIKTOK_CONNECT_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   // Create and migrate the embedded database once, before the timed tests.
