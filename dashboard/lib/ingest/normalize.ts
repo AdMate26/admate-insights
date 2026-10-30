@@ -75,7 +75,7 @@ function metaIndicator(ind: string): { measure: MeasureKey | null; objective: Ob
 
 // Platform objective / campaign-type text → objective (Meta OUTCOME_*, TikTok,
 // LinkedIn "Brand awareness", Google "Video"/"Performance Max").
-function objectiveFromPlatformText(s: string, m: Measures): Objective | null {
+export function objectiveFromPlatformText(s: string, m: Measures): Objective | null {
   const t = s.toLowerCase();
   if (!t) return null;
   if (/messag/.test(t)) return "messages";
@@ -96,7 +96,7 @@ function objectiveFromPlatformText(s: string, m: Measures): Objective | null {
   return null;
 }
 
-function objectiveFromMetrics(m: Measures): Objective | null {
+export function objectiveFromMetrics(m: Measures): Objective | null {
   if (m.purchases > 0 || m.conversionValue > 0) return "sales";
   if (m.leads > 0) return "leads";
   if (m.messages > 0) return "messages";

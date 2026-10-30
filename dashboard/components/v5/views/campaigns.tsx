@@ -54,8 +54,8 @@ export function BegMyAds() {
         <div className="grid3">
           {list.map((r) => {
             const [tone, word] = CAMP_TAG[r.kind ?? ""] ?? ["flat", "No verdict yet"];
-            const each = r.kpi == null ? "no results yet" : r.mode === "roas" ? `$${r.kpi.toFixed(2)} back in sales for every $1` : r.mode === "cpm" ? `${f.money(r.kpi)} per 1,000 views` : `${f.money(r.kpi)} per ${singular(r)}`;
-            const exp = r.expected != null ? `AdMate expected about ${r.mode === "roas" ? `$${r.expected.toFixed(2)} back` : f.money(r.expected)}.` : "";
+            const each = r.kpi == null ? "no results yet" : r.mode === "roas" ? `${f.back(r.kpi)} back in sales for every ${f.one}` : r.mode === "cpm" ? `${f.money(r.kpi)} per 1,000 views` : `${f.money(r.kpi)} per ${singular(r)}`;
+            const exp = r.expected != null ? `AdMate expected about ${r.mode === "roas" ? `${f.back(r.expected)} back` : f.money(r.expected)}.` : "";
             return (
               <button key={r.id} className="ccard" type="button" onClick={() => open(null, { entity: { level: "campaign", id: r.id } })}>
                 <span className={`tag ${tone}`}>{word}</span>
@@ -379,8 +379,8 @@ function keyDifference(a: Row, b: Row, money: (v: number) => string) {
   if (better.cvr != null && worse.cvr != null) {
     add("more of the people who see it click", better.ctr, worse.ctr, 1, (x) => pct(x, 2));
     add("more of the people who click go on to act", better.cvr, worse.cvr, 1, (x) => pct(x, 1));
-  } else add("more of the people who see it act", better.impressions ? better.results / better.impressions : null, worse.impressions ? worse.results / worse.impressions : null, 1, (x) => pct(x, 2));
-  if (better.mode === "roas" && better.results > 0 && worse.results > 0) add("each order is worth more", better.revenue / better.results, worse.revenue / worse.results, 1, money);
+  } else add("more of the people who see it act", better.impressions && better.results !== null ? better.results / better.impressions : null, worse.impressions && worse.results !== null ? worse.results / worse.impressions : null, 1, (x) => pct(x, 2));
+  if (better.mode === "roas" && better.results && worse.results && better.revenue !== null && worse.revenue !== null) add("each order is worth more", better.revenue / better.results, worse.revenue / worse.results, 1, money);
   const m = terms.sort((x, y) => y.val - x.val)[0];
   if (!m || m.val <= 0) return "";
   const gap = higher(better.mode) ? better.kpi / worse.kpi - 1 : 1 - better.kpi / worse.kpi;

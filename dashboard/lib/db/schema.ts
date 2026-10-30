@@ -141,7 +141,7 @@ export const imports = pgTable(
     rowCount: integer("row_count").notNull(),
     currency: text("currency"),
     attribution: text("attribution"),
-    status: text("status").notNull().default("active"), // active | undone
+    status: text("status").notNull().default("active"), // active | undone | history (older TikTok syncs: kept, not undoable)
     // "performance" (campaign numbers) or a breakdown export for Audience insight (age_gender, location, …).
     kind: text("kind").notNull().default("performance"),
     diff: jsonb("diff"), // what this import replaced (newest-wins overlap handling)
@@ -422,3 +422,110 @@ export const userVisits = pgTable("user_visits", {
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
 });
+
+// AdMate integration: TikTok for Business (MCP) connections, one per signed-in
+// person (lib/tiktok/). Tokens are AES-256-GCM encrypted and bound to the
+// person and purpose; nothing here is readable by the browser. Every query
+// filters by user_id (lib/tiktok/store.ts). Off unless TIKTOK_CONNECT_ENABLED.
+export const tiktokConnections = pgTable("tiktok_connections", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  server: text("server").notNull(), // the MCP server path the tokens are bound to
+  clientId: text("client_id").notNull(),
+  accessTokenEnc: text("access_token_enc"),
+  accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+  refreshTokenEnc: text("refresh_token_enc"),
+  // TikTok's authorization lasts a fixed window (30 days); refreshing does not extend it.
+  refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+  scope: text("scope").notNull(),
+  status: text("status").notNull().default("active"), // active | reauth_required
+  tokenVersion: integer("token_version").notNull().default(1),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+});
+
+// One pending sign-in attempt per person: the state is stored only as a hash,
+// tied to the dashboard session that started it, and used once (10 minutes).
+export const tiktokOauthStates = pgTable(
+  "tiktok_oauth_states",
+  {
+    stateHash: text("state_hash").primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    sessionHash: text("session_hash").notNull(),
+    verifierEnc: text("verifier_enc").notNull(),
+    server: text("server").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("tiktok_oauth_states_user_idx").on(t.userId)],
+);
+
+// A TikTok advertiser the person chose to use for one of their own ad accounts.
+// Re-checked against TikTok with the person's own token before it is used.
+export const tiktokAdvertiserLinks = pgTable(
+  "tiktok_advertiser_links",
+  {
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    advertiserId: text("advertiser_id").notNull(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    advertiserName: text("advertiser_name"),
+    currency: text("currency"),
+    timezone: text("timezone"),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.advertiserId] }), uniqueIndex("tiktok_advertiser_links_ws_idx").on(t.workspaceId)],
+);
+
+// Sync Now state for one linked ad account: a lock so only one sync writes into
+// the account at a time (across servers), and the outcome of the last run.
+// Holds no tokens and no report numbers.
+export const tiktokSyncs = pgTable("tiktok_syncs", {
+  workspaceId: text("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  advertiserId: text("advertiser_id").notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  // Random per run: only the run holding the lock may write or release it.
+  lockToken: text("lock_token"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  // ok | unchanged | empty | failed
+  outcome: text("outcome"),
+  errorCode: text("error_code"),
+  rows: integer("rows"),
+  periodStart: date("period_start", { mode: "string" }),
+  periodEnd: date("period_end", { mode: "string" }),
+  importId: text("import_id"),
+  // SHA-256 of the normalized rows of the last committed sync (rerun protection).
+  fingerprint: text("fingerprint"),
+  // What the last finished sync found (counts, dates, unavailable measures), for
+  // the status poll. No report numbers, no tokens.
+  summary: jsonb("summary"),
+});
+
+// Which imports came from TikTok Sync Now, for which advertiser and asked dates.
+// A sync replaces earlier data narrowly (lib/data/imports.ts, syncScope), and undo
+// needs to know that to hand replaced rows to the right newer import.
+export const tiktokSyncImports = pgTable(
+  "tiktok_sync_imports",
+  {
+    importId: text("import_id").primaryKey().references(() => imports.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    advertiserId: text("advertiser_id").notNull(),
+    windowStart: date("window_start", { mode: "string" }).notNull(),
+    windowEnd: date("window_end", { mode: "string" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("tiktok_sync_imports_ws_idx").on(t.workspaceId, t.advertiserId)],
+);
+
+// AdMate integration: the TikTok beta's per-person rate limits (lib/tiktok/beta.ts).
+// One row each time someone starts a TikTok authorization or a sync: who, what
+// and when, nothing from TikTok. A person's rows older than a day are pruned.
+export const tiktokBetaEvents = pgTable(
+  "tiktok_beta_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // connect | sync
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("tiktok_beta_events_user_idx").on(t.userId, t.kind, t.createdAt)],
+);

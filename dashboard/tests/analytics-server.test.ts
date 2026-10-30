@@ -7,6 +7,8 @@ import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+// The first test in this file sets up the embedded database and a sample account.
+vi.setConfig({ testTimeout: 20_000 });
 
 const jar = new Map<string, { value: string; options?: Record<string, unknown> }>();
 let requestHeaders = new Headers();
@@ -29,10 +31,12 @@ const ORIGIN = "https://www.admate.site";
 const USER = "11111111-2222-4333-8444-555555555555";
 const posthog: { url: string; body: Record<string, unknown> }[] = [];
 
-beforeAll(() => {
+beforeAll(async () => {
   process.env.ADMATE_DATA_DIR = mkdtempSync(path.join(os.tmpdir(), "admate-activity-"));
   delete process.env.DATABASE_URL;
-});
+  // Create and migrate the embedded database once, before the timed tests.
+  await (await import("@/lib/db/client")).getDb();
+}, 60_000);
 
 beforeEach(() => {
   process.env.ADMATE_PUBLIC_ORIGIN = ORIGIN;
