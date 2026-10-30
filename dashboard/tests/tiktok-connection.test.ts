@@ -1392,3 +1392,35 @@ describe("Concurrent uploads, undo and TikTok syncing on one account", () => {
     }
   }, 120_000 * SLOW);
 });
+
+// ---- Phase 7c: a background run cut off by the platform ---------------------
+describe("Sync Now when the background run is cut off", () => {
+  beforeEach(resetReport);
+
+  it("shows the run as interrupted once its lock runs out, then a new sync works", async () => {
+    const ws = await freshKhr("ws-p7c-cutoff");
+    const w = await window();
+    tiktok.report = simulate([w.end]);
+    const { startTikTokSync, tikTokSyncStatus } = await import("@/lib/tiktok/sync");
+    const { SYNC_LOCK_MS } = await import("@/lib/tiktok/store");
+    const at = later();
+    // The route answered "started", then the platform stopped the function before
+    // the background part ran (the same as a crash in the middle: no outcome is recorded).
+    await startTikTokSync(A, ADVERTISER, { now: () => at, sleep: async () => {} });
+    const statusAt = async (ms: number) => (await tikTokSyncStatus(A, new Date(at.getTime() + ms))).find((s) => s.workspaceId === ws.id)!;
+
+    expect(await statusAt(60_000)).toMatchObject({ running: true, interrupted: false });
+    // Meanwhile another click is refused instead of running twice.
+    await expect(startTikTokSync(A, ADVERTISER, { now: () => new Date(at.getTime() + 60_000) })).rejects.toMatchObject({ code: "busy" });
+    // The lock outlives Vercel's 300-second limit, then frees itself.
+    expect(SYNC_LOCK_MS).toBeGreaterThan(300_000);
+    expect(await statusAt(SYNC_LOCK_MS + 1_000)).toMatchObject({ running: false, interrupted: true });
+    expect(await activeFacts(ws.id)).toHaveLength(0); // nothing was half-written
+
+    // Pressing Sync now again works and clears the interrupted state.
+    const again = new Date(at.getTime() + SYNC_LOCK_MS + 2_000);
+    const job = await startTikTokSync(A, ADVERTISER, { now: () => again, sleep: async () => {} });
+    expect((await job.run()).outcome).toBe("ok");
+    expect(await statusAt(SYNC_LOCK_MS + 3_000)).toMatchObject({ running: false, interrupted: false, outcome: "ok" });
+  });
+});

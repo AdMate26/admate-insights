@@ -203,12 +203,21 @@ function unavailableMeasures(columns: MeasureKey[], hasRows: boolean) {
   return [...never, ...missing].map((u) => ({ ...u, label: MEASURE_LABEL[u.measure] }));
 }
 
-/** Last sync per linked ad account, for the status display (no report numbers). */
-export async function tikTokSyncStatus(userId: string) {
-  return (await listSyncs(userId)).map((s) => ({
+/**
+ * Last sync per linked ad account, for the status display (no report numbers).
+ * `interrupted`: the last run started but never recorded an outcome, and its lock
+ * has run out, e.g. the platform stopped the function. Any write it began was
+ * rolled back by the database, or finished in full; a new sync is safe either
+ * way, since a sync never counts the same campaign-day twice.
+ */
+export async function tikTokSyncStatus(userId: string, now = new Date()) {
+  return (await listSyncs(userId)).map((s) => {
+    const running = !!s.lockedUntil && s.lockedUntil.getTime() > now.getTime();
+    return {
     advertiserId: s.advertiserId,
     workspaceId: s.workspaceId,
-    running: !!s.lockedUntil && s.lockedUntil.getTime() > Date.now(),
+    running,
+    interrupted: !running && !!s.startedAt && (!s.finishedAt || s.startedAt.getTime() > s.finishedAt.getTime()),
     outcome: s.outcome,
     errorCode: s.errorCode,
     finishedAt: s.finishedAt?.toISOString() ?? null,
@@ -216,5 +225,6 @@ export async function tikTokSyncStatus(userId: string) {
     periodStart: s.periodStart,
     periodEnd: s.periodEnd,
     summary: (s.summary as TikTokSyncSummary | null) ?? null,
-  }));
+    };
+  });
 }

@@ -577,3 +577,35 @@ scheduler.
 - delete or keep the Vercel projects
 - remove the Resend key
 - each tester disconnects TikTok
+
+## 15. G0b done and background interruptions (2026-10-30)
+
+**G0b:** the final per-build check passed for all 45:
+- each belongs to `admate-insights` and is a Preview build
+- none is Production or serves `www.admate.site`
+- the only links pointing at them were merged branches' preview links
+- none is PR #39's current preview
+
+All 45 were **deleted, none failed**. `www.admate.site`, `/app` and Cloud Run
+answer as before.
+
+**Remaining exposure:**
+- `glw5skwuc`, a Codex command-line Preview build from 29 Oct, kept on purpose.
+  It still holds the Telegram secrets and the Meta token, behind Vercel's login.
+- Production deployments naturally hold production secrets.
+- No tokens were rotated, as instructed. Any copy made before the fix stays valid
+  until rotation; nothing suggests one exists.
+- `META_AD_ACCOUNT_ID` and `META_OWNER_USER_ID` are still in Preview
+  (identifiers, not secrets).
+
+**A background run cut off by the platform** (time limit or interruption):
+- The database rolls back an unfinished write, and the account row lock is
+  released when the connection drops.
+- The sync lock now lasts **6 minutes**, longer than Vercel's 300-second limit,
+  so a live run always holds it and a cut-off run frees the account soon after.
+- The status then shows **interrupted**. The page says so and that retrying is
+  safe; it polls up to 7 minutes.
+- If the cut came after the data was saved but before the outcome was recorded,
+  the retry replaces the same campaign-days, so nothing is counted twice.
+- Covered by a test: interrupted, busy while locked, nothing half-written, the
+  next sync works.

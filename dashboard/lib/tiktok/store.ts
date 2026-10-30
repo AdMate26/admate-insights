@@ -108,7 +108,10 @@ export async function deleteLink(userId: string, advertiserId: string) {
 // 3 minutes: well inside Vercel's 300-second function limit (the sync runs in
 // the background after Sync Now answers; see app/api/tiktok/sync/route.ts).
 export const SYNC_BUDGET_MS = 3 * 60 * 1000;
-export const SYNC_LOCK_MS = 10 * 60 * 1000;
+// Longer than the longest possible run (Vercel stops the function at 300 s), so
+// a live run always holds it; a run cut off by the platform frees the account
+// about a minute after it could last have been working.
+export const SYNC_LOCK_MS = 6 * 60 * 1000;
 export const SYNC_COOLDOWN_MS = 60 * 1000; // at most one sync a minute per ad account
 
 /**

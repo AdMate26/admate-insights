@@ -95,7 +95,7 @@ imports them into the linked ad account as one report.
 - **One sync per account at a time, across servers:**
   - `tiktok_syncs` lock with a per-run token
   - the import transaction re-checks the lock, so a run that lost it rolls back
-  - the lock frees itself after 10 minutes if a server crashes
+  - the lock frees itself after 6 minutes if the platform cuts a run off (longer than Vercel's 300 s limit). The status then shows **interrupted** and the page says retrying is safe.
   - a one-minute pause between syncs
 - **Rolling history:** only the 7 newest syncs per advertiser can be undone.
   Older syncs become history: their numbers stay, they can't be undone, and they

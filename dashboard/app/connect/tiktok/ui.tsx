@@ -7,7 +7,7 @@ import { apiPath } from "@/lib/integration/paths";
 import type { TikTokConnectionStatus } from "@/lib/tiktok/service";
 
 type Advertiser = { id: string; name: string; currency: string | null; timezone: string | null; status: string | null };
-type LastSync = { outcome: string | null; errorCode: string | null; finishedAt: string | null; rows: number | null; periodStart: string | null; periodEnd: string | null; running: boolean };
+type LastSync = { outcome: string | null; errorCode: string | null; finishedAt: string | null; rows: number | null; periodStart: string | null; periodEnd: string | null; running: boolean; interrupted: boolean };
 type AdvertiserLink = { advertiserId: string; workspaceId: string; lastSync: LastSync | null };
 type Account = { id: string; name: string; currency: string; isSample: boolean };
 type SyncResult = {
@@ -40,6 +40,7 @@ const MESSAGES: Record<string, string> = {
   report: "TikTok's report couldn't be used, so nothing was imported. Please try again later.",
   timeout: "TikTok took too long to answer, so nothing was imported. Please try again later.",
   storage: "AdMate couldn't save the data, so nothing was changed. Please try again later.",
+  interrupted: "The last sync was interrupted before it finished (for example a server restart). It's safe to press Sync now again: AdMate never counts the same day twice.",
 };
 
 function syncSummary(r: SyncResult): string {
@@ -60,6 +61,7 @@ function syncSummary(r: SyncResult): string {
 function lastSyncText(s: LastSync | null): string {
   if (!s) return "Never synced";
   if (s.running) return "Sync running…";
+  if (s.interrupted) return "Last sync was interrupted. Press Sync now to try again.";
   const when = s.finishedAt ? new Date(s.finishedAt).toLocaleString() : "";
   if (s.outcome === "failed") return `Last sync failed (${when})`;
   if (s.outcome === "empty") return `Last sync: TikTok had no data (${when})`;
@@ -114,7 +116,8 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
     if (await call("/api/tiktok/advertisers", { method: "POST", headers: json, body: JSON.stringify({ advertiserId, workspaceId }) })) await load();
   };
   // Sync Now answers straight away and continues in the background; the page
-  // asks for the outcome every 2 seconds (for up to 6 minutes).
+  // asks for the outcome every 2 seconds, for up to 7 minutes: past the 6-minute
+  // lock, so a run the platform cut off shows as interrupted.
   const sync = async (advertiserId: string) => {
     setSynced(null);
     const startedAt = Date.now();
@@ -122,12 +125,12 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
     if (!started) return; // keep the error message on screen
     setSyncing(advertiserId);
     let status: (LastSync & { summary: SyncResult | null }) | null = null;
-    for (let i = 0; i < 180; i++) {
+    for (let i = 0; i < 210; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       const res = await fetch(apiPath(`/api/tiktok/sync?advertiserId=${advertiserId}`), { credentials: "same-origin" }).catch(() => null);
       const body = res?.ok ? await res.json().catch(() => null) : null;
       const s = body?.status ?? null;
-      if (s && !s.running && s.finishedAt && Date.parse(s.finishedAt) >= startedAt - 60_000) {
+      if (s && !s.running && (s.interrupted || (s.finishedAt && Date.parse(s.finishedAt) >= startedAt - 60_000))) {
         status = s;
         break;
       }
@@ -135,6 +138,7 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
     setSyncing(null);
     await load();
     if (!status) setError("The sync is taking longer than expected. Check again in a few minutes.");
+    else if (status.interrupted) setError(MESSAGES.interrupted);
     else if (status.outcome === "failed" || !status.summary) setError(MESSAGES[status.errorCode ?? ""] ?? "Something went wrong.");
     else setSynced({ advertiserId, result: status.summary });
   };
