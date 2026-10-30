@@ -872,3 +872,60 @@ migrations to 17 (`0016_tiktok_beta_events`). Afterwards, re-run
    - safety checks with two test accounts through the whole journey
 6. **Share the link** with the first external tester: sign up, connect TikTok,
    create an account, Sync now, see the analysis. No approval step.
+
+## 22. Backup done; verified costs before paying (2026-10-30)
+
+**Backup:** PR #39 fast-forwarded from `c831729` to `a1deabe` (the 4 beta
+commits). It's still a draft, and its description has a self-service beta
+section.
+
+Checked before the push:
+- No secret patterns.
+- Neither TikTok client ID, nor the local encryption key.
+- No `.env`, local database or `.vercel` files.
+
+The push built Preview deployments only (`admate-insights`,
+`admate-dashboard`). The staging and Meta staging projects, which aren't linked
+to GitHub, did not build.
+
+**Verified costs:**
+
+1. **Vercel Pro trial** ([docs](https://vercel.com/docs/plans/pro-plan/trials)):
+   - It's started by **creating a new team** (Create Team → Pro Trial), not by
+     upgrading the existing `ad-mate` team. One trial per user account.
+   - 14 days, with $20 credit and trial usage limits (16 CPU-hours, 1M function
+     invocations).
+   - Without a payment method it reverts to Hobby at the end, **with no charge**.
+
+   For the test, the two staging projects (no deployments yet) would move to
+   that team, keeping their `vercel.app` addresses so the registered TikTok
+   callback stays valid, or be recreated there. Production's `ad-mate` team
+   stays on Hobby; its commercial-use question is a separate decision.
+2. **Supabase Pro, one Micro project** ([pricing](https://supabase.com/pricing),
+   [compute](https://supabase.com/docs/guides/platform/manage-your-usage/compute),
+   [invoice](https://supabase.com/docs/guides/platform/your-monthly-invoice)):
+   - **$25 a month** in a new organization: the Micro compute ($0.01344 an hour,
+     ~$10 a month, billed by the hour) is covered by the $10 monthly compute
+     credit.
+   - The fixed $25 is **paid in advance** per billing cycle, which starts when
+     the organization is created; usage is billed in arrears.
+   - The docs don't promise refunds for cancelling mid-cycle, so treat the first
+     $25 as spent.
+3. **Not covered by Supabase's spend cap**
+   ([cost control](https://supabase.com/docs/guides/platform/cost-control)):
+   - Compute, Branching compute, Read replica compute, Custom domain
+   - Extra disk IOPS or throughput, IPv4 address
+   - Log drain hours and events, MFA phone, Point-in-time recovery
+
+   Only Compute applies to us, covered by the credit as long as there is **one
+   Micro project** and no add-ons. Capped items (disk, egress, MAU, etc.) stop
+   at their quota instead of billing.
+4. **Cheapest compliant first external test:**
+   - Supabase "AdMate Staging" on Pro ($25)
+   - a **new Vercel team on the 14-day Pro trial** for the two staging projects
+     ($0, no card)
+   - Neon Free and Resend Free ($0)
+
+   **About $25 + tax** for the test. Start the Vercel trial right before the
+   first deployment, so the 14 days cover the testing. Continuing afterwards:
+   $20/month Vercel (add a card), or move back.
