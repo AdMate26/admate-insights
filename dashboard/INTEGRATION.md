@@ -163,6 +163,7 @@ Everything not listed here is byte-identical to the source commit
 | `lib/tiktok/store.ts` | added | TikTok: per-person database access, sync lock |
 | `lib/tiktok/sync.ts` | added | TikTok: Sync Now (re-checks, lock, empty-report and rerun protection, one-transaction import with history consolidation) |
 | `scripts/staging-migrate.mjs` | added | TikTok staging only: guarded one-time migration of the staging Neon database (exact endpoint, direct connection, empty database; prints no connection details) |
+| `scripts/staging-runtime-role.mjs` | added | TikTok staging only: creates and verifies the restricted `admate_runtime` role (rows only, no login until G6, no DDL or migrations access) |
 | `lib/tiktok/history.ts` | added | TikTok: rolling sync history (7 newest syncs undoable, older ones kept as history; unreachable undo copies pruned) |
 | `lib/auth/supabase.ts` | added | Supabase token check (also returns the sign-in provider for sign-up analytics) |
 | `lib/integration/limits.ts` | added | Upload and account limits, file content checks; the report limit counts uploads only (not TikTok syncs) |

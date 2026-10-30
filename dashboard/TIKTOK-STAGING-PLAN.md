@@ -621,3 +621,21 @@ answer as before.
 - **Migrations use `scripts/staging-migrate.mjs`**, not `migrate.mjs`. It refuses
   anything but endpoint `ep-still-cell-a1i5u224`, the direct (non-pooled)
   connection and an empty database. It never prints the connection string.
+- **Migrations (step 2), done by you:** 16 migrations, 30 application tables,
+  verified.
+- **Step 3 uses `scripts/staging-runtime-role.mjs`** (same endpoint guard). It
+  creates `admate_runtime` **without login or password** and grants read and
+  write on the application tables and sequences only, then verifies:
+  - not superuser, no BYPASSRLS, no CREATEDB, CREATEROLE or REPLICATION
+  - no memberships and no owned objects
+  - no extra table rights
+  - can't create in `public` or create schemas
+  - no access to the `drizzle` migrations schema
+
+  Login and a fresh password are added only at G6, going straight into Vercel.
+  This replaces the earlier plan to generate a password in the SQL Editor; no
+  credential exists until it's needed. The runtime sign-in and permissions test
+  runs on the disposable `test-run` branch in step 4.
+- **Future migrations** that add tables need the same grants, re-applied
+  (`GRANT … ON ALL TABLES`). The script is idempotent; run it again after
+  migrating.
