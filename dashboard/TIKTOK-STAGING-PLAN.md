@@ -609,3 +609,15 @@ answer as before.
   the retry replaces the same campaign-days, so nothing is counted twice.
 - Covered by a test: interrupted, busy while locked, nothing half-written, the
   next sync works.
+
+## 16. G4 progress (2026-10-30)
+
+- **Created by you:** Neon project `admate-tiktok-staging`, ID
+  `patient-art-82722161`, in the AdMate organization (`org-dry-hat-24549344`).
+- **Verified through Neon's API:** region `aws-ap-southeast-1`, Postgres 17, one
+  branch `main` (`br-small-mouse-a1y6ey7n`), one compute endpoint
+  **`ep-still-cell-a1i5u224`**. The other two projects
+  (`admate-meta-staging`, `bold-rice-42268658`) were not touched.
+- **Migrations use `scripts/staging-migrate.mjs`**, not `migrate.mjs`. It refuses
+  anything but endpoint `ep-still-cell-a1i5u224`, the direct (non-pooled)
+  connection and an empty database. It never prints the connection string.
