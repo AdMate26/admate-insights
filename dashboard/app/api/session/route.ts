@@ -1,7 +1,7 @@
 import { count, eq } from "drizzle-orm";
 import { isAuthorized, maxUsers, newSignupsClosed, openRegistration } from "@/lib/access/policy";
 import { verifySupabaseToken } from "@/lib/auth/supabase";
-import { isStagingOrigin } from "@/lib/tiktok/config";
+import { isApprovedBetaHost } from "@/lib/tiktok/config";
 import { endSession, startSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
@@ -47,9 +47,9 @@ export async function POST(request: Request) {
   // person's) never survives a new sign-in attempt.
   await endSession();
   if (!user) return json(401, { error: "not_signed_in" });
-  // Open registration on staging (the self-service beta) admits anyone, so only
-  // an email Supabase has confirmed. Production is unchanged by this check.
-  if (openRegistration() && isStagingOrigin() && !user.emailConfirmed) return json(403, { error: "email_unverified" });
+  // Open registration on the approved beta deployment admits anyone, so only an
+  // email Supabase has confirmed. Production is unchanged by this check.
+  if (openRegistration() && isApprovedBetaHost() && !user.emailConfirmed) return json(403, { error: "email_unverified" });
   if (!(await isAuthorized(user.id))) return json(403, { error: "not_authorized" });
 
   const db = await getDb();

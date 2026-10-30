@@ -9,9 +9,9 @@ import "server-only";
  *   - "allowlist" (default): only Supabase user IDs listed in
  *     TIKTOK_CONNECT_ALLOWED_USER_IDS (an empty list admits nobody).
  *   - "open-beta": anyone signed in with a verified email, for the self-service
- *     staging beta. Only with TIKTOK_CONNECT_ACCESS=open-beta AND a staging
- *     public origin (*.vercel.app or localhost); otherwise it falls back to the
- *     allowlist. Beta switches and limits: lib/tiktok/beta.ts.
+ *     staging beta. Only with TIKTOK_CONNECT_ACCESS=open-beta AND on the one
+ *     approved staging deployment (isApprovedBetaHost); anywhere else it falls
+ *     back to the allowlist. Beta switches and limits: lib/tiktok/beta.ts.
  */
 export const TIKTOK_MCP_SCOPE = "mcp:tt4b" as const;
 export const TIKTOK_MCP_SERVERS = [
@@ -35,11 +35,27 @@ export function isTikTokConnectionEnabled(env: NodeJS.ProcessEnv = process.env):
   return env.TIKTOK_CONNECT_ENABLED === "true" && env.VERCEL_ENV !== "production";
 }
 
-/** A staging public origin: a *.vercel.app address or a local one. Never admate.site. */
-export function isStagingOrigin(env: NodeJS.ProcessEnv = process.env): boolean {
+// The one approved home of the self-service beta (G6a): the TikTok staging
+// dashboard project, serving the approved public address. Moving the beta
+// anywhere else needs a change here, not a setting.
+export const TIKTOK_BETA_PROJECT_ID = "prj_yi83FGB3eg7hBz9fzAkOz1StzHmX"; // admate-tiktok-dashboard-staging
+export const TIKTOK_BETA_PUBLIC_ORIGIN = "https://admate-tiktok-staging.vercel.app";
+
+/**
+ * On Vercel: only a Preview deployment of exactly that project (VERCEL_PROJECT_ID,
+ * set by Vercel itself) whose public origin is exactly the approved address.
+ * Off Vercel: a local development or test run on localhost, never a local
+ * production build. Any other *.vercel.app address, project or admate.site: no.
+ */
+export function isApprovedBetaHost(env: NodeJS.ProcessEnv = process.env): boolean {
+  const origin = env.ADMATE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "") ?? "";
+  if (env.VERCEL) {
+    return env.VERCEL_ENV === "preview" && env.VERCEL_PROJECT_ID === TIKTOK_BETA_PROJECT_ID && origin === TIKTOK_BETA_PUBLIC_ORIGIN;
+  }
+  if (env.NODE_ENV === "production") return false;
   try {
-    const { hostname } = new URL(env.ADMATE_PUBLIC_ORIGIN ?? "");
-    return hostname.endsWith(".vercel.app") || hostname === "localhost" || hostname === "127.0.0.1";
+    const url = new URL(origin);
+    return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
   } catch {
     return false;
   }
@@ -48,7 +64,7 @@ export function isStagingOrigin(env: NodeJS.ProcessEnv = process.env): boolean {
 export type TikTokAccessMode = "allowlist" | "open-beta";
 
 export function tiktokAccessMode(env: NodeJS.ProcessEnv = process.env): TikTokAccessMode {
-  return env.TIKTOK_CONNECT_ACCESS?.trim() === "open-beta" && isStagingOrigin(env) ? "open-beta" : "allowlist";
+  return env.TIKTOK_CONNECT_ACCESS?.trim() === "open-beta" && isApprovedBetaHost(env) ? "open-beta" : "allowlist";
 }
 
 export function readTikTokOAuthConfig(env: NodeJS.ProcessEnv = process.env): TikTokOAuthConfig {

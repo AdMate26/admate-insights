@@ -67,7 +67,7 @@ Everything not listed here is byte-identical to the source commit
 | `app/actions.ts` | modified | Account limit before creating an account (2 calls); `chooseLevel` uses the shared `levelTarget` |
 | `app/api/import/commit/route.ts` | modified | Signed-in owners only; report, file and row limits (v5 Telegram-after-upload kept) |
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
-| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`) |
+| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`); passes whether TikTok is enabled for the person to the sidebar |
 | `README.md` | modified | Analytics paragraph matches the consent-first PostHog setup |
 | `app/layout.tsx` | modified | Mounts the cookie banner and the page tracker (signed-in page views go through the server) |
 | `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link and "Analytics settings" |
@@ -78,11 +78,12 @@ Everything not listed here is byte-identical to the source commit
 | `components/UploadFlow.tsx` | modified | `fetch` paths under `/app` (`apiPath`); analytics gets reason codes and a fixed file-type list, never error text or file names |
 | `components/v5/Assistant.tsx` | modified | `fetch` paths under `/app` (`apiPath`: ask, credits, checkout, test checkout); visitors get the sign-up note instead of a question |
 | `components/v5/Drawer.tsx` | modified | `fetch` path under `/app` (`apiPath`) |
-| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID and account email (after consent), "Analytics settings" link |
+| `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID and account email (after consent), "Analytics settings" link; a "Connect TikTok Ads" menu item only for people TikTok is enabled for |
+| `components/Shell.tsx` | modified | A "Connect TikTok Ads" link only for signed-in people TikTok is enabled for (off everywhere TikTok is off, including production) |
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
 | `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `recommendation_viewed` event, `analysis_viewed` for demo visitors (signed-in: server) |
-| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections`, `0013_tiktok_syncs`, `0014_tiktok_sync_imports` and `0015_tiktok_sync_summary` |
+| `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections`, `0013_tiktok_syncs`, `0014_tiktok_sync_imports`, `0015_tiktok_sync_summary` and `0016_tiktok_beta_events` |
 | `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer import that would have replaced it (no double counting); undoing the newest report is unchanged; TikTok sync history still counts as a newer import there. TikTok syncs replace narrowly (`syncScope`): only the same campaign and day; uploads keep their rule; `onCommit` hook inside the transaction; imports and undos of one account are serialized with a row lock on the account (no double counting under concurrent transactions) |
 | `lib/analysis/viewModel.ts` | modified | Dashboard rows show reach, frequency, results and revenue as unavailable (null, "—") when the data lacks them or reach was added up; the analysis engine is unchanged |
 | `lib/analysis/alerts.ts` | modified | Treats an unavailable result count as 0 for its volume check (as before) |
@@ -131,7 +132,7 @@ Everything not listed here is byte-identical to the source commit
 | `app/api/tiktok/oauth/callback/route.ts` | added | TikTok: OAuth callback (one-use state, same session) |
 | `app/api/tiktok/oauth/start/route.ts` | added | TikTok: starts OAuth with PKCE |
 | `app/api/tiktok/sync/route.ts` | added | TikTok: Sync Now. POST checks and locks, answers 202, and runs the sync in the background (`after`, `maxDuration` 300). GET returns the last outcome for polling (counts and dates only). |
-| `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side) |
+| `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side). On the approved TikTok beta deployment with open registration, only confirmed emails; respects the new-sign-up switches |
 | `app/demo/route.ts` | added | `/app/demo`: own sample or the public demo |
 | `app/connect/tiktok/page.tsx` | added | TikTok connection test page (404 unless enabled and allowlisted) |
 | `app/connect/tiktok/ui.tsx` | added | TikTok connection test page controls |
@@ -145,12 +146,14 @@ Everything not listed here is byte-identical to the source commit
 | `drizzle/meta/0014_snapshot.json` | added | Drizzle snapshot for 0014 |
 | `drizzle/0015_tiktok_sync_summary.sql` | added | Adds `tiktok_syncs.summary` for the Sync Now status poll (local database only) |
 | `drizzle/meta/0015_snapshot.json` | added | Drizzle snapshot for 0015 |
+| `drizzle/0016_tiktok_beta_events.sql` | added | `tiktok_beta_events` (per-person counters for the self-service beta's hourly and daily limits; staging only, local database only so far) |
+| `drizzle/meta/0016_snapshot.json` | added | Drizzle snapshot for 0016 |
 | `TIKTOK-STAGING-PLAN.md` | added | Phase 7 plan for hosted multi-user staging (not set up): architecture, settings, TikTok staging client, isolation, migrations, tests, costs, risks, approval gates |
 | `TIKTOK-SYNC-PLAN.md` | added | Phase 5 audit, fixes, capacity design and the plan for daily sync, reminders and hosted testing |
 | `drizzle/0011_user_visits.sql` | added | Migration for `user_visits` (apply to the dashboard database before go-live) |
 | `drizzle/meta/0011_snapshot.json` | added | Drizzle snapshot for 0011 |
 | `integration.lock.json` | added | Source commit file hashes |
-| `lib/access/policy.ts` | added | Who may use the dashboard |
+| `lib/access/policy.ts` | added | Who may use the dashboard; optional `ADMATE_NEW_SIGNUPS=closed` and `ADMATE_MAX_USERS` switches for the staging beta (unset = no effect) |
 | `lib/analytics-sanitize.ts` | added | Privacy filter for analytics events (identical to the website's) |
 | `lib/analytics-server.ts` | added | Server-side analytics for signed-in people: visits, PostHog capture through the privacy filter |
 | `lib/tiktok/config.ts` | added | TikTok: off-by-default settings, tester allowlist, exact callback URL |
@@ -165,8 +168,9 @@ Everything not listed here is byte-identical to the source commit
 | `scripts/staging-migrate.mjs` | added | TikTok staging only: guarded one-time migration of the staging Neon database (exact endpoint, direct connection, empty database; prints no connection details) |
 | `scripts/staging-runtime-role.mjs` | added | TikTok staging only: creates and verifies the restricted `admate_runtime` role (rows only, no login until G6, no DDL or migrations access) |
 | `scripts/staging-runtime-check.mjs` | added | TikTok staging only: on a disposable branch, signs in as `admate_runtime` with a temporary password and proves allowed and refused operations (all rolled back) |
+| `lib/tiktok/beta.ts` | added | TikTok self-service beta: switches (`TIKTOK_BETA_CONNECTIONS`, `TIKTOK_BETA_MAX_CONNECTIONS`) and per-person limits; active only in open-beta mode on the one approved staging deployment |
 | `lib/tiktok/history.ts` | added | TikTok: rolling sync history (7 newest syncs undoable, older ones kept as history; unreachable undo copies pruned) |
-| `lib/auth/supabase.ts` | added | Supabase token check (also returns the sign-in provider for sign-up analytics) |
+| `lib/auth/supabase.ts` | added | Supabase token check (also returns the sign-in provider for sign-up analytics, and whether the email is confirmed) |
 | `lib/integration/limits.ts` | added | Upload and account limits, file content checks; the report limit counts uploads only (not TikTok syncs) |
 | `lib/integration/paths.ts` | added | Base path, API paths, website URLs |
 | `lib/integration/public-demo.ts` | added | Shared public demo: system owners, current demo, safe refresh, visitor identity |

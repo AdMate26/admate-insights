@@ -40,6 +40,9 @@ const D = "dddddddd-4444-4444-8444-444444444444";
 const E = "eeeeeeee-5555-4555-8555-555555555555";
 const F = "ffffffff-6666-4666-8666-666666666666";
 const G = "99999999-7777-4777-8777-777777777777";
+// Two independent beta testers, each with their own TikTok login and advertiser.
+const H = "a1a1a1a1-8888-4888-8888-888888888888";
+const I = "b2b2b2b2-9999-4999-8999-999999999999";
 // As Supabase Auth answers /auth/v1/user: email codes and Google set email_confirmed_at.
 const confirmed = "2026-10-01T00:00:00Z";
 const PEOPLE: Record<string, { id: string; email: string; email_confirmed_at?: string | null }> = {
@@ -50,6 +53,8 @@ const PEOPLE: Record<string, { id: string; email: string; email_confirmed_at?: s
   "e.jwt.sig": { id: E, email: "e@example.test", email_confirmed_at: confirmed },
   "f.jwt.sig": { id: F, email: "f@example.test", email_confirmed_at: confirmed },
   "g.jwt.sig": { id: G, email: "g@example.test", email_confirmed_at: confirmed },
+  "h.jwt.sig": { id: H, email: "h@example.test", email_confirmed_at: confirmed },
+  "i.jwt.sig": { id: I, email: "i@example.test", email_confirmed_at: confirmed },
 };
 const ADVERTISER = "7000000000001";
 
@@ -73,10 +78,23 @@ const tiktok = {
   onReport: null as null | (() => Promise<void>), // runs before each report page is answered
   reportFn: null as null | ((start: string, end: string) => Record<string, unknown>[]), // rows generated per request instead of `report`
   shiftTotal: false, // pretend the report changed between pages
+  // Separate TikTok logins (optional): who authorizes next, the TikTok login each
+  // token belongs to, and the advertisers each login authorized. Tokens without
+  // a login see the default advertiser, as before.
+  login: null as string | null,
+  tokenLogin: new Map<string, string>(),
+  advertisersOf: {} as Record<string, { id: string; name: string }[]>,
 };
-function issue() {
+function issue(login: string | null = null) {
   tiktok.issued += 1;
-  return { access_token: `acc-${tiktok.issued}`, refresh_token: `ref-${tiktok.issued}`, token_type: "Bearer", expires_in: 86400, refresh_token_expires_in: 2592000, scope: "mcp:tt4b" };
+  const tokens = { access_token: `acc-${tiktok.issued}`, refresh_token: `ref-${tiktok.issued}`, token_type: "Bearer", expires_in: 86400, refresh_token_expires_in: 2592000, scope: "mcp:tt4b" };
+  if (login) [tokens.access_token, tokens.refresh_token].forEach((t) => tiktok.tokenLogin.set(t, login));
+  return tokens;
+}
+/** The advertisers the TikTok login behind this access token authorized. */
+function advertisersFor(authorization: string | null): { id: string; name: string }[] {
+  const login = tiktok.tokenLogin.get((authorization ?? "").replace(/^Bearer /, ""));
+  return login ? (tiktok.advertisersOf[login] ?? []) : [{ id: ADVERTISER, name: "Lotus TikTok" }];
 }
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, ...init, headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
 
@@ -104,20 +122,22 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
       const [, state] = (body.get("code") ?? "").split(":");
       const challenge = tiktok.challenges.get(state ?? "");
       const ok = challenge && createHash("sha256").update(body.get("code_verifier") ?? "").digest("base64url") === challenge && body.get("redirect_uri") === `${ORIGIN}/app/api/tiktok/oauth/callback`;
-      return ok ? json(issue()) : json({ error: "invalid_grant" }, { status: 400 });
+      return ok ? json(issue(tiktok.login)) : json({ error: "invalid_grant" }, { status: 400 });
     }
     tiktok.refreshes += 1;
     const old = body.get("refresh_token") ?? "";
     if (tiktok.dead.has(old)) return json({ error: "invalid_grant", error_description: "refresh token revoked" }, { status: 400 });
     tiktok.dead.add(old); // rotation: the old refresh token stops working
-    return json(issue());
+    return json(issue(tiktok.tokenLogin.get(old) ?? null));
   }
   if (url === `${SERVER}/oauth/revoke`) {
     tiktok.revoked.push(new URLSearchParams(String(init?.body)).get("token") ?? "");
     return json({ revoked: true });
   }
   if (url === SERVER) {
-    tiktok.mcpTokens.push(new Headers(init?.headers).get("authorization") ?? "");
+    const authorization = new Headers(init?.headers).get("authorization");
+    tiktok.mcpTokens.push(authorization ?? "");
+    const own = advertisersFor(authorization);
     const rpc = JSON.parse(String(init?.body)) as { id?: number; method: string; params?: { name?: string } };
     if (rpc.method === "notifications/initialized") return new Response(null, { status: 202 });
     const reply = (result: unknown) => json({ jsonrpc: "2.0", id: rpc.id, result }, { headers: { "mcp-session-id": "mcp-session-1" } });
@@ -133,11 +153,13 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
         ],
       });
     if (rpc.method === "tools/call" && rpc.params?.name === "auth_advertiser_get")
-      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, message: "OK", data: { list: [{ advertiser_id: ADVERTISER, advertiser_name: "Lotus TikTok" }] } }) }] });
+      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, message: "OK", data: { list: own.map((a) => ({ advertiser_id: a.id, advertiser_name: a.name })) } }) }] });
     if (rpc.params?.name === "advertiser_info_get")
-      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, data: { list: [{ advertiser_id: ADVERTISER, name: "Lotus TikTok", currency: tiktok.currency, timezone: "Asia/Phnom_Penh", status: "STATUS_ENABLE" }] } }) }] });
+      return reply({ content: [{ type: "text", text: JSON.stringify({ code: 0, data: { list: own.map((a) => ({ advertiser_id: a.id, name: a.name, currency: tiktok.currency, timezone: "Asia/Phnom_Penh", status: "STATUS_ENABLE" })) } }) }] });
     if (rpc.params?.name === "report_integrated_get") {
       const args = (rpc.params as { arguments: Record<string, unknown> }).arguments;
+      // Like TikTok: a token can only read reports of advertisers its login authorized.
+      if (!own.some((a) => a.id === String(args.advertiser_id))) return reply({ content: [{ type: "text", text: JSON.stringify({ code: 40001, message: "No permission to operate advertiser" }) }] });
       tiktok.reportCalls.push(args);
       const page = Number(args.page ?? 1);
       const size = Number(args.page_size ?? 10);
@@ -162,7 +184,7 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
 
 // ---- helpers ---------------------------------------------------------------
 const browsers: Record<string, typeof jar> = {};
-async function signIn(person: "a" | "b" | "c" | "e" | "f" | "g", browser: string = person) {
+async function signIn(person: "a" | "b" | "c" | "e" | "f" | "g" | "h" | "i", browser: string = person) {
   jar = browsers[browser] ?? new Map();
   browsers[browser] = jar;
   const { POST } = await import("@/app/api/session/route");
@@ -1471,20 +1493,40 @@ describe("TikTok self-service beta", () => {
     return { status: 200, error: null, state };
   };
 
-  it("is only a staging mode: never on Vercel Production, never on admate.site", async () => {
-    const { isTikTokConnectionEnabled, isTikTokUserAllowed, tiktokAccessMode } = await import("@/lib/tiktok/config");
-    const env = (extra: Record<string, string> = {}) => ({ TIKTOK_CONNECT_ENABLED: "true", TIKTOK_CONNECT_ACCESS: "open-beta", ADMATE_PUBLIC_ORIGIN: "https://admate-tiktok-staging.vercel.app", ...extra }) as unknown as NodeJS.ProcessEnv;
-    const staging = env();
-    expect(tiktokAccessMode(staging)).toBe("open-beta");
-    expect(isTikTokUserAllowed(C, staging)).toBe(true);
-    // The same settings on the production address fall back to the (empty) allowlist.
-    for (const origin of ["https://www.admate.site", "https://admate.site", "https://admate-tiktok-staging.vercel.app.evil.example"]) {
-      expect(tiktokAccessMode(env({ ADMATE_PUBLIC_ORIGIN: origin }))).toBe("allowlist");
-      expect(isTikTokUserAllowed(C, env({ ADMATE_PUBLIC_ORIGIN: origin }))).toBe(false);
+  it("is only on the approved staging deployment: exact project and address, never production", async () => {
+    const { isTikTokConnectionEnabled, isTikTokUserAllowed, tiktokAccessMode, TIKTOK_BETA_PROJECT_ID, TIKTOK_BETA_PUBLIC_ORIGIN } = await import("@/lib/tiktok/config");
+    expect(TIKTOK_BETA_PROJECT_ID).toBe("prj_yi83FGB3eg7hBz9fzAkOz1StzHmX");
+    expect(TIKTOK_BETA_PUBLIC_ORIGIN).toBe("https://admate-tiktok-staging.vercel.app");
+    // As Vercel sets it for a Preview deployment of the TikTok staging dashboard.
+    const hosted = (extra: Record<string, string | undefined> = {}) =>
+      ({ VERCEL: "1", VERCEL_ENV: "preview", VERCEL_PROJECT_ID: TIKTOK_BETA_PROJECT_ID, NODE_ENV: "production", TIKTOK_CONNECT_ENABLED: "true", TIKTOK_CONNECT_ACCESS: "open-beta", ADMATE_PUBLIC_ORIGIN: TIKTOK_BETA_PUBLIC_ORIGIN, ...extra }) as unknown as NodeJS.ProcessEnv;
+    expect(tiktokAccessMode(hosted())).toBe("open-beta");
+    expect(tiktokAccessMode(hosted({ ADMATE_PUBLIC_ORIGIN: `${TIKTOK_BETA_PUBLIC_ORIGIN}/` }))).toBe("open-beta");
+    expect(isTikTokUserAllowed(C, hosted())).toBe(true);
+    // Anything else falls back to the (empty) allowlist.
+    const elsewhere: Record<string, string | undefined>[] = [
+      { ADMATE_PUBLIC_ORIGIN: "https://admate-meta-staging.vercel.app" }, // another of our vercel.app addresses
+      { ADMATE_PUBLIC_ORIGIN: "https://someone-else.vercel.app" },
+      { ADMATE_PUBLIC_ORIGIN: "https://admate-tiktok-staging.vercel.app.evil.example" },
+      { ADMATE_PUBLIC_ORIGIN: "http://admate-tiktok-staging.vercel.app" },
+      { ADMATE_PUBLIC_ORIGIN: "https://www.admate.site" },
+      { ADMATE_PUBLIC_ORIGIN: "http://localhost:3000" }, // a local address on a Vercel deployment
+      { VERCEL_PROJECT_ID: "prj_ANM9A6l5X0vkoKnqbH4BoVXEuc1J" }, // Meta staging dashboard
+      { VERCEL_PROJECT_ID: undefined },
+      { VERCEL_ENV: "development" },
+    ];
+    for (const extra of elsewhere) {
+      expect(tiktokAccessMode(hosted(extra))).toBe("allowlist");
+      expect(isTikTokUserAllowed(C, hosted(extra))).toBe(false);
     }
-    // A Vercel Production deployment: TikTok is off entirely, whatever else is set.
-    expect(isTikTokConnectionEnabled(env({ VERCEL_ENV: "production" }))).toBe(false);
-    expect(isTikTokUserAllowed(C, env({ VERCEL_ENV: "production", TIKTOK_CONNECT_ALLOWED_USER_IDS: C }))).toBe(false);
+    // Off Vercel: local development and tests on localhost only; never a local production build.
+    const local = (extra: Record<string, string>) => ({ TIKTOK_CONNECT_ENABLED: "true", TIKTOK_CONNECT_ACCESS: "open-beta", ...extra }) as unknown as NodeJS.ProcessEnv;
+    expect(tiktokAccessMode(local({ NODE_ENV: "development", ADMATE_PUBLIC_ORIGIN: "http://localhost:3000" }))).toBe("open-beta");
+    expect(tiktokAccessMode(local({ NODE_ENV: "production", ADMATE_PUBLIC_ORIGIN: "http://localhost:3000" }))).toBe("allowlist");
+    expect(tiktokAccessMode(local({ NODE_ENV: "development", ADMATE_PUBLIC_ORIGIN: TIKTOK_BETA_PUBLIC_ORIGIN }))).toBe("allowlist");
+    // A Vercel Production deployment, even of the approved project: TikTok is off entirely.
+    expect(isTikTokConnectionEnabled(hosted({ VERCEL_ENV: "production" }))).toBe(false);
+    expect(isTikTokUserAllowed(C, hosted({ VERCEL_ENV: "production", TIKTOK_CONNECT_ALLOWED_USER_IDS: C }))).toBe(false);
     await signIn("c");
     process.env.VERCEL_ENV = "production";
     const status = await import("@/app/api/tiktok/connection/route");
@@ -1556,6 +1598,95 @@ describe("TikTok self-service beta", () => {
     await signIn("c");
     const { getWorkspace } = await import("@/lib/data/workspaces");
     expect(await getWorkspace(workspaceId)).toBeNull();
+  });
+
+  it("keeps two independent testers apart: advertisers, tokens, workspaces and synced data", async () => {
+    resetReport();
+    const H_ADV = "7100000000001";
+    const I_ADV = "7200000000002";
+    tiktok.advertisersOf = { "tt-h": [{ id: H_ADV, name: "Hana Shop" }], "tt-i": [{ id: I_ADV, name: "Iris Store" }] };
+    const adv = await import("@/app/api/tiktok/advertisers/route");
+    const syncRoute = await import("@/app/api/tiktok/sync/route");
+    const status = await import("@/app/api/tiktok/connection/route");
+    const post = (body: unknown) => adv.POST(req("/api/tiktok/advertisers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+    const startSync = (advertiserId: string) => syncRoute.POST(req("/api/tiktok/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advertiserId }) }));
+    const syncStatus = async (advertiserId: string) => (await (await syncRoute.GET(req(`/api/tiktok/sync?advertiserId=${advertiserId}`))).json()).status;
+
+    // Both sign up on their own and connect their own TikTok login.
+    await signIn("h");
+    tiktok.login = "tt-h";
+    await callback((await betaStart(true)).state);
+    await signIn("i");
+    tiktok.login = "tt-i";
+    await callback((await betaStart(true)).state);
+    tiktok.login = null;
+
+    // H: sees only their advertiser, creates their account and syncs it.
+    use("h");
+    expect((await (await adv.GET()).json()).advertisers.map((a: { id: string }) => a.id)).toEqual([H_ADV]);
+    const wsH = (await (await post({ advertiserId: H_ADV, createAccount: true })).json()).workspaceId as string;
+    const w = await window();
+    tiktok.reportFn = (start, end) => simulate([end >= w.end ? w.end : end], CAMPAIGNS, 0.8).filter(() => start <= end);
+    const at = later();
+    expect((await (await import("@/lib/tiktok/sync")).syncTikTokAdvertiser(H, H_ADV, { now: () => at, sleep: noWait })).outcome).toBe("ok");
+    const hFacts = (await activeFacts(wsH)).length;
+    expect(hFacts).toBeGreaterThan(0);
+
+    // I: sees only their own advertiser; every way into H's advertiser, account or data is refused.
+    use("i");
+    const mcpBefore = tiktok.mcpTokens.length;
+    const iList = await (await adv.GET()).json();
+    expect(iList.advertisers.map((a: { id: string }) => a.id)).toEqual([I_ADV]);
+    expect(JSON.stringify(iList)).not.toContain(H_ADV);
+    expect(JSON.stringify(iList)).not.toContain(wsH);
+    expect(await (await post({ advertiserId: H_ADV, createAccount: true })).json()).toEqual({ error: "advertiser" });
+    const wsI = (await (await post({ advertiserId: I_ADV, createAccount: true })).json()).workspaceId as string;
+    expect(await (await post({ advertiserId: H_ADV, workspaceId: wsI })).json()).toEqual({ error: "advertiser" });
+    expect(await (await post({ advertiserId: I_ADV, workspaceId: wsH })).json()).toEqual({ error: "workspace" });
+    expect((await startSync(H_ADV)).status).toBe(403); // no link of I's for H's advertiser
+    expect(await syncStatus(H_ADV)).toBeNull();
+    const { getWorkspace, listWorkspaces, loadAnalysis, listImports } = await import("@/lib/data/workspaces");
+    expect(await getWorkspace(wsH)).toBeNull();
+    expect(await loadAnalysis(wsH)).toBeNull();
+    expect((await listWorkspaces()).map((x) => x.id)).not.toContain(wsH);
+    expect((await listWorkspaces()).map((x) => x.id)).toContain(wsI);
+    const iStatus = JSON.stringify(await (await status.GET()).json());
+    expect(iStatus).not.toMatch(/acc-|ref-/);
+    // Every TikTok call made for I used I's own tokens.
+    const iTokens = new Set([...tiktok.tokenLogin].filter(([, login]) => login === "tt-i").map(([t]) => `Bearer ${t}`));
+    expect(tiktok.mcpTokens.slice(mcpBefore).every((t) => iTokens.has(t))).toBe(true);
+
+    // Stored tokens: encrypted, and bound to their owner (H's can't be opened as I's).
+    const { db: d, schema, eq } = await db();
+    const rows = await d.select().from(schema.tiktokConnections).where(eq(schema.tiktokConnections.userId, H));
+    expect(JSON.stringify(rows)).not.toMatch(/acc-\d|ref-\d/);
+    const { decryptTikTokSecret } = await import("@/lib/tiktok/crypto");
+    const key = process.env.TIKTOK_CONNECT_ENCRYPTION_KEY!;
+    expect(decryptTikTokSecret(rows[0]!.refreshTokenEnc!, key, H, "refresh")).toMatch(/^ref-/);
+    expect(() => decryptTikTokSecret(rows[0]!.refreshTokenEnc!, key, I, "refresh")).toThrow();
+
+    // Forged links (tampered database rows) still can't reach H's advertiser or account:
+    // - the database itself refuses a second link into H's account (one advertiser per account);
+    await expect(d.insert(schema.tiktokAdvertiserLinks).values({ userId: I, advertiserId: H_ADV, workspaceId: wsH, currency: "KHR" })).rejects.toThrow();
+    // - a link from I's own account to H's advertiser is refused before any report is read,
+    //   because TikTok doesn't list H's advertiser for I's login.
+    await d.update(schema.tiktokAdvertiserLinks).set({ advertiserId: H_ADV }).where(eq(schema.tiktokAdvertiserLinks.userId, I));
+    const reportsBefore = tiktok.reportCalls.length;
+    const forged = later();
+    await expect((await import("@/lib/tiktok/sync")).syncTikTokAdvertiser(I, H_ADV, { now: () => forged, sleep: noWait })).rejects.toMatchObject({ code: "advertiser" });
+    expect(tiktok.reportCalls.length).toBe(reportsBefore);
+    expect((await activeFacts(wsI)).length).toBe(0);
+    await d.update(schema.tiktokAdvertiserLinks).set({ advertiserId: I_ADV }).where(eq(schema.tiktokAdvertiserLinks.userId, I));
+
+    // I disconnects: H's connection, account and synced data are untouched.
+    const { DELETE } = status;
+    expect((await DELETE(req("/api/tiktok/connection", { method: "DELETE" }))).status).toBe(200);
+    expect(await d.select().from(schema.tiktokConnections).where(eq(schema.tiktokConnections.userId, I))).toHaveLength(0);
+    expect(await d.select().from(schema.tiktokConnections).where(eq(schema.tiktokConnections.userId, H))).toHaveLength(1);
+    expect((await activeFacts(wsH)).length).toBe(hFacts);
+    use("h");
+    expect((await listImports(wsH)).length).toBeGreaterThan(0);
+    tiktok.advertisersOf = {};
   });
 
   it("limits Sync Now per person (6 an hour), before any TikTok call", async () => {
