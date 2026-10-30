@@ -3,10 +3,13 @@
 //
 //   STAGING_DATABASE_URL=<hidden> node scripts/staging-migrate.mjs --endpoint ep-…   (apply)
 //   STAGING_DATABASE_URL=<hidden> node scripts/staging-migrate.mjs --endpoint ep-… --check
+//   STAGING_DATABASE_URL=<hidden> node scripts/staging-migrate.mjs --endpoint ep-… --upgrade  (pending migrations only)
 //
 // Refuses unless the connection string points at exactly the expected Neon
 // compute endpoint (direct, not the pooler) and, when applying, the database is
-// empty. Prints only the endpoint ID, database name, migration count and table
+// empty. --upgrade instead requires a database this script already set up (it
+// has the migrations record) and applies only the migrations it hasn't got yet.
+// Drizzle applies them in one transaction: all or nothing. Prints only the endpoint ID, database name, migration count and table
 // names: never the connection string, user or password.
 import path from "node:path";
 import pg from "pg";
@@ -32,6 +35,7 @@ async function main() {
   const args = process.argv.slice(2);
   const endpoint = args[args.indexOf("--endpoint") + 1];
   const checkOnly = args.includes("--check");
+  const upgrade = args.includes("--upgrade");
   const raw = process.env.STAGING_DATABASE_URL;
   const problem = checkTarget(raw, args.includes("--endpoint") ? endpoint : undefined);
   if (problem) {
@@ -45,7 +49,17 @@ async function main() {
     const { rows } = await pool.query("select current_database() as db");
     console.log(`[staging-migrate] Connected to endpoint ${endpoint}, database ${rows[0].db}.`);
     const before = await tables();
-    if (!checkOnly) {
+    const recorded = async () =>
+      (await tables()).includes("drizzle.__drizzle_migrations") ? (await pool.query("select count(*)::int as n from drizzle.__drizzle_migrations")).rows[0].n : 0;
+    if (upgrade) {
+      const had = await recorded();
+      if (!had) {
+        console.error("[staging-migrate] Refused: --upgrade needs a database set up by this script (no migrations record found). Nothing was changed.");
+        process.exit(3);
+      }
+      await migrate(drizzle({ client: pool }), { migrationsFolder: path.join(process.cwd(), "drizzle") });
+      console.log(`[staging-migrate] Upgrade: ${(await recorded()) - had} new migration(s) applied (had ${had}).`);
+    } else if (!checkOnly) {
       if (before.length) {
         console.error(`[staging-migrate] Refused: the database is not empty (${before.length} tables). Nothing was changed.`);
         process.exit(3);

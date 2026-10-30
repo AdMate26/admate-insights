@@ -706,7 +706,8 @@ projects.
 
 **Code (branch `codex/tiktok-self-service-beta`, commit 602331f; PR #39 untouched):**
 - `TIKTOK_CONNECT_ACCESS=open-beta` replaces `TIKTOK_CONNECT_ALLOWED_USER_IDS`.
-  It works only on a `*.vercel.app` or localhost public origin.
+  It works only on the exact approved deployment (see §20; tightened from
+  "any `*.vercel.app`").
 - TikTok is off on every Vercel Production deployment, whatever is set.
 - On staging with `ADMATE_ACCESS=open`, the session bridge admits only emails
   that Supabase confirmed.
@@ -789,3 +790,85 @@ TikTok's metadata (checked 2026-10-30) lists registration at
     account, Sync now, analysis.
   - Each account sees only its own data.
   - The limits and switches answer as specified.
+
+## 20. Session hand-over, G7, and the cost plan (2026-10-30)
+
+This session took over the paused beta session's work (worktree
+`admate-insights-tiktok-beta`, branch `codex/tiktok-self-service-beta`).
+
+**Open beta, only on the exact staging deployment** (commit 5c78425): it needs
+all of the following:
+- Vercel `VERCEL_ENV=preview`
+- `VERCEL_PROJECT_ID` = `prj_yi83FGB3eg7hBz9fzAkOz1StzHmX`, i.e.
+  `admate-tiktok-dashboard-staging` (verified)
+- `ADMATE_PUBLIC_ORIGIN` = `https://admate-tiktok-staging.vercel.app`
+
+Off Vercel, it works only for localhost development or tests. Every other
+`*.vercel.app` address, other project, admate.site or local production build
+falls back to the empty allowlist. Vercel Production keeps TikTok off
+entirely. The two-tester isolation test covers:
+- advertisers, tokens, accounts, sync status and synced data
+- forged links
+- one tester disconnecting
+
+**Checks on the beta branch:** 194 tests passed (3 skipped); tsc, eslint (0
+errors), the integration listing, `next build` and the end-to-end proxy test all
+passed.
+
+**G7: done, once** (by the paused session at 07:55 UTC, after approval). HTTP
+201 for client name `AdMate (staging)`:
+- callback exactly
+  `https://admate-tiktok-staging.vercel.app/app/api/tiktok/oauth/callback`
+- public client (`none`), grants `authorization_code` and `refresh_token`
+- client ID ending `…bde4`, kept for G6b (`TIKTOK_MCP_CLIENT_ID`)
+
+Not registered again. The local client and the local authorization are
+unchanged.
+
+**Migration 0016 on staging:** `scripts/staging-migrate.mjs --upgrade`, with the
+same endpoint guard. It runs only on a database this script set up, and applies
+only the pending migrations, in one transaction. A local proof took 16
+migrations to 17 (`0016_tiktok_beta_events`). Afterwards, re-run
+`staging-runtime-role.mjs` so `admate_runtime` gets the new table and sequence.
+
+### Lowest-cost compliant setup for the external beta
+
+| Service | Plan | Base per month | Possible extra charges |
+| --- | --- | --- | --- |
+| Supabase | **New organization "AdMate Staging" on Pro.** The existing "AdMate" organization and production stay on Free. | **$25** (includes $10 compute credit, which covers the one Micro project) | None while the spend cap stays on: quotas are enforced instead of billed. Another project in that organization would add ~$10. |
+| Vercel | **Upgrade the existing `ad-mate` team to Pro.** Hobby is non-commercial only, and that applies to production too. One upgrade covers every project; a second team would add another $20 and leave production non-compliant. | **$20** (1 deploying seat, $20 usage credit) | Usage beyond the $20 credit is billed on demand (a small beta should stay within it). Extra deploying seats are $20 each; viewer seats are free. Set a spend alert (e.g. $30); avoid auto-pause, which would pause production too. |
+| Neon | Free | $0 | None: at its limits (100 compute-hours, 1 GB) it suspends rather than bills |
+| Resend | Free (existing account, new staging-only key) | $0 | None. The 100/day quota is shared with production; the 20/hour staging limit protects production logins. Upgrade only if the beta grows. |
+| TikTok, GitHub, Cloud Run, PostHog | No change | $0 | none |
+
+**Recurring base: about $45 a month plus tax** (Supabase $25 + Vercel $20).
+
+## 21. Path to the first external tester
+
+1. **Free, ready now:**
+   - all code
+   - the staging database (G4)
+   - the Vercel projects (G6a)
+   - the TikTok client (G7)
+2. **Paid activation (needs your approval):** Vercel team to Pro ($20), and the
+   Supabase "AdMate Staging" organization on Pro ($25).
+3. **G3 (you in the browser, guided step by step; about 20 minutes):**
+   - create the `admate-staging` project
+   - run the `profiles` SQL
+   - Auth with sign-ups **on** for self-service, confirmed email, 6-digit codes
+   - URLs
+   - custom email with a new staging-only Resend key
+4. **G6b (guided; secrets go in without being displayed):**
+   - Neon: `--upgrade` (0016), then re-grant
+   - enable login on `admate_runtime` with a fresh password, written straight
+     into `DATABASE_URL`
+   - the Vercel Preview settings in §19
+   - the TikTok client ID
+   - a new encryption key
+   - the bypass secret
+5. **G8 (approval):**
+   - deploy a clean export of the approved commit to both projects (Preview)
+   - alias the two addresses
+   - safety checks with two test accounts through the whole journey
+6. **Share the link** with the first external tester: sign up, connect TikTok,
+   create an account, Sync now, see the analysis. No approval step.
