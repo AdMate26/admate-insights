@@ -690,3 +690,102 @@ Git connection:
 | G6b: credentials into Vercel (Preview-only, Sensitive). This includes enabling login on `admate_runtime` with a fresh password that goes straight into `DATABASE_URL`, plus the bypass secret and a new encryption key. | Right before G8 | $0 |
 | G8: first staging deployment (clean export, command line) and safety checks | Awaiting approval | $0 |
 | G9 / G10: tester sessions; then keep or delete | Later | none |
+
+## 19. Self-service beta (2026-10-30): prepared, not activated
+
+**Goal changed:** a self-service beta, not invitation-only. A tester opens the
+staging site, signs up with an email code, connects their own TikTok Ads
+account, creates a matching-currency account, syncs and sees their analysis,
+with no allowlist and no approval step.
+
+**G6a result:** projects `admate-tiktok-staging` (`prj_BSpmlxv7HFB4P8fp7d1mPLj5vDKn`)
+and `admate-tiktok-dashboard-staging` (`prj_yi83FGB3eg7hBz9fzAkOz1StzHmX`). Both
+use `sin1`, Fluid compute and Node 24, have no Git link, no deployments and no
+env vars. Both `vercel.app` addresses are attached and verified on their own
+projects.
+
+**Code (branch `codex/tiktok-self-service-beta`, commit 602331f; PR #39 untouched):**
+- `TIKTOK_CONNECT_ACCESS=open-beta` replaces `TIKTOK_CONNECT_ALLOWED_USER_IDS`.
+  It works only on a `*.vercel.app` or localhost public origin.
+- TikTok is off on every Vercel Production deployment, whatever is set.
+- On staging with `ADMATE_ACCESS=open`, the session bridge admits only emails
+  that Supabase confirmed.
+- A consent notice must be accepted before authorization starts.
+- Per person: 5 authorization starts an hour, and 6 syncs an hour or 24 a day
+  (on top of the one-minute cooldown per account).
+- "Create a <currency> account for this advertiser" makes a new account in the
+  advertiser's currency and links it in one step.
+- New migration **0016** (`tiktok_beta_events`).
+
+**Switches:**
+
+| To stop | Instant | With a redeploy (~1–2 min) |
+| --- | --- | --- |
+| New registrations | Supabase Auth: "Allow new users to sign up" off | `ADMATE_NEW_SIGNUPS=closed`, or a cap with `ADMATE_MAX_USERS` |
+| New TikTok connections | | `TIKTOK_BETA_CONNECTIONS=closed`, or a cap with `TIKTOK_BETA_MAX_CONNECTIONS` (default 25) |
+| All TikTok | | `TIKTOK_CONNECT_ENABLED=false` (every route 404) |
+| Everything | Vercel: remove the two aliases or pause the projects | |
+
+**G7 (needs approval right before sending):** the request in §4, unchanged.
+The callback is
+`https://admate-tiktok-staging.vercel.app/app/api/tiktok/oauth/callback`,
+which is `ADMATE_PUBLIC_ORIGIN` plus the dashboard route (`lib/tiktok/config.ts`).
+TikTok's metadata (checked 2026-10-30) lists registration at
+`…/tt-ads-mcp-layer/oauth/register`, public clients only (`none`), and S256.
+
+**G2/G3 for self-registration:**
+1. **Billing (you, ~$25/month + tax).** In the Supabase dashboard:
+   - New organization → name "AdMate Staging" → plan **Pro** → add your card.
+   - Keep the **Spend Cap on**, so there are no usage overages.
+   - The "AdMate" organization and production stay on Free.
+2. **Project.** `admate-staging` in Southeast Asia (Singapore), compute Micro
+   (covered by the $10 credit). Apply only the `profiles` migration.
+3. **Auth for self-registration:**
+   - Email provider on.
+   - "Allow new users to sign up" **on**: the instant kill switch.
+   - "Confirm email" on.
+   - Email OTP length **6**, because the website expects 6 digits.
+   - The Magic Link template contains `{{ .Token }}`.
+   - Google and anonymous sign-ins off.
+   - Site URL `https://admate-tiktok-staging.vercel.app`; redirect URL
+     `https://admate-tiktok-staging.vercel.app/auth/callback`.
+   - Rate limits: emails 20 an hour, sign-ups/sign-ins and OTP checks at the
+     defaults or lower.
+   - Optional later: CAPTCHA (Turnstile), which needs a small website change.
+4. **Resend:**
+   - A new API key "admate-staging", sending access only, domain `admate.site`.
+   - Supabase custom SMTP: `smtp.resend.com`, port 465, user `resend`,
+     password = that key, sender `AdMate (staging) <staging@admate.site>`.
+   - The Free quota (100 a day) is **shared with production**; the 20/hour
+     limit protects it.
+
+**G6b/G8 for the first deployment:**
+- **Website:**
+  - Vercel Authentication **off**.
+  - Preview env: `VITE_SUPABASE_URL`, `SUPABASE_URL`,
+    `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_PUBLISHABLE_KEY` (staging
+    Supabase).
+  - `ADMATE_DASHBOARD_ORIGIN`, plus `ADMATE_DASHBOARD_BYPASS_SECRET`
+    (Sensitive).
+- **Dashboard:**
+  - Vercel Authentication on, plus Protection Bypass for Automation.
+  - Preview env: `DATABASE_URL` (runtime role, pooled, Sensitive),
+    `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `ADMATE_PUBLIC_ORIGIN`,
+    `ADMATE_ACCESS=open`, `TIKTOK_CONNECT_ENABLED=true`,
+    `TIKTOK_CONNECT_ACCESS=open-beta`, `TIKTOK_MCP_CLIENT_ID`,
+    `TIKTOK_CONNECT_ENCRYPTION_KEY` (new, Sensitive), `ADMATE_MAX_USERS=50`.
+  - **No** `TIKTOK_CONNECT_ALLOWED_USER_IDS`.
+- **Neon:**
+  - Apply migration 0016 with the guarded script.
+  - Re-run the runtime-role grant script, which covers the new table and
+    sequence.
+  - Then enable login on `admate_runtime` with a fresh password.
+- **Deploy:** a clean `git archive` of the approved commit → `vercel deploy`
+  (Preview) → `vercel alias set` to both addresses.
+- **Checks before giving out the link:**
+  - Anonymous requests: the website returns 200; the dashboard address
+    redirects to Vercel login; `/app` through the website works.
+  - With two test accounts, the full journey: sign-up code, connect, create
+    account, Sync now, analysis.
+  - Each account sees only its own data.
+  - The limits and switches answer as specified.
