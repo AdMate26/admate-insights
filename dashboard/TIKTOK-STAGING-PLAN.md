@@ -639,3 +639,54 @@ answer as before.
 - **Future migrations** that add tables need the same grants, re-applied
   (`GRANT … ON ALL TABLES`). The script is idempotent; run it again after
   migrating.
+
+## 17. G4 COMPLETE (2026-10-30)
+
+| Step | Result |
+| --- | --- |
+| 1. Neon project | `admate-tiktok-staging` (`patient-art-82722161`), Singapore, Postgres 17, Free, AdMate organization |
+| 2. Migrations | 16 migrations, 30 application tables on `main` (`br-small-mouse-a1y6ey7n`, endpoint `ep-still-cell-a1i5u224`). Guarded script; verified by you. |
+| 3. Runtime role | `admate_runtime`: no login, no password, rows only on 30/30 tables and 6/6 sequences, no admin or migration rights. "OK: restricted as intended." |
+| 4a. Disposable branch | `test-run` (`br-dry-grass-a12933g7`, endpoint `ep-polished-field-a1zwbq15`), from `main` |
+| 4b. Real-database checks | On `test-run` only. Restricted-user sign-in: all allowed and refused checks passed, and login was switched off again. TikTok test file against real Postgres: **40/40 passed**, including the concurrency test with real simultaneous connections. Results as reported by you. |
+| Clean-up | `test-run` deleted after an ID, name, parent and project check. `main` is the only branch and is unchanged; the other Neon projects were untouched. |
+
+## 18. Remaining gates and the revised deployment approach
+
+**Found during clean-up:**
+- `admate-meta-staging` and `admate-meta-dashboard-staging` are **not connected
+  to GitHub**; they're deployed from the command line.
+- Only the two production projects build branch previews, and those previews no
+  longer carry secrets (G0).
+
+The TikTok staging projects can follow the same pattern, which is safer than a
+Git connection:
+- **No automatic builds.** No project builds every push, so the Ignored Build
+  Step isn't needed.
+- **No surprise first deployment.** Connecting a repository to a new project
+  immediately deploys `main` as Production; this avoids that.
+- **A clean upload.** Each staging deployment is made from a **clean export of the
+  approved commit** (`git archive`), so local files can never be uploaded:
+  `.env.local`, the local database in `.data/`, `.vercel`.
+- **Stable addresses.** `admate-tiktok-staging.vercel.app` and
+  `admate-tiktok-dashboard-staging.vercel.app` are added to the projects as
+  domains, then pointed at each new staging deployment (`vercel alias set`, as
+  Meta staging does).
+- **G5 (pushing `staging/tiktok`) becomes optional.** It's useful for review,
+  but not needed to deploy.
+
+**Gates:**
+
+| Gate | Status | Cost |
+| --- | --- | --- |
+| G0 / G0b | Done | $0 |
+| G1 | Approved in principle (option A, names) | $0 |
+| G4 | **Done** | $0 |
+| G6a (new, free): create both Vercel projects **without deploying and without a Git link**, set root directory, Node, Singapore region, Fluid compute and protection, and reserve the two addresses as project domains | Awaiting approval | $0 |
+| G7: register the staging TikTok client (after G6a confirms the addresses) | Awaiting approval | $0 |
+| Testers: choose 2–3 people; at least one with TikTok spend in the last 30 days | Your action | $0 |
+| G2: Supabase "AdMate Staging" on Pro | Deferred until testers are confirmed | ~$25/month |
+| G3: staging Auth, the `profiles` table, staging-only Resend key, invited testers | After G2 | $0 |
+| G6b: credentials into Vercel (Preview-only, Sensitive). This includes enabling login on `admate_runtime` with a fresh password that goes straight into `DATABASE_URL`, plus the bypass secret and a new encryption key. | Right before G8 | $0 |
+| G8: first staging deployment (clean export, command line) and safety checks | Awaiting approval | $0 |
+| G9 / G10: tester sessions; then keep or delete | Later | none |
