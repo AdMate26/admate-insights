@@ -32,7 +32,7 @@ const IC: Record<MenuIcon, string> = {
   settings: "M2.5 4.5h11 M2.5 11.5h11 M5.5 2.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z M10.5 9.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z",
 };
 
-export function Side({ counts: initial, userId }: { counts: { actions: number; alerts: number }; userId: string }) {
+export function Side({ counts: initial, userId, tiktok = false }: { counts: { actions: number; alerts: number }; userId: string; tiktok?: boolean }) {
   const { ws, level, accounts, isAdv, email, readOnly } = useV5();
   const path = usePathname();
   const search = useSearchParams();
@@ -122,6 +122,12 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
             <Link role="menuitem" href="/accounts/new" className="popitem">
               <b>+ Add an ad account</b>
             </Link>
+            {tiktok && (
+              <Link role="menuitem" href="/connect/tiktok" className="popitem">
+                <b>Connect TikTok Ads</b>
+                <small>Import your campaigns read-only</small>
+              </Link>
+            )}
             <hr />
             <form action={signOut} onSubmit={resetAnalytics}>
               <button type="submit" role="menuitem" style={{ width: "100%" }}>

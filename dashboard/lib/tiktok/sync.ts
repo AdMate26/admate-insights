@@ -11,6 +11,7 @@ import type { TikTokMcpServer } from "./config";
 import { TikTokMcp, TikTokMcpError } from "./mcp";
 import { fetchTikTokCampaignDaily, normalizeTikTokReport, syncWindow, TIKTOK_MEASURES, TIKTOK_UNAVAILABLE, TikTokReportError } from "./report";
 import { checkTikTokTarget, sameCurrency, tikTokAccessToken, TikTokConnectError, type Deps } from "./service";
+import { betaSyncRefusal, recordBetaEvent } from "./beta";
 import { acquireSyncLock, finishSync, holdSyncLock, listLinks, listSyncs, ownedWorkspace, readConnection, readSync, SYNC_BUDGET_MS } from "./store";
 
 // Sync Now: reads one linked advertiser's last 30 complete days from TikTok
@@ -78,6 +79,9 @@ export async function startTikTokSync(
   if (!connection) throw new TikTokConnectError("not_connected");
   const clock = deps.now ?? (() => new Date());
   const now = clock();
+  // Self-service beta: per-person sync limits (lib/tiktok/beta.ts), before any TikTok call.
+  const refusal = await betaSyncRefusal(userId, now);
+  if (refusal) throw new TikTokConnectError(refusal);
 
   // Re-checked live: still this person's real account, still authorized, same currency.
   const advertiser = await checkTikTokTarget(userId, advertiserId, link.workspaceId, deps);
@@ -86,6 +90,7 @@ export async function startTikTokSync(
 
   const lockToken = await acquireSyncLock(userId, advertiserId, link.workspaceId, now);
   if (!lockToken) throw new TikTokConnectError("busy");
+  await recordBetaEvent(userId, "sync", now);
   const finish = (result: Parameters<typeof finishSync>[3]) => finishSync(userId, link.workspaceId, lockToken, result, clock());
   const deadline = now.getTime() + SYNC_BUDGET_MS;
   const previous = await readSync(userId, link.workspaceId);

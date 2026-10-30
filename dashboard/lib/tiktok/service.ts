@@ -1,7 +1,9 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { tiktokConnections } from "../db/schema";
+import { tiktokConnections, workspaces } from "../db/schema";
+import { checkAccountLimit } from "../integration/limits";
 import { readTikTokEncryptionKey, readTikTokOAuthConfig, type TikTokMcpServer } from "./config";
 import { createTikTokPKCE, decryptTikTokSecret, encryptTikTokSecret } from "./crypto";
 import { listAuthorizedAdvertisers, TikTokMcp, type TikTokAdvertiser } from "./mcp";
@@ -14,6 +16,7 @@ import {
   TikTokOAuthError,
 } from "./oauth";
 import { consumeAttempt, deleteConnection, listLinks, ownedWorkspace, readConnection, saveAttempt, saveConnection, saveLink } from "./store";
+import { betaConnectRefusal, isOpenBeta, recordBetaEvent } from "./beta";
 
 // TikTok connection lifecycle for one signed-in person. Tokens are decrypted
 // only here, only for that person, and never returned to the browser or logged.
@@ -32,7 +35,14 @@ export type TikTokConnectErrorCode =
   | "import_limit" // the account already holds the maximum number of reports
   | "report" // TikTok's report was unusable (format, dates, size or time zone)
   | "timeout" // the sync ran out of time; nothing was written
-  | "storage"; // AdMate couldn't save; the whole sync was rolled back
+  | "storage" // AdMate couldn't save; the whole sync was rolled back
+  // Self-service beta only (lib/tiktok/beta.ts):
+  | "consent" // the beta notice wasn't accepted
+  | "connect_closed" // new connections are switched off
+  | "connect_limit" // too many authorization starts in the last hour
+  | "beta_full" // the beta's connection places are taken
+  | "sync_limit" // too many syncs in the last hour or day
+  | "account_limit"; // the person already has the maximum number of ad accounts
 
 export class TikTokConnectError extends Error {
   constructor(public readonly code: TikTokConnectErrorCode) {
@@ -51,13 +61,22 @@ export interface Deps {
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const clock = (deps: Deps) => (deps.now ?? (() => new Date()))();
 
-/** Begins authorization: returns TikTok's consent URL for this person and browser session. */
-export async function startTikTokConnection(userId: string, sessionToken: string, deps: Deps = {}): Promise<string> {
+/**
+ * Begins authorization: returns TikTok's consent URL for this person and browser session.
+ * In the self-service beta the person must have accepted the beta notice, and the
+ * beta's switch and limits apply (lib/tiktok/beta.ts).
+ */
+export async function startTikTokConnection(userId: string, sessionToken: string, deps: Deps & { consent?: boolean } = {}): Promise<string> {
   const config = readTikTokOAuthConfig();
+  const now = clock(deps);
+  if (isOpenBeta() && deps.consent !== true) throw new TikTokConnectError("consent");
+  const refusal = await betaConnectRefusal(userId, now);
+  if (refusal) throw new TikTokConnectError(refusal);
   const metadata = await fetchTikTokOAuthMetadata(config.server, deps.fetcher);
   const pkce = createTikTokPKCE();
   const verifierEnc = encryptTikTokSecret(pkce.verifier, readTikTokEncryptionKey(), userId, "verifier");
-  await saveAttempt(userId, sessionToken, { stateHash: pkce.stateHash, verifierEnc, server: config.server }, clock(deps));
+  await saveAttempt(userId, sessionToken, { stateHash: pkce.stateHash, verifierEnc, server: config.server }, now);
+  await recordBetaEvent(userId, "connect", now);
   return buildTikTokAuthorizationUrl({ metadata, config, state: pkce.state, challenge: pkce.challenge });
 }
 
@@ -241,3 +260,22 @@ export async function linkTikTokAdvertiser(userId: string, advertiserId: string,
 }
 
 export { listLinks as tikTokAdvertiserLinks };
+
+/**
+ * Creates a new ad account of this person's own for one of their authorized
+ * advertisers, in the advertiser's currency, and links the two. For people with
+ * no matching account yet (a new beta tester has only the sample). The account
+ * limit applies; the advertiser is re-read live from TikTok with their own token.
+ */
+export async function createTikTokAccount(userId: string, advertiserId: string, deps: Deps = {}): Promise<{ workspaceId: string }> {
+  const advertiser = (await tikTokAdvertisers(userId, deps)).find((a) => a.id === advertiserId);
+  if (!advertiser) throw new TikTokConnectError("advertiser");
+  const currency = advertiser.currency?.trim().toUpperCase() ?? "";
+  if (!/^[A-Z]{3}$/.test(currency)) throw new TikTokConnectError("currency");
+  if (await checkAccountLimit(userId)) throw new TikTokConnectError("account_limit");
+  const workspaceId = randomUUID();
+  const db = await getDb();
+  await db.insert(workspaces).values({ id: workspaceId, ownerId: userId, name: (advertiser.name.trim() || "TikTok advertiser").slice(0, 120), currency });
+  await saveLink(userId, { advertiserId, workspaceId, advertiserName: advertiser.name, currency: advertiser.currency, timezone: advertiser.timezone });
+  return { workspaceId };
+}

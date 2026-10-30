@@ -515,3 +515,17 @@ export const tiktokSyncImports = pgTable(
   },
   (t) => [index("tiktok_sync_imports_ws_idx").on(t.workspaceId, t.advertiserId)],
 );
+
+// AdMate integration: the TikTok beta's per-person rate limits (lib/tiktok/beta.ts).
+// One row each time someone starts a TikTok authorization or a sync: who, what
+// and when, nothing from TikTok. A person's rows older than a day are pruned.
+export const tiktokBetaEvents = pgTable(
+  "tiktok_beta_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // connect | sync
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("tiktok_beta_events_user_idx").on(t.userId, t.kind, t.createdAt)],
+);

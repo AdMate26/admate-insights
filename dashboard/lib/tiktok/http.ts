@@ -7,8 +7,9 @@ import { isTikTokConnectionEnabled, isTikTokUserAllowed } from "./config";
 import { TikTokConnectError, type TikTokConnectErrorCode } from "./service";
 
 // Request guard for every TikTok route: off unless enabled (404), signed in
-// with a real session (401; demo visitors never), on the tester allowlist (403),
-// and for changes, sent from AdMate's own site (403).
+// with a real session (401; demo visitors never), allowed to use TikTok (403:
+// the tester allowlist, or anyone signed in during the staging open beta), and
+// for changes, sent from AdMate's own site (403).
 
 export const NO_STORE = { "cache-control": "private, no-store", "referrer-policy": "no-referrer" };
 
@@ -46,6 +47,12 @@ const STATUS: Record<TikTokConnectErrorCode, number> = {
   report: 502,
   timeout: 504,
   storage: 500,
+  consent: 400,
+  connect_closed: 403,
+  connect_limit: 429,
+  beta_full: 403,
+  sync_limit: 429,
+  account_limit: 409,
 };
 
 /** A fixed error code for the browser; never provider text, tokens or stack traces. */

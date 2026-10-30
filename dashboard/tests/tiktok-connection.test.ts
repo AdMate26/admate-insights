@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -35,10 +35,21 @@ const SERVER = "https://business-api.tiktok.com/open_mcp/tt-ads-mcp-layer";
 const A = "aaaaaaaa-1111-4111-8111-111111111111";
 const B = "bbbbbbbb-2222-4222-8222-222222222222";
 const C = "cccccccc-3333-4333-8333-333333333333"; // signed in, not on the tester allowlist
-const PEOPLE: Record<string, { id: string; email: string }> = {
-  "a.jwt.sig": { id: A, email: "a@example.test" },
-  "b.jwt.sig": { id: B, email: "b@example.test" },
-  "c.jwt.sig": { id: C, email: "c@example.test" },
+// Self-service beta testers (not on any allowlist); D's email was never confirmed.
+const D = "dddddddd-4444-4444-8444-444444444444";
+const E = "eeeeeeee-5555-4555-8555-555555555555";
+const F = "ffffffff-6666-4666-8666-666666666666";
+const G = "99999999-7777-4777-8777-777777777777";
+// As Supabase Auth answers /auth/v1/user: email codes and Google set email_confirmed_at.
+const confirmed = "2026-10-01T00:00:00Z";
+const PEOPLE: Record<string, { id: string; email: string; email_confirmed_at?: string | null }> = {
+  "a.jwt.sig": { id: A, email: "a@example.test", email_confirmed_at: confirmed },
+  "b.jwt.sig": { id: B, email: "b@example.test", email_confirmed_at: confirmed },
+  "c.jwt.sig": { id: C, email: "c@example.test", email_confirmed_at: confirmed },
+  "d.jwt.sig": { id: D, email: "d@example.test", email_confirmed_at: null },
+  "e.jwt.sig": { id: E, email: "e@example.test", email_confirmed_at: confirmed },
+  "f.jwt.sig": { id: F, email: "f@example.test", email_confirmed_at: confirmed },
+  "g.jwt.sig": { id: G, email: "g@example.test", email_confirmed_at: confirmed },
 };
 const ADVERTISER = "7000000000001";
 
@@ -151,7 +162,7 @@ async function fakeFetch(input: string | URL | Request, init?: RequestInit): Pro
 
 // ---- helpers ---------------------------------------------------------------
 const browsers: Record<string, typeof jar> = {};
-async function signIn(person: "a" | "b" | "c", browser: string = person) {
+async function signIn(person: "a" | "b" | "c" | "e" | "f" | "g", browser: string = person) {
   jar = browsers[browser] ?? new Map();
   browsers[browser] = jar;
   const { POST } = await import("@/app/api/session/route");
@@ -1431,5 +1442,142 @@ describe("Sync Now when the background run is cut off", () => {
     const job = await startTikTokSync(A, ADVERTISER, { now: () => again, sleep: async () => {} });
     expect((await job.run()).outcome).toBe("ok");
     expect(await statusAt(SYNC_LOCK_MS + 3_000)).toMatchObject({ running: false, interrupted: false, outcome: "ok" });
+  });
+});
+
+// ---- Self-service staging beta (lib/tiktok/beta.ts) --------------------------
+// No allowlist: anyone signed in with a confirmed email may connect, with a
+// consent notice, switches and per-person limits. Never on production.
+describe("TikTok self-service beta", () => {
+  const BETA_ENV = ["TIKTOK_CONNECT_ACCESS", "TIKTOK_BETA_CONNECTIONS", "TIKTOK_BETA_MAX_CONNECTIONS", "ADMATE_NEW_SIGNUPS", "ADMATE_MAX_USERS", "VERCEL_ENV"];
+  beforeEach(() => {
+    process.env.TIKTOK_CONNECT_ACCESS = "open-beta";
+    delete process.env.TIKTOK_CONNECT_ALLOWED_USER_IDS; // nobody on an allowlist
+  });
+  afterEach(() => BETA_ENV.forEach((k) => delete process.env[k]));
+
+  const bridge = async (token: string) => {
+    jar = new Map();
+    const { POST } = await import("@/app/api/session/route");
+    return POST(new Request(`${ORIGIN}/app/api/session`, { method: "POST", headers: { origin: ORIGIN, "sec-fetch-site": "same-origin", authorization: `Bearer ${token}` } }));
+  };
+  const betaStart = async (consent: boolean | undefined) => {
+    const { POST } = await import("@/app/api/tiktok/oauth/start/route");
+    const res = await POST(req("/api/tiktok/oauth/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ consent }) }));
+    if (res.status !== 200) return { status: res.status, error: ((await res.json().catch(() => ({}))) as { error?: string }).error ?? null, state: "" };
+    const url = new URL((await res.json()).url);
+    const state = url.searchParams.get("state")!;
+    tiktok.challenges.set(state, url.searchParams.get("code_challenge")!);
+    return { status: 200, error: null, state };
+  };
+
+  it("is only a staging mode: never on Vercel Production, never on admate.site", async () => {
+    const { isTikTokConnectionEnabled, isTikTokUserAllowed, tiktokAccessMode } = await import("@/lib/tiktok/config");
+    const env = (extra: Record<string, string> = {}) => ({ TIKTOK_CONNECT_ENABLED: "true", TIKTOK_CONNECT_ACCESS: "open-beta", ADMATE_PUBLIC_ORIGIN: "https://admate-tiktok-staging.vercel.app", ...extra }) as unknown as NodeJS.ProcessEnv;
+    const staging = env();
+    expect(tiktokAccessMode(staging)).toBe("open-beta");
+    expect(isTikTokUserAllowed(C, staging)).toBe(true);
+    // The same settings on the production address fall back to the (empty) allowlist.
+    for (const origin of ["https://www.admate.site", "https://admate.site", "https://admate-tiktok-staging.vercel.app.evil.example"]) {
+      expect(tiktokAccessMode(env({ ADMATE_PUBLIC_ORIGIN: origin }))).toBe("allowlist");
+      expect(isTikTokUserAllowed(C, env({ ADMATE_PUBLIC_ORIGIN: origin }))).toBe(false);
+    }
+    // A Vercel Production deployment: TikTok is off entirely, whatever else is set.
+    expect(isTikTokConnectionEnabled(env({ VERCEL_ENV: "production" }))).toBe(false);
+    expect(isTikTokUserAllowed(C, env({ VERCEL_ENV: "production", TIKTOK_CONNECT_ALLOWED_USER_IDS: C }))).toBe(false);
+    await signIn("c");
+    process.env.VERCEL_ENV = "production";
+    const status = await import("@/app/api/tiktok/connection/route");
+    expect((await status.GET()).status).toBe(404);
+    expect((await betaStart(true)).status).toBe(404);
+  });
+
+  it("admits only confirmed emails, and the sign-up switches stop new people but not existing ones", async () => {
+    expect(await (await bridge("d.jwt.sig")).json()).toEqual({ error: "email_unverified" });
+    expect((await bridge("a.jwt.sig")).status).toBe(200); // A is known from here on
+    process.env.ADMATE_NEW_SIGNUPS = "closed";
+    const closed = await bridge("f.jwt.sig");
+    expect(closed.status).toBe(403);
+    expect(await closed.json()).toEqual({ error: "signups_closed" });
+    expect((await bridge("a.jwt.sig")).status).toBe(200); // existing person
+    delete process.env.ADMATE_NEW_SIGNUPS;
+    process.env.ADMATE_MAX_USERS = "1";
+    expect((await bridge("f.jwt.sig")).status).toBe(403);
+    delete process.env.ADMATE_MAX_USERS;
+    expect((await bridge("f.jwt.sig")).status).toBe(200);
+  });
+
+  it("lets a self-registered person connect without an allowlist, only after accepting the notice", async () => {
+    await signIn("c");
+    expect(await betaStart(undefined)).toMatchObject({ status: 400, error: "consent" });
+    expect(await betaStart(false)).toMatchObject({ status: 400, error: "consent" });
+    const { state } = await betaStart(true);
+    expect(await callback(state)).toEqual({ status: 303, result: "connected" });
+    const status = await import("@/app/api/tiktok/connection/route");
+    expect(await (await status.GET()).json()).toMatchObject({ connected: true });
+    // Outside the beta the same person is refused again (no allowlist entry).
+    delete process.env.TIKTOK_CONNECT_ACCESS;
+    expect((await status.GET()).status).toBe(403);
+  });
+
+  it("limits authorization starts per person, can pause new connections, and caps the beta's places", async () => {
+    await signIn("e");
+    for (let i = 0; i < 5; i++) expect((await betaStart(true)).status).toBe(200);
+    expect(await betaStart(true)).toMatchObject({ status: 429, error: "connect_limit" });
+    await signIn("g");
+    process.env.TIKTOK_BETA_CONNECTIONS = "closed";
+    expect(await betaStart(true)).toMatchObject({ status: 403, error: "connect_closed" });
+    delete process.env.TIKTOK_BETA_CONNECTIONS;
+    process.env.TIKTOK_BETA_MAX_CONNECTIONS = "0";
+    expect(await betaStart(true)).toMatchObject({ status: 403, error: "beta_full" });
+    // Someone who already holds a connection can still reconnect.
+    await signIn("c");
+    expect((await betaStart(true)).status).toBe(200);
+  });
+
+  it("creates the person's own account in the advertiser's currency and links it; nothing for advertisers they didn't authorize", async () => {
+    await signIn("f");
+    await callback((await betaStart(true)).state);
+    tiktok.currency = "KHR";
+    const { POST } = await import("@/app/api/tiktok/advertisers/route");
+    const create = (advertiserId: string) => POST(req("/api/tiktok/advertisers", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ advertiserId, createAccount: true }) }));
+    const res = await create(ADVERTISER);
+    expect(res.status).toBe(200);
+    const { workspaceId } = await res.json();
+    const { db: d, schema, eq } = await db();
+    const [ws] = await d.select().from(schema.workspaces).where(eq(schema.workspaces.id, workspaceId));
+    expect(ws).toMatchObject({ ownerId: F, currency: "KHR", isSample: false });
+    const links = await d.select().from(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, F));
+    expect(links).toEqual([expect.objectContaining({ advertiserId: ADVERTISER, workspaceId })]);
+    const other = await create("7999999999999");
+    expect(other.status).toBe(403);
+    expect(await other.json()).toEqual({ error: "advertiser" });
+    // Another person's session never reaches F's account.
+    await signIn("c");
+    const { getWorkspace } = await import("@/lib/data/workspaces");
+    expect(await getWorkspace(workspaceId)).toBeNull();
+  });
+
+  it("limits Sync Now per person (6 an hour), before any TikTok call", async () => {
+    resetReport();
+    await signIn("g");
+    await callback((await betaStart(true)).state);
+    tiktok.currency = "KHR";
+    const ws = await account(G, "ws-g-beta", "KHR");
+    await (await import("@/lib/tiktok/service")).linkTikTokAdvertiser(G, ADVERTISER, ws.id);
+    tiktok.report = simulate([(await window()).end], CAMPAIGNS, 0.9);
+    const { syncTikTokAdvertiser } = await import("@/lib/tiktok/sync");
+    for (let i = 0; i < 6; i++) {
+      const at = later();
+      expect((await syncTikTokAdvertiser(G, ADVERTISER, { now: () => at, sleep: noWait })).outcome).toMatch(/ok|unchanged/);
+    }
+    const calls = tiktok.reportCalls.length;
+    const at = later();
+    await expect(syncTikTokAdvertiser(G, ADVERTISER, { now: () => at, sleep: noWait })).rejects.toMatchObject({ code: "sync_limit" });
+    expect(tiktok.reportCalls.length).toBe(calls);
+    // An hour later it may sync again.
+    const next = new Date(at.getTime() + 61 * 60_000);
+    clock = next.getTime();
+    expect((await syncTikTokAdvertiser(G, ADVERTISER, { now: () => next, sleep: noWait })).outcome).toMatch(/ok|unchanged/);
   });
 });

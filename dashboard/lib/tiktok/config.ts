@@ -3,8 +3,15 @@ import "server-only";
 /**
  * TikTok for Business MCP OAuth configuration.
  * Off by default: every TikTok route answers 404 unless TIKTOK_CONNECT_ENABLED
- * is "true", and only Supabase user IDs listed in TIKTOK_CONNECT_ALLOWED_USER_IDS
- * may connect (an empty list admits nobody).
+ * is "true", and never on a Vercel Production deployment.
+ *
+ * Who may connect (tiktokAccessMode):
+ *   - "allowlist" (default): only Supabase user IDs listed in
+ *     TIKTOK_CONNECT_ALLOWED_USER_IDS (an empty list admits nobody).
+ *   - "open-beta": anyone signed in with a verified email, for the self-service
+ *     staging beta. Only with TIKTOK_CONNECT_ACCESS=open-beta AND a staging
+ *     public origin (*.vercel.app or localhost); otherwise it falls back to the
+ *     allowlist. Beta switches and limits: lib/tiktok/beta.ts.
  */
 export const TIKTOK_MCP_SCOPE = "mcp:tt4b" as const;
 export const TIKTOK_MCP_SERVERS = [
@@ -21,8 +28,27 @@ export interface TikTokOAuthConfig {
   scope: typeof TIKTOK_MCP_SCOPE;
 }
 
+// TikTok stays off on every Vercel Production deployment (production AdMate,
+// www.admate.site). Staging and local runs are Preview or unset. Turning TikTok
+// on for production needs a deliberate change to this line, not a setting.
 export function isTikTokConnectionEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.TIKTOK_CONNECT_ENABLED === "true";
+  return env.TIKTOK_CONNECT_ENABLED === "true" && env.VERCEL_ENV !== "production";
+}
+
+/** A staging public origin: a *.vercel.app address or a local one. Never admate.site. */
+export function isStagingOrigin(env: NodeJS.ProcessEnv = process.env): boolean {
+  try {
+    const { hostname } = new URL(env.ADMATE_PUBLIC_ORIGIN ?? "");
+    return hostname.endsWith(".vercel.app") || hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+export type TikTokAccessMode = "allowlist" | "open-beta";
+
+export function tiktokAccessMode(env: NodeJS.ProcessEnv = process.env): TikTokAccessMode {
+  return env.TIKTOK_CONNECT_ACCESS?.trim() === "open-beta" && isStagingOrigin(env) ? "open-beta" : "allowlist";
 }
 
 export function readTikTokOAuthConfig(env: NodeJS.ProcessEnv = process.env): TikTokOAuthConfig {
@@ -66,9 +92,14 @@ export function readTikTokOAuthConfig(env: NodeJS.ProcessEnv = process.env): Tik
 
 const SUPABASE_USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** Explicit tester allowlist (Supabase user IDs). Fails closed. */
+/**
+ * May this signed-in person use TikTok? In the open beta, every signed-in person
+ * (the session bridge only admits verified emails there); otherwise the explicit
+ * tester allowlist (Supabase user IDs). Fails closed.
+ */
 export function isTikTokUserAllowed(userId: string, env: NodeJS.ProcessEnv = process.env): boolean {
   if (!isTikTokConnectionEnabled(env) || !SUPABASE_USER_ID.test(userId)) return false;
+  if (tiktokAccessMode(env) === "open-beta") return true;
   return (env.TIKTOK_CONNECT_ALLOWED_USER_IDS ?? "")
     .split(",")
     .map((id) => id.trim())

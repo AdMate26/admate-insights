@@ -40,6 +40,12 @@ const MESSAGES: Record<string, string> = {
   report: "TikTok's report couldn't be used, so nothing was imported. Please try again later.",
   timeout: "TikTok took too long to answer, so nothing was imported. Please try again later.",
   storage: "AdMate couldn't save the data, so nothing was changed. Please try again later.",
+  consent: "Please read the beta notice and tick the box to continue.",
+  connect_closed: "New TikTok connections are paused for the beta right now. Please try again later.",
+  connect_limit: "Too many connection attempts in the last hour. Please wait and try again.",
+  beta_full: "The TikTok beta is full right now. Please try again later.",
+  sync_limit: "You've reached the beta's sync limit (6 an hour, 24 a day). Please try again later.",
+  account_limit: "You already have the maximum number of ad accounts. Delete one in Targets & settings to add another.",
   interrupted: "The last sync was interrupted before it finished (for example a server restart). It's safe to press Sync now again: AdMate never counts the same day twice.",
 };
 
@@ -72,8 +78,9 @@ function lastSyncText(s: LastSync | null): string {
 
 const json = { "content-type": "application/json" };
 
-export function TikTokConnect({ status, result, accounts }: { status: TikTokConnectionStatus; result: string | null; accounts: Account[] }) {
+export function TikTokConnect({ status, result, accounts, beta }: { status: TikTokConnectionStatus; result: string | null; accounts: Account[]; beta: boolean }) {
   const [busy, setBusy] = useState(false);
+  const [consent, setConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [advertisers, setAdvertisers] = useState<Advertiser[] | null>(null);
   const [links, setLinks] = useState<AdvertiserLink[]>([]);
@@ -98,7 +105,11 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
   }
 
   const connect = async () => {
-    const body = await call("/api/tiktok/oauth/start", { method: "POST" });
+    if (beta && !consent) {
+      setError(MESSAGES.consent);
+      return;
+    }
+    const body = await call("/api/tiktok/oauth/start", { method: "POST", headers: json, body: JSON.stringify({ consent: beta ? consent : undefined }) });
     if (body?.url) window.location.assign(body.url);
   };
   const disconnect = async () => {
@@ -110,6 +121,11 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
       setAdvertisers(body.advertisers);
       setLinks(body.links);
     }
+  };
+  // A new account of the person's own, in the advertiser's currency, linked straight away.
+  const createAccount = async (advertiserId: string) => {
+    const body = await call("/api/tiktok/advertisers", { method: "POST", headers: json, body: JSON.stringify({ advertiserId, createAccount: true }) });
+    if (body?.workspaceId) window.location.reload();
   };
   const link = async (advertiserId: string, workspaceId: string) => {
     if (!workspaceId) return;
@@ -151,9 +167,35 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
         Status: <b>{status.status === "active" ? "Connected" : status.status === "reauth_required" ? "Needs reconnecting" : "Not connected"}</b>
         {status.reconnectBy && status.connected ? ` · reconnect by ${new Date(status.reconnectBy).toLocaleDateString()}` : ""}
       </p>
+      {beta && !status.connected && (
+        <div className="space-y-2 rounded-lg border border-line px-3 py-2">
+          <p className="font-medium">AdMate TikTok beta (test version)</p>
+          <ul className="list-disc space-y-1 pl-5 text-muted">
+            <li>AdMate gets read-only access to the TikTok advertisers you choose on TikTok&apos;s next screen: their names, currency and campaign reports. It never creates, edits or pauses ads and never changes budgets.</li>
+            <li>Your TikTok authorization is stored encrypted and used only for your own AdMate accounts. Nobody else can see your data.</li>
+            <li>Imported report data is kept in AdMate&apos;s test database in Singapore while the beta runs, and deleted when the beta ends.</li>
+            <li>This is a test version: features can change, and the beta can be paused at any time.</li>
+            <li>You can disconnect at any time. That revokes AdMate&apos;s access at TikTok and deletes the stored authorization; imported accounts can be deleted in Targets &amp; settings.</li>
+          </ul>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-1" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            <span>
+              I agree to connect my TikTok Ads data to this AdMate beta as described above, and to the{" "}
+              <a className="underline" href="/terms" target="_blank" rel="noreferrer">
+                Terms
+              </a>{" "}
+              and{" "}
+              <a className="underline" href="/privacy" target="_blank" rel="noreferrer">
+                Privacy Policy
+              </a>
+              .
+            </span>
+          </label>
+        </div>
+      )}
       <div className="flex gap-2">
         {!status.connected && (
-          <button className={buttonClass.primary} disabled={busy} onClick={connect}>
+          <button className={buttonClass.primary} disabled={busy || (beta && !consent)} onClick={connect}>
             {status.status === "reauth_required" ? "Reconnect TikTok" : "Connect TikTok Ads"}
           </button>
         )}
@@ -181,6 +223,11 @@ export function TikTokConnect({ status, result, accounts }: { status: TikTokConn
                   <span>
                     <b>{a.name}</b> {[a.currency, a.timezone].filter(Boolean).join(" · ")}
                   </span>
+                  {!linked && a.currency && !ownAccounts.some((w) => w.currency.toUpperCase() === a.currency!.toUpperCase()) && (
+                    <button className={buttonClass.primary} disabled={busy} onClick={() => createAccount(a.id)}>
+                      Create a {a.currency} account for this advertiser
+                    </button>
+                  )}
                   <select className="rounded border border-line bg-bg px-2 py-1" disabled={busy} value={linked?.workspaceId ?? ""} onChange={(e) => link(a.id, e.target.value)}>
                     <option value="">Use for ad account…</option>
                     {ownAccounts.map((w) => (

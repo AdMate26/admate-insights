@@ -1,6 +1,7 @@
-import { eq } from "drizzle-orm";
-import { isAuthorized } from "@/lib/access/policy";
+import { count, eq } from "drizzle-orm";
+import { isAuthorized, maxUsers, newSignupsClosed, openRegistration } from "@/lib/access/policy";
 import { verifySupabaseToken } from "@/lib/auth/supabase";
+import { isStagingOrigin } from "@/lib/tiktok/config";
 import { endSession, startSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
@@ -46,9 +47,19 @@ export async function POST(request: Request) {
   // person's) never survives a new sign-in attempt.
   await endSession();
   if (!user) return json(401, { error: "not_signed_in" });
+  // Open registration on staging (the self-service beta) admits anyone, so only
+  // an email Supabase has confirmed. Production is unchanged by this check.
+  if (openRegistration() && isStagingOrigin() && !user.emailConfirmed) return json(403, { error: "email_unverified" });
   if (!(await isAuthorized(user.id))) return json(403, { error: "not_authorized" });
 
   const db = await getDb();
+  // Beta switches (lib/access/policy.ts): they stop new users only.
+  const [known] = await db.select({ id: users.id }).from(users).where(eq(users.id, user.id));
+  if (!known) {
+    if (newSignupsClosed()) return json(403, { error: "signups_closed" });
+    const cap = maxUsers();
+    if (cap !== null && (await db.select({ n: count() }).from(users))[0].n >= cap) return json(403, { error: "signups_closed" });
+  }
   const created = await db
     .insert(users)
     .values({ id: user.id, email: user.email, passwordHash: NO_PASSWORD, lastLoginAt: new Date() })
