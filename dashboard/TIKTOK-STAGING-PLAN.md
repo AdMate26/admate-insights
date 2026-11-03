@@ -964,8 +964,10 @@ isolation, and no change to AdMate's tables or the `admate_runtime` role
 
 **Neon Auth settings for the permanent `main` branch** (Settings → Better Auth,
 with `main` selected). `main` (`br-small-mouse-a1y6ey7n`) is the default branch,
-has no parent and **no expiry** (checked 2026-11-03); Neon Auth is not enabled
-on it yet.
+has no parent and **no expiry** (checked 2026-11-03). **Enabled and configured
+on 2026-11-03** with your approval: Auth URL
+`https://ep-still-cell-a1i5u224.neonauth.ap-southeast-1.aws.neon.tech/neondb/auth`
+(this is `NEON_AUTH_BASE_URL` for the staging dashboard; it is not a secret).
 
 | Setting | Value |
 | --- | --- |
@@ -978,14 +980,19 @@ on it yet.
 | Verify at Sign-up | on |
 | OAuth providers (Google shared keys) | removed |
 | Organizations, Magic Link, Phone, OAuth provider, Webhooks | off |
-| Email provider | custom SMTP: `smtp.resend.com`, port 465, user `resend`, password = the new key below, sender `staging@admate.site`, name `AdMate (staging)` |
+| Email provider | **Shared** (Neon's built-in sender, `auth@mail.myneon.app`) for the first volunteer beta. Before a public launch: a branded provider. |
 
-Turning password sign-up/sign-in off must first be tried on `auth-proof` to
-confirm email codes still create and sign in users.
+**Tested on `auth-proof` (2026-11-03):** with password sign-up and sign-in off,
+Google removed and Organizations off, direct calls to Neon Auth are refused
+(`EMAIL_PASSWORD_SIGN_UP_DISABLED`, `EMAIL_PASSWORD_DISABLED`,
+`PROVIDER_NOT_SUPPORTED`), and email-code sign-in, session and sign-out still
+work. With the **Shared** sender the code reached the Gmail **inbox** within
+seconds; Resend's log showed no send for it.
 
-**Resend:** a new key `admate-tiktok-staging`, **Sending access** only, domain
-`admate.site`, entered by you directly in Neon (never in chat). Delete
-`admate-auth-proof` afterwards.
+**Email sender decision:** Neon's Shared sender keeps staging entirely off our
+Resend account, so staging can never use up production's Free allowance (100 a
+day, shared by every key in the account). No Resend key is needed for staging.
+Delete `admate-auth-proof` in Resend once the proof branch is gone.
 
 **Vercel settings that change (G6b):**
 - Website `admate-tiktok-staging`: add `VITE_ADMATE_AUTH_PROVIDER=neon`. **No**
@@ -1000,15 +1007,54 @@ confirm email codes still create and sign in users.
 - Neon Auth can't restrict sign-ups yet ("coming soon"). Anyone with a working
   email can create a Neon user; AdMate still admits only confirmed emails, under
   `ADMATE_MAX_USERS` and `ADMATE_NEW_SIGNUPS`.
-- Neon Auth's own address is public, so code emails can be requested there
-  directly, outside our relay. Better Auth rate-limits this, but Resend's Free
-  quota (100 a day) is shared with production. Watch it during the beta.
+- Neon Auth's own address is public (it appears as the issuer inside sign-in
+  tokens), so code emails can be requested there directly, outside our relay
+  and its checks. With the Shared sender this costs us nothing and can't touch
+  production's email: the worst case is that staging codes are delayed or
+  refused while Neon's limit applies. Neon documents the Shared sender only as
+  "rate-limited" and meant for development, with **no published numbers**.
+  Codes expire after 5 minutes and allow 3 tries (Better Auth defaults), and
+  Better Auth limits requests per IP address. Who gets into AdMate is still
+  decided by AdMate: confirmed email, `ADMATE_MAX_USERS`, `ADMATE_NEW_SIGNUPS`.
+- If testers report missing codes, check Spam first; if Neon's limit is the
+  cause, switch staging to a custom SMTP provider (one setting in Neon).
 - **Safari 16.3 and older:** sign-in works, but the dashboard (Next.js 16) needs
   Safari 16.4+. For the first beta, testers use Chrome or Safari 16.4+.
 - The dashboard session stays valid for up to 12 hours after a Neon user is
   removed (same as with Supabase).
 
-**Order (each step needs your approval):** test the hardened settings on
-`auth-proof` → you create the Resend key → enable Neon Auth on `main` with the
-settings above → re-run `proof-db-check`-style checks on `main` → G6b Vercel
-settings → G8 deploy.
+**Verified on `main` after enabling (2026-11-03):**
+- Settings re-read after a reload: trusted domain
+  `https://admate-tiktok-staging.vercel.app` only, Allow Localhost off, password
+  sign-up and sign-in off, no OAuth providers, Shared sender, Webhooks,
+  Organizations, Magic Link, Phone and OAuth provider off, name
+  `AdMate (staging)`.
+- Direct calls to Neon Auth: password sign-up and sign-in and Google are
+  refused; code requests that name another website, or localhost, get
+  `INVALID_ORIGIN` (403).
+- Read-only database check (`proof-db-check.mjs`, endpoint
+  `ep-still-cell-a1i5u224`): 16 migrations and 30 tables unchanged, no new
+  triggers, policies or row security, `admate_runtime` still restricted and
+  without any access to `neon_auth` (9 tables), nothing granted to PUBLIC.
+
+**Two different limits (don't confuse them):**
+- **Access to AdMate** is controlled by AdMate: only a Neon-confirmed email gets
+  a dashboard session, at most `ADMATE_MAX_USERS` (50) people, and
+  `ADMATE_NEW_SIGNUPS=closed` stops new ones. These limits protect AdMate's data
+  and TikTok connections.
+- **Creating Neon Auth accounts and sending codes** is controlled only by Neon.
+  Neon's address is public and the website-name check only stops browsers: a
+  script that sends no website name (or fakes ours) can still request codes
+  (checked: 200). Neon then creates a `neon_auth` user only when a code is
+  actually used, i.e. by someone who controls that mailbox (checked: two
+  probe requests to an undeliverable address left `main` with zero users). AdMate's 50-person
+  cap does **not** limit any of this. What does: Neon's per-IP and Shared-sender
+  limits (no published numbers) and the 5-minute, 3-try codes. The cost to us is
+  $0 and production email is unaffected; the realistic harm is code emails
+  sent to strangers (reputation of Neon's sender, not ours) or staging codes
+  being delayed. If it happens: close `ADMATE_NEW_SIGNUPS`, and Neon support
+  or "Disable Auth" (which deletes the staging sign-in users) as a last resort.
+
+**Order (each step needs your approval):** G6b (database upgrade to 0016,
+runtime-role grants and login, Vercel settings) → G8 deploy and the two-account
+journey → share the link.
