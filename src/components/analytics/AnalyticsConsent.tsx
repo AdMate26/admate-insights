@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { usesNeonAuth } from "@/lib/auth/provider";
 import {
   analyticsAvailable,
   identifyUser,
@@ -28,6 +29,8 @@ export function AnalyticsConsent() {
     const stopListening = onAnalyticsSettings(() => setOpen(true));
 
     // Identity follows the Supabase session: user ID and email (after consent only).
+    // With Neon Auth (TikTok staging) sign-in and sign-out identify instead (session.ts).
+    if (usesNeonAuth()) return stopListening;
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) identifyUser(session.user.id, session.user.email);
       else if (event === "SIGNED_OUT") resetAnalytics();

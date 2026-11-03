@@ -1,5 +1,7 @@
 import { count, eq } from "drizzle-orm";
 import { isAuthorized, maxUsers, newSignupsClosed, openRegistration } from "@/lib/access/policy";
+import { verifyNeonToken } from "@/lib/auth/neon";
+import { authProvider } from "@/lib/auth/provider";
 import { verifySupabaseToken } from "@/lib/auth/supabase";
 import { isApprovedBetaHost } from "@/lib/tiktok/config";
 import { endSession, startSession } from "@/lib/auth/session";
@@ -17,6 +19,10 @@ import { captureServer, serverAnalyticsOn } from "@/lib/analytics-server";
 // Auth server confirms the token AND the user is authorised (invite-only, see
 // lib/access/policy.ts) does this create the dashboard's own session cookie.
 // DELETE ends that session (sign-out on either side).
+//
+// TikTok staging (ADMATE_AUTH_PROVIDER=neon) signs people in with Neon Auth
+// instead: the token is Neon's and is verified against Neon's published key
+// (lib/auth/neon.ts). Everything after that check is the same.
 
 // Marks users created by the bridge. They never had a password; password
 // sign-in no longer exists, and this value can never match a password hash.
@@ -42,14 +48,17 @@ export async function POST(request: Request) {
   if (!publicOrigin()) return json(503, { error: "not_configured" });
   if (!sameOrigin(request)) return json(403, { error: "forbidden" });
 
-  const user = await verifySupabaseToken(request.headers.get("authorization"));
+  const neon = authProvider() === "neon";
+  const authorization = request.headers.get("authorization");
+  const user = neon ? await verifyNeonToken(authorization) : await verifySupabaseToken(authorization);
   // Whatever happens next, a previous session in this browser (possibly another
   // person's) never survives a new sign-in attempt.
   await endSession();
   if (!user) return json(401, { error: "not_signed_in" });
   // Open registration on the approved beta deployment admits anyone, so only an
-  // email Supabase has confirmed. Production is unchanged by this check.
-  if (openRegistration() && isApprovedBetaHost() && !user.emailConfirmed) return json(403, { error: "email_unverified" });
+  // email Supabase has confirmed. Production is unchanged by this check. With
+  // Neon Auth a confirmed email is always required.
+  if ((neon || (openRegistration() && isApprovedBetaHost())) && !user.emailConfirmed) return json(403, { error: "email_unverified" });
   if (!(await isAuthorized(user.id))) return json(403, { error: "not_authorized" });
 
   const db = await getDb();

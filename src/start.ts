@@ -26,6 +26,9 @@ const csrfMiddleware = createCsrfMiddleware({
 });
 
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth],
+  // Neon Auth (TikTok staging) keeps its session in HttpOnly cookies and has no
+  // Supabase session to attach.
+  functionMiddleware:
+    import.meta.env["VITE_ADMATE_AUTH_PROVIDER"] === "neon" ? [] : [attachSupabaseAuth],
   requestMiddleware: [errorMiddleware, csrfMiddleware],
 }));

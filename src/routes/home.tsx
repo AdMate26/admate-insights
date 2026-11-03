@@ -3,9 +3,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import { AccountErrorState } from "@/components/auth/AccountErrorState";
 import { AuthPending } from "@/components/auth/AuthLayout";
-import { supabase } from "@/integrations/supabase/client";
 import { profileQueryOptions } from "@/lib/auth/profile";
-import { requireSession } from "@/lib/auth/session";
+import { usesNeonAuth } from "@/lib/auth/provider";
+import { currentAccessToken, requireSession } from "@/lib/auth/session";
 import { enterDashboard } from "@/lib/dashboard-bridge";
 import { validateWorkspaceSearch } from "@/lib/dashboard-search";
 
@@ -26,7 +26,9 @@ export const Route = createFileRoute("/home")({
   validateSearch: validateWorkspaceSearch,
   beforeLoad: async ({ context }) => {
     const session = await requireSession();
-    await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
+    // Neon Auth (TikTok staging) has no Supabase profile; the dashboard admits the user.
+    if (!usesNeonAuth())
+      await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
   },
   head: () => ({
     meta: [
@@ -51,11 +53,11 @@ function EnterDashboard() {
     if (started.current) return;
     started.current = true;
     void (async () => {
-      const { data } = await supabase.auth.getSession();
+      const accessToken = await currentAccessToken();
       // `next` is set by the dashboard when it sent a signed-out visitor here;
       // enterDashboard only ever returns a path inside /app.
       const next = new URLSearchParams(window.location.search).get("next");
-      const outcome = await enterDashboard({ accessToken: data.session?.access_token, next });
+      const outcome = await enterDashboard({ accessToken, next });
       // A completed sign-up is recorded by the dashboard's server (analytics).
       if (outcome.kind === "dashboard") window.location.replace(outcome.href);
       else if (outcome.kind === "login") void navigate({ to: "/login", replace: true });

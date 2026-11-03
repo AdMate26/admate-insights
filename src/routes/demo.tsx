@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AuthPending } from "@/components/auth/AuthLayout";
-import { supabase } from "@/integrations/supabase/client";
+import { currentAccessToken } from "@/lib/auth/session";
 import { DASHBOARD_PATH, enterDashboard } from "@/lib/dashboard-bridge";
 import { validateDashboardSearch } from "@/lib/dashboard-search";
 
@@ -35,10 +35,10 @@ function OpenDemo() {
     if (started.current) return;
     started.current = true;
     void (async () => {
-      const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      const accessToken = await currentAccessToken();
       // Signed in: make sure the dashboard knows (it then opens their own copy).
       // Whatever the answer, /app/demo decides: own copy or the public demo.
-      if (data.session) await enterDashboard({ accessToken: data.session.access_token });
+      if (accessToken) await enterDashboard({ accessToken });
       window.location.replace(`${DASHBOARD_PATH}/demo`);
     })();
   }, []);

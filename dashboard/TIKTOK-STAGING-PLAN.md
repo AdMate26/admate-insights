@@ -929,3 +929,86 @@ to GitHub, did not build.
    **About $25 + tax** for the test. Start the Vercel trial right before the
    first deployment, so the 14 days cover the testing. Continuing afterwards:
    $20/month Vercel (add a card), or move back.
+
+## 23. Neon Auth replaces the staging Supabase (2026-11-03)
+
+**Decision:** TikTok staging signs people in with **Neon Auth** on the existing
+Neon project `admate-tiktok-staging`, not a paid Supabase "AdMate Staging"
+organization. G1 option A, G2 and G3 (§8, §21) are dropped. **Production keeps
+Supabase** and is unchanged.
+
+**Proof (disposable branch `auth-proof`, expires 2026-11-15):** all 8
+requirements passed: real email codes through Resend, 6-digit sign-in, UUID
+user IDs with confirmed email, first-party HttpOnly cookies through `/app`,
+Chrome and Safari (sign-in), EdDSA token checks against 8 forgeries, two-user
+isolation, and no change to AdMate's tables or the `admate_runtime` role
+(`neon_auth` is a separate schema the role cannot read).
+
+**Code (branch `codex/tiktok-neon-auth`):**
+- Switch: `VITE_ADMATE_AUTH_PROVIDER=neon` (website, build time) and
+  `ADMATE_AUTH_PROVIDER=neon` (dashboard). Unset means Supabase (production).
+- Website: `src/lib/auth/neon-client.ts` (browser calls to `/app/api/auth/*`);
+  `methods.ts`, `session.ts`, `/home`, `/demo`, `/login`, `/logout`,
+  `/onboarding` choose the provider; Google and password reset are hidden;
+  `src/start.ts` doesn't attach a Supabase token.
+- Dashboard: `lib/auth/neon.ts` (token check: Neon's JWKS, EdDSA only, exact
+  issuer and audience, UUID user, email, not banned), `lib/auth/neon-relay.ts`
+  and `app/api/auth/[...path]` (Neon's SDK relay). The relay allows **only**
+  sending a sign-in code, signing in with it, reading the session, getting a
+  token and signing out; everything else is 404. Codes are sent only for
+  `type: "sign-in"`, and POSTs only from `ADMATE_PUBLIC_ORIGIN`.
+- The session bridge always requires a confirmed email with Neon. Users,
+  ownership, TikTok, Sync Now and analysis are unchanged: Neon user IDs go into
+  the same `users.id`.
+- Tests: `tests/neon-auth.test.ts` (16) and `src/lib/auth/neon-client.test.ts`.
+
+**Neon Auth settings for the permanent `main` branch** (Settings → Better Auth,
+with `main` selected). `main` (`br-small-mouse-a1y6ey7n`) is the default branch,
+has no parent and **no expiry** (checked 2026-11-03); Neon Auth is not enabled
+on it yet.
+
+| Setting | Value |
+| --- | --- |
+| Enable Neon Auth (Better Auth) | on, `main` only |
+| Application name | `AdMate (staging)` |
+| Trusted domains | `admate-tiktok-staging.vercel.app` only |
+| Allow Localhost | **off** |
+| Sign-up with Email (password) | **off** |
+| Sign-in with Email (password) | **off** |
+| Verify at Sign-up | on |
+| OAuth providers (Google shared keys) | removed |
+| Organizations, Magic Link, Phone, OAuth provider, Webhooks | off |
+| Email provider | custom SMTP: `smtp.resend.com`, port 465, user `resend`, password = the new key below, sender `staging@admate.site`, name `AdMate (staging)` |
+
+Turning password sign-up/sign-in off must first be tried on `auth-proof` to
+confirm email codes still create and sign in users.
+
+**Resend:** a new key `admate-tiktok-staging`, **Sending access** only, domain
+`admate.site`, entered by you directly in Neon (never in chat). Delete
+`admate-auth-proof` afterwards.
+
+**Vercel settings that change (G6b):**
+- Website `admate-tiktok-staging`: add `VITE_ADMATE_AUTH_PROVIDER=neon`. **No**
+  `VITE_SUPABASE_*` or `SUPABASE_*`.
+- Dashboard `admate-tiktok-dashboard-staging`: add `ADMATE_AUTH_PROVIDER=neon`,
+  `NEON_AUTH_BASE_URL` (main's Auth URL), `NEON_AUTH_COOKIE_SECRET` (new random,
+  at least 32 characters, **Sensitive**). **No** `SUPABASE_*`.
+- Everything else in §19 stays (`ADMATE_ACCESS=open`, `ADMATE_MAX_USERS=50`,
+  `TIKTOK_CONNECT_ACCESS=open-beta`, etc.).
+
+**Known limits:**
+- Neon Auth can't restrict sign-ups yet ("coming soon"). Anyone with a working
+  email can create a Neon user; AdMate still admits only confirmed emails, under
+  `ADMATE_MAX_USERS` and `ADMATE_NEW_SIGNUPS`.
+- Neon Auth's own address is public, so code emails can be requested there
+  directly, outside our relay. Better Auth rate-limits this, but Resend's Free
+  quota (100 a day) is shared with production. Watch it during the beta.
+- **Safari 16.3 and older:** sign-in works, but the dashboard (Next.js 16) needs
+  Safari 16.4+. For the first beta, testers use Chrome or Safari 16.4+.
+- The dashboard session stays valid for up to 12 hours after a Neon user is
+  removed (same as with Supabase).
+
+**Order (each step needs your approval):** test the hardened settings on
+`auth-proof` → you create the Resend key → enable Neon Auth on `main` with the
+settings above → re-run `proof-db-check`-style checks on `main` → G6b Vercel
+settings → G8 deploy.

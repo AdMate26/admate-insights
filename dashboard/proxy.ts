@@ -11,7 +11,8 @@ import { websiteUrl } from "./lib/integration/paths";
 // only public endpoints are the session bridge (app/api/session) and the
 // secret-protected public demo refresh (app/api/internal/public-demo).
 // /api/cron/* (v5 alert digests) checks its own secret (CRON_SECRET) instead of a session.
-const PUBLIC = ["/api/session", "/api/internal/public-demo", "/api/cron"];
+// /api/auth/* is the Neon Auth sign-in relay (TikTok staging only; 404 otherwise).
+const PUBLIC = ["/api/session", "/api/internal/public-demo", "/api/cron", "/api/auth"];
 
 // Public demo (lib/integration/public-demo.ts): READ requests to these paths are
 // marked so that, without a valid session, they get the read-only visitor

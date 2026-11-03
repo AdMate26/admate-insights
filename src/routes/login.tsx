@@ -10,7 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { usesNeonAuth } from "@/lib/auth/provider";
+import { currentAccessToken } from "@/lib/auth/session";
 import {
   AUTH_MESSAGES,
   OTP_LENGTH,
@@ -27,8 +28,7 @@ export const Route = createFileRoute("/login")({
   ssr: false,
   beforeLoad: async () => {
     // Already signed in → let the callback route pick onboarding vs workspace.
-    const { data } = await supabase.auth.getSession();
-    if (data.session) throw redirect({ to: "/auth/callback", replace: true });
+    if (await currentAccessToken()) throw redirect({ to: "/auth/callback", replace: true });
   },
   head: () => ({
     meta: [{ title: "Log in or sign up — AdMate" }],
@@ -210,30 +210,35 @@ function LoginPage() {
             </Button>
           </form>
 
-          <div className="my-5 flex items-center gap-3">
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">or</span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
+          {/* Neon Auth (TikTok staging) signs in with the email code only. */}
+          {usesNeonAuth() ? null : (
+            <>
+              <div className="my-5 flex items-center gap-3">
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">or</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleGoogle}
-            disabled={busy !== null}
-          >
-            {busy === "google" ? (
-              <>
-                <Loader2 className="animate-spin" aria-hidden="true" /> Redirecting to Google…
-              </>
-            ) : (
-              <>
-                <GoogleMark />
-                Continue with Google
-              </>
-            )}
-          </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleGoogle}
+                disabled={busy !== null}
+              >
+                {busy === "google" ? (
+                  <>
+                    <Loader2 className="animate-spin" aria-hidden="true" /> Redirecting to Google…
+                  </>
+                ) : (
+                  <>
+                    <GoogleMark />
+                    Continue with Google
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </>
       ) : (
         <>

@@ -1,6 +1,8 @@
 import type { AuthError } from "@supabase/supabase-js";
 
 import { supabase } from "@/integrations/supabase/client";
+import { sendNeonCode, verifyNeonCode, type NeonCodeResult } from "./neon-client";
+import { usesNeonAuth } from "./provider";
 
 /** Length of the Supabase email OTP (Auth → Providers → Email → "Email OTP Length"). */
 export const OTP_LENGTH = 6;
@@ -52,6 +54,7 @@ export function authCallbackUrl(): string {
  * creates their profile.
  */
 export async function requestEmailCode(email: string): Promise<AuthResult> {
+  if (usesNeonAuth()) return neonResult(await sendNeonCode(email), AUTH_MESSAGES.sendFailed);
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -83,6 +86,8 @@ export async function requestEmailCode(email: string): Promise<AuthResult> {
 
 /** Verifies the emailed code; on success Supabase stores a real session. */
 export async function verifyEmailCode(email: string, token: string): Promise<AuthResult> {
+  if (usesNeonAuth())
+    return neonResult(await verifyNeonCode(email, token), AUTH_MESSAGES.signInFailed);
   try {
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
     if (!error && data.session) return { error: null };
@@ -96,6 +101,15 @@ export async function verifyEmailCode(email: string, token: string): Promise<Aut
     logDev("verifyOtp threw", error);
     return { error: AUTH_MESSAGES.signInFailed };
   }
+}
+
+/** Neon Auth (TikTok staging): the same messages as the Supabase flow. */
+function neonResult(result: NeonCodeResult, fallback: string): AuthResult {
+  if (result === "ok") return { error: null };
+  if (result === "rate_limited") return { error: AUTH_MESSAGES.rateLimited };
+  if (result === "invalid_email") return { error: AUTH_MESSAGES.invalidEmail };
+  if (result === "wrong_code") return { error: AUTH_MESSAGES.wrongCode };
+  return { error: fallback };
 }
 
 /**

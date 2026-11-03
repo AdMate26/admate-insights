@@ -8,22 +8,43 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { identifyUser, resetAnalytics, signInMethod, track } from "@/lib/analytics/posthog";
 import { endDashboardSession, signOutEverywhere } from "@/lib/dashboard-bridge";
+import { getNeonToken, getNeonUser, signOutNeon } from "./neon-client";
 import { PROFILE_QUERY_KEY, profileQueryOptions } from "./profile";
+import { usesNeonAuth } from "./provider";
 
 export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
 
-type AuthState = { status: AuthStatus; session: Session | null };
+/** What the screens need of the signed-in user, from Supabase or Neon Auth. */
+export type AppUser = Pick<User, "id"> & { email?: string | null };
+
+/** A confirmed sign-in. With Neon Auth (TikTok staging) the session itself stays in HttpOnly cookies. */
+export type AppSession = { user: AppUser };
+
+type AuthState = { status: AuthStatus; session: Session | null; neonUser?: AppUser | null };
 
 /**
  * Tracks the real Supabase session. Starts in "loading" on both server and
  * client (so SSR markup and hydration agree), then resolves from the persisted
  * session and follows sign-in / sign-out / token-refresh events.
  */
-export function useAuthSession(): AuthState & { user: User | null } {
+export function useAuthSession(): AuthState & { user: AppUser | null } {
   const [state, setState] = useState<AuthState>({ status: "loading", session: null });
 
   useEffect(() => {
     let active = true;
+    if (usesNeonAuth()) {
+      void getNeonUser().then((user) => {
+        if (active)
+          setState({
+            status: user ? "authenticated" : "unauthenticated",
+            session: null,
+            neonUser: user,
+          });
+      });
+      return () => {
+        active = false;
+      };
+    }
     const apply = (session: Session | null) => {
       if (active) setState({ status: session ? "authenticated" : "unauthenticated", session });
     };
@@ -38,14 +59,19 @@ export function useAuthSession(): AuthState & { user: User | null } {
     };
   }, []);
 
-  return { ...state, user: state.session?.user ?? null };
+  return { ...state, user: state.neonUser ?? state.session?.user ?? null };
 }
 
 /**
  * Route guard for `beforeLoad` (client-only routes): returns the current
  * session or redirects a logged-out visitor to /login.
  */
-export async function requireSession(): Promise<Session> {
+export async function requireSession(): Promise<AppSession> {
+  if (usesNeonAuth()) {
+    const user = await getNeonUser();
+    if (!user) throw redirect({ to: "/login" });
+    return { user };
+  }
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw redirect({ to: "/login" });
   return data.session;
@@ -72,6 +98,16 @@ export async function completeSignIn(queryClient: QueryClient): Promise<PostLogi
   // A new sign-in never inherits a dashboard session left in this browser by an
   // earlier user; /home creates a fresh one for this user if they're admitted.
   await endDashboardSession();
+
+  if (usesNeonAuth()) {
+    // Neon Auth confirms the session from its HttpOnly cookies. There is no
+    // Supabase profile; the dashboard's session bridge admits the user.
+    const user = await getNeonUser();
+    if (!user) throw new SignInError("No session after sign-in");
+    identifyUser(user.id, user.email);
+    track("login_completed", { method: "email_code" });
+    return { to: "/home" };
+  }
 
   // getSession() waits for the client to finish initialising, which includes
   // picking up tokens from an OAuth / magic-link redirect URL.
@@ -109,6 +145,17 @@ export async function completeSignIn(queryClient: QueryClient): Promise<PostLogi
   return { to: "/home" };
 }
 
+/**
+ * The current sign-in's access token for the dashboard's session bridge, or
+ * null when signed out: Supabase's session token, or a fresh short-lived Neon
+ * Auth token.
+ */
+export async function currentAccessToken(): Promise<string | null> {
+  if (usesNeonAuth()) return getNeonToken();
+  const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+  return data.session?.access_token ?? null;
+}
+
 /** Real Supabase logout: ends the session and returns to the public landing page. */
 export function useLogout() {
   const navigate = useNavigate();
@@ -118,7 +165,7 @@ export function useLogout() {
     // End the dashboard (/app) session first, then the Supabase session.
     const { error } = await signOutEverywhere({
       endDashboard: () => endDashboardSession(),
-      signOutSupabase: () => supabase.auth.signOut(),
+      signOutSupabase: () => (usesNeonAuth() ? signOutNeon() : supabase.auth.signOut()),
     });
     if (error) {
       if (import.meta.env.DEV) console.warn("[auth] sign-out failed", error);
