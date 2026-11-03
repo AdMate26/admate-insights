@@ -12,6 +12,7 @@ import { shortDate } from "@/lib/format";
 import { BASE_PATH, websiteUrl } from "@/lib/integration/paths";
 import { ReadOnlyProvider } from "@/lib/integration/read-only";
 import { DEFAULT_LEVEL } from "@/lib/levels";
+import { isTikTokUserAllowed } from "@/lib/tiktok/config";
 
 // The frame of every ad-account page (prototype v5.1): the sidebar with the account
 // and view pickers and the view's menu, the sample-account banner, then the page.
@@ -51,7 +52,7 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
         <ReadOnlyProvider value={readOnly}>
         <div className="frame">
           <Suspense>
-            <Side counts={{ actions: 0, alerts: 0 }} userId={user.id} />
+            <Side counts={{ actions: 0, alerts: 0 }} userId={user.id} tiktok={!user.readOnly && isTikTokUserAllowed(user.id)} />
           </Suspense>
           <main className="main">
             {workspace.isSample && (

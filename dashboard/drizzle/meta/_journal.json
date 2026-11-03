@@ -85,6 +85,41 @@
       "when": 1793167307520,
       "tag": "0011_user_visits",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793263849896,
+      "tag": "0012_tiktok_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793267106358,
+      "tag": "0013_tiktok_syncs",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793268419588,
+      "tag": "0014_tiktok_sync_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793291241467,
+      "tag": "0015_tiktok_sync_summary",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793345026356,
+      "tag": "0016_tiktok_beta_events",
+      "breakpoints": true
     }
   ]
 }

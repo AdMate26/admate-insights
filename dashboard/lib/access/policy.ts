@@ -32,6 +32,20 @@ export function openRegistration(): boolean {
   return process.env.ADMATE_ACCESS?.trim() === "open";
 }
 
+// Open-registration switches for the self-service staging beta, both optional
+// (unset = no effect). Existing users keep signing in either way.
+//   ADMATE_NEW_SIGNUPS=closed  no new dashboard users
+//   ADMATE_MAX_USERS=<n>       no new dashboard users once n exist
+// The instant switch is Supabase Auth's "Allow new users to sign up".
+export function newSignupsClosed(): boolean {
+  return process.env.ADMATE_NEW_SIGNUPS?.trim() === "closed";
+}
+
+export function maxUsers(): number | null {
+  const n = Number(process.env.ADMATE_MAX_USERS);
+  return process.env.ADMATE_MAX_USERS?.trim() && Number.isInteger(n) && n >= 0 ? n : null;
+}
+
 // The only entitlement status that will grant access once Early Access exists.
 export const GRANTING_ENTITLEMENT = "active";
 

@@ -1,7 +1,7 @@
 import "server-only";
-import { and, count, eq, gte, inArray } from "drizzle-orm";
+import { and, count, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { getDb } from "../db/client";
-import { imports, uploads, workspaces } from "../db/schema";
+import { imports, tiktokSyncImports, uploads, workspaces } from "../db/schema";
 
 // Upload and account limits for the multi-user MVP (AdMate integration,
 // INTEGRATION.md). Conservative on purpose; raise them deliberately.
@@ -102,12 +102,15 @@ export async function checkAccountLimit(userId: string): Promise<string | null> 
   return n >= LIMITS.accountsPerUser ? `You can have up to ${LIMITS.accountsPerUser} ad accounts for now. Delete one in Targets & settings to add another.` : null;
 }
 
+// Counts uploaded reports only. TikTok syncs are kept to their own rolling
+// history (lib/tiktok/history.ts) and never use up the upload allowance.
 export async function checkImportLimit(workspaceId: string): Promise<string | null> {
   const db = await getDb();
+  const syncs = db.select({ id: tiktokSyncImports.importId }).from(tiktokSyncImports).where(eq(tiktokSyncImports.workspaceId, workspaceId));
   const [{ n }] = await db
     .select({ n: count() })
     .from(imports)
-    .where(and(eq(imports.workspaceId, workspaceId), eq(imports.status, "active")));
+    .where(and(eq(imports.workspaceId, workspaceId), eq(imports.status, "active"), notInArray(imports.id, syncs)));
   return n >= LIMITS.importsPerAccount ? `This account already has ${LIMITS.importsPerAccount} reports. Undo an old one in Reports to add another.` : null;
 }
 

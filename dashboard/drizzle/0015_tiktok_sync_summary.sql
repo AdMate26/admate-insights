@@ -1,0 +1,1 @@
+ALTER TABLE "tiktok_syncs" ADD COLUMN "summary" jsonb;

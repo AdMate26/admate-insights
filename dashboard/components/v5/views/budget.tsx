@@ -35,7 +35,7 @@ export function Budget({ daily }: { daily: { dates: string[]; by: Record<string,
   const rows = v.levels.campaign.filter((r) => r.objective === o.objective).sort((a, b) => b.spend - a.spend);
   const gSpend = rows.reduce((s, r) => s + r.spend, 0);
   const maxSpend = Math.max(...rows.map((r) => r.spend), 1);
-  const val = (r: Row) => (r.mode === "roas" ? r.revenue : r.mode === "cpm" ? r.impressions : r.results);
+  const val = (r: Row) => (r.mode === "roas" ? r.revenue : r.mode === "cpm" ? r.impressions : r.results) ?? 0;
   const totV = rows.reduce((s, r) => s + val(r), 0);
   const unit = o.mode === "roas" ? "sales value" : o.mode === "cpm" ? "impressions" : o.resultLabel;
   const grp = (st: string[]) => rows.filter((r) => st.includes(r.stance ?? ""));

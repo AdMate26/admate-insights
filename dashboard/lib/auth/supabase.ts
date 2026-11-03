@@ -8,6 +8,9 @@ export interface SupabaseUser {
   email: string;
   // How they signed in ("email" or "google"), for sign-up analytics.
   provider?: string;
+  // Supabase confirmed the email (email code, magic link or Google). Required
+  // for open registration on staging (app/api/session).
+  emailConfirmed: boolean;
 }
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -34,11 +37,12 @@ export async function verifySupabaseToken(authorization: string | null, fetchImp
       signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     });
     if (!response.ok) return null;
-    const user = (await response.json()) as { id?: unknown; email?: unknown; app_metadata?: { provider?: unknown } };
+    const user = (await response.json()) as { id?: unknown; email?: unknown; email_confirmed_at?: unknown; app_metadata?: { provider?: unknown } };
     if (typeof user.id !== "string" || !user.id) return null;
     if (typeof user.email !== "string" || !user.email) return null;
     const provider = user.app_metadata?.provider;
-    return { id: user.id, email: user.email.trim().toLowerCase(), ...(typeof provider === "string" ? { provider } : {}) };
+    const emailConfirmed = typeof user.email_confirmed_at === "string" && user.email_confirmed_at.length > 0;
+    return { id: user.id, email: user.email.trim().toLowerCase(), emailConfirmed, ...(typeof provider === "string" ? { provider } : {}) };
   } catch {
     return null;
   }

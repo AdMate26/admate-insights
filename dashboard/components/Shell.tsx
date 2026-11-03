@@ -4,6 +4,7 @@ import { loadSampleData } from "@/app/actions";
 import { signOut } from "@/app/(auth)/actions";
 import { listWorkspaces } from "@/lib/data/workspaces";
 import { requireUser } from "@/lib/auth/session";
+import { isTikTokUserAllowed } from "@/lib/tiktok/config";
 
 // The frame for pages outside an ad account (the start page, "Add an ad account"):
 // the same sidebar look as the account pages, with the person's accounts.
@@ -35,6 +36,11 @@ export async function Shell({ children }: { children: ReactNode }) {
             <Link className="navbtn" href="/accounts/new" style={{ color: "var(--violet)" }}>
               <span>+ Add an ad account</span>
             </Link>
+            {!user.readOnly && isTikTokUserAllowed(user.id) && (
+              <Link className="navbtn" href="/connect/tiktok" style={{ color: "var(--violet)" }}>
+                <span>Connect TikTok Ads</span>
+              </Link>
+            )}
           </nav>
           <div className="side-foot">
             <form action={loadSampleData}>

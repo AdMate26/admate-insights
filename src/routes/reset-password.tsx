@@ -1,11 +1,16 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { supabase } from "@/integrations/supabase/client";
+import { usesNeonAuth } from "@/lib/auth/provider";
 
 export const Route = createFileRoute("/reset-password")({
   ssr: false,
+  // Neon Auth (TikTok staging) has no passwords: sign-in is the email code.
+  beforeLoad: () => {
+    if (usesNeonAuth()) throw redirect({ to: "/login", replace: true });
+  },
   head: () => ({
     meta: [
       { title: "Set a new password — AdMate" },

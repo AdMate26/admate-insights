@@ -8,6 +8,7 @@ import { AuthLayout, AuthPending } from "@/components/auth/AuthLayout";
 import { Button } from "@/components/ui/button";
 import { workspaceAccessQueryOptions } from "@/lib/analysis-query";
 import { isOnboardingComplete, profileQueryOptions } from "@/lib/auth/profile";
+import { usesNeonAuth } from "@/lib/auth/provider";
 import { requireSession, useLogout } from "@/lib/auth/session";
 
 /**
@@ -29,8 +30,11 @@ export const Route = createFileRoute("/onboarding")({
     search["access"] === "pending" ? { access: "pending" } : {},
   beforeLoad: async ({ context, search }) => {
     const session = await requireSession();
-    const profile = await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
-    if (isOnboardingComplete(profile.onboarding_status) && search.access !== "pending") {
+    // Neon Auth (TikTok staging) has no Supabase profile: only the "not admitted" view applies.
+    const profile = usesNeonAuth()
+      ? null
+      : await context.queryClient.ensureQueryData(profileQueryOptions(session.user.id));
+    if (profile && isOnboardingComplete(profile.onboarding_status) && search.access !== "pending") {
       throw redirect({ to: "/home", replace: true });
     }
     return { email: session.user.email ?? null, userId: session.user.id };

@@ -143,7 +143,7 @@ export function autoAlerts(v: ViewModel, cfg: AlertConfig, own: CampaignTargets)
   for (const r of v.levels.campaign) {
     if (r.kpi == null) continue;
     const sure = r.confidence !== "low";
-    const enough = r.mode === "cpm" ? r.impressions >= 1000 : r.results >= 10;
+    const enough = r.mode === "cpm" ? r.impressions >= 1000 : (r.results ?? 0) >= 10;
     if (cfg.past && r.kpiA != null && v.compareLabel) {
       const w = worseBy(r.kpi, r.kpiA, r.mode)!;
       // "AdMate decides": a change of 20% or more that the significance test backs up.

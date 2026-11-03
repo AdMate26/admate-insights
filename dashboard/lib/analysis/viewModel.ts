@@ -11,6 +11,7 @@ import { decompose, type Decomposition } from "./decompose";
 import { addDays, rangeDays } from "../dates";
 import { rangeLabel } from "../format";
 import { kpiLabel, kpiShort, kpiValue, OBJECTIVE_DEFS, resultCount, type Objective } from "../metrics/objectives";
+import { resultAvailable } from "../metrics/availability";
 import type { Analysis, CampaignRow, EntityLevel, Finding } from "./types";
 
 // Money attached to an item, looking BACKWARD only (founder decision: no forecasts).
@@ -107,7 +108,10 @@ export function viewModel(a: Analysis, minDate: string) {
         const o = r.info.objective;
         const m = r.b;
         const clicks = m.linkClicks || m.clicksAll;
-        const results = resultCount(m, o);
+        // A measure the data doesn't contain (or reach added up over days or items)
+        // is shown as unavailable ("—"), never as 0 or as an inflated sum.
+        const results = resultAvailable(r.availB, o) ? resultCount(m, o) : null;
+        const reach = r.availB.has("reach") ? m.reach : null;
         const campaignId = level === "campaign" ? r.info.id : r.info.campaignId!;
         const adSetId = level === "ad" ? (r.info.parentId ?? null) : level === "ad_group" ? r.info.id : null;
         return {
@@ -115,9 +119,9 @@ export function viewModel(a: Analysis, minDate: string) {
           id: r.info.id, level, name: r.info.name, campaignId, campaignName: campaignName.get(campaignId) ?? null, adSetId, adSetName: adSetId ? adSetName.get(adSetId) ?? null : level === "ad" ? r.info.parentName ?? null : null,
           platform: r.info.platform, objective: o, objectiveLabel: OBJECTIVE_DEFS[o].label, role: r.role, status: r.info.status,
           spend: m.spend, share: share(m.spend), spendA: r.a?.spend ?? null, spendChange: r.a && r.a.spend > 0 ? m.spend / r.a.spend - 1 : null,
-          impressions: m.impressions, reach: m.reach, frequency: m.reach > 0 ? m.impressions / m.reach : null,
+          impressions: m.impressions, reach, frequency: reach ? m.impressions / reach : null,
           clicks, ctr: m.impressions > 0 ? clicks / m.impressions : null, cpc: clicks > 0 ? m.spend / clicks : null, cpm: m.impressions > 0 ? (m.spend / m.impressions) * 1000 : null,
-          results, cvr: POST_CLICK(o) && clicks > 0 ? results / clicks : null, revenue: m.conversionValue,
+          results, cvr: POST_CLICK(o) && clicks > 0 && results !== null ? results / clicks : null, revenue: r.availB.has("conversionValue") ? m.conversionValue : null,
           kpiShort: kpiShort(o, r.mode), kpiLabel: kpiLabel(o, r.mode), mode: r.mode, kpi: r.kpiB, kpiA: r.kpiA, change: r.change, confidence: r.confidence,
           resultLabel: OBJECTIVE_DEFS[o].resultLabel, resultSingular: OBJECTIVE_DEFS[o].resultSingular,
           kind: p?.kind ?? null, label: p?.label ?? null, priority: p?.priority ?? null, stance: p?.stance ?? null, planKey: p?.key ?? null,
@@ -134,7 +138,7 @@ export function viewModel(a: Analysis, minDate: string) {
     levels.campaign
       .filter((r) => r.objective === o && r.kpi != null && r.kpiA != null && r.kpiA > 0)
       .map((r) => {
-        const amount = r.mode === "roas" ? (r.kpiA! - r.kpi!) * r.spend : (r.kpi! - r.kpiA!) * (r.mode === "cpm" ? r.impressions / 1000 : r.results);
+        const amount = r.mode === "roas" ? (r.kpiA! - r.kpi!) * r.spend : (r.kpi! - r.kpiA!) * (r.mode === "cpm" ? r.impressions / 1000 : (r.results ?? 0));
         return { id: r.id, name: r.name, kpiA: r.kpiA, kpi: r.kpi, change: r.change, mode: r.mode, amount, worse: amount > 0, drivers: r.drivers };
       })
       .filter((x) => Math.abs(x.amount) >= 1)
@@ -146,7 +150,7 @@ export function viewModel(a: Analysis, minDate: string) {
     .map((o) => ({
       objective: o.objective, label: OBJECTIVE_DEFS[o.objective].label, kpiLabel: kpiLabel(o.objective, o.mode), kpiShort: kpiShort(o.objective, o.mode), mode: o.mode,
       value: o.kpiB, previous: o.kpiA, change: o.change, confidence: o.confidence, spend: o.b.spend, share: o.spendShare, kpiMissing: o.kpiMissing,
-      results: o.mode === "cpm" ? o.b.impressions : resultCount(o.b, o.objective),
+      results: o.mode === "cpm" ? o.b.impressions : o.kpiMissing ? null : resultCount(o.b, o.objective),
       resultLabel: o.mode === "cpm" ? "impressions" : OBJECTIVE_DEFS[o.objective].resultLabel,
       resultSingular: o.mode === "cpm" ? "impression" : OBJECTIVE_DEFS[o.objective].resultSingular,
       daily: a.daily.find((d) => d.objective === o.objective)?.points.map((p) => ({ date: p.date, v: kpiValue(p.measures, o.objective, o.mode), spend: p.measures.spend, results: o.mode === "cpm" ? p.measures.impressions : resultCount(p.measures, o.objective) })) ?? [],

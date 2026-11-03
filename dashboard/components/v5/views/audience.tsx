@@ -302,7 +302,7 @@ export function Creatives() {
   // siblings have at least 10 results between them.
   const vsSiblings = (a: R, sib: R[]) => {
     const others = sib.filter((x) => x.id !== a.id);
-    const res = others.reduce((s, x) => s + x.results, 0);
+    const res = others.reduce((s, x) => s + (x.results ?? 0), 0);
     if (res < 10)
       return (
         <span className="muted" title="The other ads in this ad set have fewer than 10 results, so AdMate compares this ad with its own past instead.">
@@ -310,7 +310,7 @@ export function Creatives() {
         </span>
       );
     const spend = others.reduce((s, x) => s + x.spend, 0);
-    const val = a.mode === "roas" ? others.reduce((s, x) => s + x.revenue, 0) / (spend || 1) : spend / res;
+    const val = a.mode === "roas" ? others.reduce((s, x) => s + (x.revenue ?? 0), 0) / (spend || 1) : spend / res;
     if (!val || a.kpi == null || val <= 0) return "—";
     const idx = higher(a.mode) ? a.kpi / val : val / a.kpi;
     return <span className={`delta ${idx >= 1.1 ? "good" : idx <= 0.9 ? "bad" : "flat"}`}>{idx >= 1 ? `${Math.round((idx - 1) * 100)}% better` : `${Math.round((1 - idx) * 100)}% worse`}</span>;

@@ -8,6 +8,7 @@ import type { ImportDiff } from "@/lib/data/imports";
 import { money, rangeLabel } from "@/lib/format";
 import { PLATFORM_LABEL, type Platform } from "@/lib/ingest/headers";
 import { BREAKDOWN_LABEL, type BreakdownKind } from "@/lib/ingest/breakdown";
+import { KEEP_RECENT_SYNCS, syncImportsOf } from "@/lib/tiktok/history";
 
 export const metadata = { title: "Reports" };
 
@@ -16,10 +17,15 @@ export const metadata = { title: "Reports" };
 export default async function ReportsPage({ params }: PageProps<"/c/[ws]/reports">) {
   const { ws } = await params;
   const workspace = await requireWorkspace(ws);
-  const [history, coverage] = await Promise.all([listImports(ws), getCoverage(ws)]);
+  const [all, coverage, syncs] = await Promise.all([listImports(ws), getCoverage(ws), syncImportsOf(ws)]);
   const cur = workspace.currency;
   const live = new Map(coverage.reports.map((r) => [r.importId, r]));
-  const active = history.filter((h) => h.status === "active").length;
+  // Older TikTok syncs are kept as history (their numbers stay in the analysis):
+  // shown as one line instead of one entry per sync.
+  const history = all.filter((h) => h.status !== "history");
+  const older = all.filter((h) => h.status === "history");
+  const active = history.filter((h) => h.status === "active" && !syncs.has(h.id)).length;
+  const recentSyncs = history.filter((h) => h.status === "active" && syncs.has(h.id)).length;
   return (
     <V5Page vm={null} page="reports">
       <PageHead title="Reports" withPeriod={false} />
@@ -29,6 +35,7 @@ export default async function ReportsPage({ params }: PageProps<"/c/[ws]/reports
             <h2>Reports</h2>
             <span className="hint">
               {active} {active === 1 ? "report" : "reports"} uploaded for this account
+              {recentSyncs > 0 && ` · ${recentSyncs} recent TikTok ${recentSyncs === 1 ? "sync" : "syncs"}`}
             </span>
             <span className="more">
               <Link className="btn primary" href={`/c/${ws}/upload`}>
@@ -36,7 +43,7 @@ export default async function ReportsPage({ params }: PageProps<"/c/[ws]/reports
               </Link>
             </span>
           </header>
-          {history.length === 0 ? (
+          {all.length === 0 ? (
             <div className="empty">
               <b>No reports yet</b>Upload an export from your ads manager to start.
             </div>
@@ -82,6 +89,17 @@ export default async function ReportsPage({ params }: PageProps<"/c/[ws]/reports
                   </div>
                 );
               })}
+              {older.length > 0 && (
+                <div className="li">
+                  <div className="grow">
+                    <b>TikTok sync history</b>
+                    <span>
+                      {older.length} earlier {older.length === 1 ? "sync" : "syncs"} · {rangeLabel(older.reduce((m, h) => (h.periodStart < m ? h.periodStart : m), older[0].periodStart), older.reduce((m, h) => (h.periodEnd > m ? h.periodEnd : m), older[0].periodEnd))} ·
+                      their numbers stay in your analysis. Only the {KEEP_RECENT_SYNCS} latest syncs can be undone.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <p className="small-note">“Open” shows everything in the report with no comparison. “Undo” removes an upload; anything it replaced comes back.</p>
