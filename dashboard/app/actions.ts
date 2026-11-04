@@ -5,12 +5,13 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { canAccessSample } from "@/lib/access/policy";
+import { INDUSTRIES } from "@/lib/accountOptions";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { entities, goals, recStatus, savedViews, workspaces } from "@/lib/db/schema";
 import { parseExState } from "@/lib/explorer";
 import { undoImport } from "@/lib/data/imports";
-import { baselineFor, loadAnalysis, requireWorkspace } from "@/lib/data/workspaces";
+import { baselineFor, listWorkspaces, loadAnalysis, requireWorkspace } from "@/lib/data/workspaces";
 import type { SelectionParams } from "@/lib/analysis/periods";
 import { kpiLabel, OBJECTIVES, type Objective } from "@/lib/metrics/objectives";
 import { isRole, type Role } from "@/lib/analysis/roles";
@@ -23,26 +24,30 @@ import { isLevel, levelTarget } from "@/lib/levels";
 // Server actions are public endpoints: every action below signs the user in
 // (requireUser) or checks they own the account (requireWorkspace) first.
 
-async function insertWorkspace(formData: FormData): Promise<string | null> {
+async function insertWorkspace(formData: FormData): Promise<{ id: string } | { error: "name" | "industry" }> {
   const user = await requireUser();
-  const name = String(formData.get("name") ?? "").trim().slice(0, 120);
-  if (!name) return null;
+  const rawName = formData.get("name");
+  const name = typeof rawName === "string" ? rawName.trim().slice(0, 120) : "";
+  if (!name) return { error: "name" };
   const currency = String(formData.get("currency") ?? "USD").trim().toUpperCase().slice(0, 3) || "USD";
-  const industry = String(formData.get("industry") ?? "").trim() || null;
+  const rawIndustry = formData.get("industry");
+  const industry = typeof rawIndustry === "string" && INDUSTRIES.includes(rawIndustry) ? rawIndustry : null;
+  // The first brand requires both fields, even if someone skips the popup UI.
+  if (!industry && !(await listWorkspaces()).length) return { error: "industry" };
   const country = String(formData.get("country") ?? "").trim() || null;
   const id = randomUUID();
   const db = await getDb();
   await db.insert(workspaces).values({ id, ownerId: user.id, name, currency, industry, country });
-  return id;
+  return { id };
 }
 
 export async function createWorkspace(formData: FormData) {
   // AdMate integration: MVP limit on accounts per user (lib/integration/limits.ts).
   if (await checkAccountLimit((await requireUser()).id)) return;
-  const id = await insertWorkspace(formData);
-  if (!id) return;
+  const result = await insertWorkspace(formData);
+  if ("error" in result) redirect(`/?brandError=${result.error}`);
   revalidatePath("/", "layout");
-  redirect(`/c/${id}/upload`);
+  redirect(`/c/${result.id}`);
 }
 
 // Upload report on the sample account: the user's first real report goes into
@@ -52,8 +57,9 @@ export async function createWorkspaceForUpload(formData: FormData): Promise<{ id
   // AdMate integration: MVP limit on accounts per user (lib/integration/limits.ts).
   const limit = await checkAccountLimit((await requireUser()).id);
   if (limit) return { error: limit };
-  const id = await insertWorkspace(formData);
-  return id ? { id } : { error: "Enter your business or brand name first." };
+  const result = await insertWorkspace(formData);
+  if ("id" in result) return result;
+  return { error: result.error === "name" ? "Enter your business or brand name first." : "Choose your brand’s industry." };
 }
 
 export async function loadSampleData() {

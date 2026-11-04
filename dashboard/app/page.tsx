@@ -1,47 +1,17 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { loadSampleData } from "./actions";
-import { Shell } from "@/components/Shell";
-import { AppIcon } from "@/components/Logo";
-import { canAccessSample } from "@/lib/access/policy";
+import { FirstBrandDialog } from "@/components/FirstBrandDialog";
 import { requireUser } from "@/lib/auth/session";
 import { listWorkspaces } from "@/lib/data/workspaces";
 
-export const metadata = { title: "Welcome" };
+export const metadata = { title: "Overview" };
 
-// AdMate opens on your ad account. With no account yet, it explains what it
-// does and directs customers to bring their own export.
-export default async function StartPage() {
-  const user = await requireUser();
+export default async function StartPage({ searchParams }: PageProps<"/">) {
+  await requireUser();
   const accounts = await listWorkspaces();
-  const mine = accounts.filter((a) => !a.isSample);
-  const target = mine[mine.length - 1] ?? accounts[0];
+  const own = accounts.filter((a) => !a.isSample);
+  const target = own[own.length - 1] ?? accounts[0];
   if (target) redirect(`/c/${target.id}`);
 
-  return (
-    <Shell>
-      <div className="page" style={{ maxWidth: 620, paddingBlock: 40 }}>
-        <AppIcon size={56} />
-        <div style={{ display: "grid", gap: 10 }}>
-          <span className="label">AdMate · AI marketing analyst</span>
-          <h1 style={{ fontSize: 34 }}>Know what needs your attention in your ads — and what to do about it.</h1>
-          <p className="muted" style={{ fontSize: 15 }}>
-            Upload an export from Meta, TikTok, Google Ads or LinkedIn. AdMate compares it with the period before, judges each campaign by its own goal, and tells you what to look
-            at first, why, and what to do next — with the numbers behind every suggestion.
-          </p>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          <Link className="btn primary" href="/accounts/new">
-            Add my ad account
-          </Link>
-          {canAccessSample(user.id) && <form action={loadSampleData}>
-            <button className="btn" type="submit">
-              Explore a sample account
-            </button>
-          </form>}
-        </div>
-        <p className="small-note">Your reports are stored privately in your AdMate account. AdMate never connects to or changes your ad accounts.</p>
-      </div>
-    </Shell>
-  );
+  const { brandError } = await searchParams;
+  return <FirstBrandDialog error={brandError === "name" || brandError === "industry" ? brandError : undefined} />;
 }

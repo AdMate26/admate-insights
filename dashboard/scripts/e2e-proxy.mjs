@@ -378,7 +378,10 @@ async function mvp(ownerSample, resetId) {
   const aCookie = cookie;
   const empty = await get("/app");
   const emptyHtml = await empty.text();
-  ok(empty.status === 200 && emptyHtml.includes("Add my ad account") && !emptyHtml.includes("Explore a sample account"), "customer workspace shows their own-account onboarding");
+  const popup = /<form[^>]*class="brand-onboarding-form"[^>]*>([\s\S]*?)<\/form>/.exec(emptyHtml)?.[1] ?? "";
+  ok(empty.status === 200 && emptyHtml.includes('role="dialog"') && emptyHtml.includes("Create your brand") && !emptyHtml.includes('aria-label="Pages"'), "first sign-in shows the required brand popup before the dashboard");
+  ok(popup.includes('name="name"') && popup.includes('name="industry"') && !popup.includes('name="country"') && !popup.includes('name="currency"'), "the popup asks only for brand name and industry");
+  ok((await get("/app/accounts/new")).status === 307, "a direct visit to the add-brand form cannot skip the popup");
   ok((await get("/app/demo")).status === 404, "signed-in customer cannot open the demo route");
   ok((await get(`/app/c/${ownerSample}`)).status === 404, "signed-in customer cannot open the owner's sample");
   const reset = await action("/app", resetId, []);
@@ -391,15 +394,25 @@ async function mvp(ownerSample, resetId) {
   console.log("\n# Customer A creates an ad account and uploads their own report");
   cookie = aCookie;
   const fd = new FormData();
-  for (const [k, v] of Object.entries({ name: "E2E Skin Clinic", currency: "USD", industry: "", country: "" })) fd.set(k, v);
-  const accountForm = await (await get("/app/accounts/new")).text();
-  const createForm = /<form[^>]*class="card formcard"[^>]*>([\s\S]*?)<\/form>/.exec(accountForm)?.[1] ?? "";
-  const createId = /\$ACTION_ID_([0-9a-f]{40,44})/.exec(createForm)?.[1] ?? names.createWorkspace;
-  if (!createId) throw new Error("Missing create account action id");
-  const create = await action("/app/accounts/new", createId, [fd]);
+  fd.set("name", "E2E Skin Clinic");
+  const createId = /\$ACTION_ID_([0-9a-f]{40,44})/.exec(popup)?.[1] ?? names.createWorkspace;
+  if (!createId) throw new Error("Missing create brand action id");
+  const missing = await action("/app", createId, [fd]);
+  ok(missing.redirect === "/?brandError=industry;push", "the server refuses a first brand with no industry");
+  const blank = new FormData();
+  blank.set("name", "  ");
+  blank.set("industry", "Beauty & retail");
+  const invalid = await action("/app", createId, [blank]);
+  ok(invalid.redirect === "/?brandError=name;push", "the server refuses a blank brand name");
+  fd.set("industry", "Beauty & retail");
+  const create = await action("/app", createId, [fd]);
   const own = /\/c\/([0-9a-f-]{36})/.exec(create.redirect ?? "")?.[1];
-  ok(create.status === 200 && !!own, `new account leads to the customer’s own upload screen (HTTP ${create.status})`);
+  ok(create.status === 200 && !!own && create.redirect === `/c/${own};push`, `new brand opens its own overview (HTTP ${create.status})`);
   if (!own) throw new Error("No workspace created");
+  const brand = await get(`/app/c/${own}`);
+  const brandHtml = await brand.text();
+  ok(brand.status === 200 && brandHtml.includes("E2E Skin Clinic") && brandHtml.includes("No reports yet") && brandHtml.includes('aria-label="Pages"') && brandHtml.includes(`href="/app/c/${own}/upload"`), "new brand overview is empty and links to its uploader");
+  ok((await get(`/app/c/${own}/upload`)).status === 200, "brand upload form is available");
   const fx = metaExport();
   const bad = await upload(own, "report.pdf", new TextEncoder().encode("%PDF-1.7"));
   ok(bad.status === 415 && /csv/.test(bad.body.error ?? ""), `unsupported file is refused with a clear message ("${bad.body.error}")`);
@@ -450,6 +463,7 @@ async function mvp(ownerSample, resetId) {
   let limited = false;
   for (let i = 0; i < 22 && !limited; i++) limited = (await upload(own, "again.csv", new TextEncoder().encode(fx.csv))).status === 429;
   ok(limited, "upload limit: more than 20 uploads an hour are refused");
+
 }
 
 try {
