@@ -20,7 +20,7 @@ export default function NewAccountPage() {
           <label className="field">
             <span>Business or brand name</span>
             <span className="in">
-              <input name="name" required placeholder="e.g. Lotus Skincare" style={{ fontFamily: "var(--font-display)" }} />
+              <input name="name" required placeholder="Your business or brand name" style={{ fontFamily: "var(--font-display)" }} />
             </span>
           </label>
           <div className="fields">

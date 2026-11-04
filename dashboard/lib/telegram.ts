@@ -7,7 +7,7 @@ import { alertDigest, alertLines, digestHtml } from "./analysis/alerts";
 import { viewModel } from "./analysis/viewModel";
 import { makeFmt } from "./fmt5";
 import { alertStateTrusted } from "./data/alerts";
-import { loadAnalysisTrusted } from "./data/workspaces";
+import { loadAnalysisTrusted, visibleWorkspace } from "./data/workspaces";
 import { digestCaption, digestCard } from "./telegramCard";
 import { BASE_PATH, publicOrigin } from "./integration/paths";
 
@@ -147,7 +147,7 @@ export async function sendScheduled(now = new Date()) {
     const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
     if (Number(parts.hour) !== Number(l.time.slice(0, 2))) continue;
     if (l.when === "days" && !(l.days as number[]).includes(day)) continue;
-    const accounts = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.ownerId, l.userId));
+    const accounts = await db.select({ id: workspaces.id }).from(workspaces).where(visibleWorkspace(l.userId));
     for (const w of accounts) {
       // Once per hour slot at most, even if the trigger runs twice.
       const recent = await db.select({ id: alertSends.id }).from(alertSends).where(and(eq(alertSends.userId, l.userId), eq(alertSends.workspaceId, w.id), eq(alertSends.kind, "scheduled"), gt(alertSends.sentAt, new Date(now.getTime() - 50 * 60 * 1000)))).limit(1);

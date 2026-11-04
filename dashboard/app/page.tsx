@@ -3,13 +3,16 @@ import { redirect } from "next/navigation";
 import { loadSampleData } from "./actions";
 import { Shell } from "@/components/Shell";
 import { AppIcon } from "@/components/Logo";
+import { canAccessSample } from "@/lib/access/policy";
+import { requireUser } from "@/lib/auth/session";
 import { listWorkspaces } from "@/lib/data/workspaces";
 
 export const metadata = { title: "Welcome" };
 
 // AdMate opens on your ad account. With no account yet, it explains what it
-// does and offers the two ways in: your own export, or the sample account.
+// does and directs customers to bring their own export.
 export default async function StartPage() {
+  const user = await requireUser();
   const accounts = await listWorkspaces();
   const mine = accounts.filter((a) => !a.isSample);
   const target = mine[mine.length - 1] ?? accounts[0];
@@ -31,11 +34,11 @@ export default async function StartPage() {
           <Link className="btn primary" href="/accounts/new">
             Add my ad account
           </Link>
-          <form action={loadSampleData}>
+          {canAccessSample(user.id) && <form action={loadSampleData}>
             <button className="btn" type="submit">
               Explore a sample account
             </button>
-          </form>
+          </form>}
         </div>
         <p className="small-note">Your reports are stored privately in your AdMate account. AdMate never connects to or changes your ad accounts.</p>
       </div>

@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { analyticsAvailable, openAnalyticsSettings } from "@/lib/analytics/posthog";
+
 import { LandingPage } from "@/components/landing/LandingPage";
 
 export const Route = createFileRoute("/")({
@@ -9,15 +11,16 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "AdMate monitors advertising campaigns by objective, finds risks and opportunities, and gives you clear actions through the dashboard and Telegram.",
+          "Upload your ad reports, see what changed, and review recommendations based on your campaign goals.",
       },
       { property: "og:title", content: "AdMate — AI marketing analyst" },
       {
         property: "og:description",
-        content:
-          "Know what is working. Know what to do next. Campaign monitoring for Meta, TikTok and Google Ads.",
+        content: "Turn your ad reports into clear insights and a next step you can act on.",
       },
     ],
   }),
-  component: LandingPage,
+  component: () => (
+    <LandingPage onCookieSettings={analyticsAvailable() ? openAnalyticsSettings : undefined} />
+  ),
 });

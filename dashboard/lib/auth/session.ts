@@ -8,14 +8,12 @@ import { isAuthorized } from "../access/policy";
 import { getDb } from "../db/client";
 import { sessions, users } from "../db/schema";
 import { websiteUrl } from "../integration/paths";
-import { publicDemoVisitor } from "../integration/public-demo";
 import { SESSION_COOKIE, SESSION_DAYS } from "./cookie";
 
 export interface CurrentUser {
   id: string;
   email: string;
-  // AdMate integration: set for a public demo visitor (not signed in). The id is
-  // then the demo's system owner, so only the demo account is visible.
+  // Compatibility with dashboard views that accept a read-only context.
   readOnly?: true;
 }
 
@@ -54,9 +52,7 @@ export async function endSession() {
 // The signed-in user for this request, or null. Cached per request.
 // AdMate integration: a valid session is not enough on its own. The user must
 // still be authorised (lib/access/policy.ts) on every request; a session whose
-// user lost access is deleted and treated as signed out. Without a valid
-// session, a read request that proxy.ts marked gets the read-only public demo
-// visitor (lib/integration/public-demo.ts); never a write or Server Action.
+// user lost access is deleted and treated as signed out. There is no visitor identity.
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (token) {
@@ -71,7 +67,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       await db.delete(sessions).where(eq(sessions.id, sessionId(token)));
     }
   }
-  return publicDemoVisitor();
+  return null;
 });
 
 export async function requireUser(): Promise<CurrentUser> {

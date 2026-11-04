@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { isAuthorized } from "@/lib/access/policy";
+import { canAccessSample, isAuthorized } from "@/lib/access/policy";
 import { verifySupabaseToken } from "@/lib/auth/supabase";
 import { endSession, startSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
@@ -57,9 +57,7 @@ export async function POST(request: Request) {
   if (created.length === 0) {
     await db.update(users).set({ email: user.email, lastLoginAt: new Date() }).where(eq(users.id, user.id));
   } else {
-    // First entry: their own copy of the sample account, exactly as Project B
-    // gave every new account at sign-up.
-    await createSampleAccount(user.id);
+    if (canAccessSample(user.id)) await createSampleAccount(user.id);
     // Analytics (signed-in usage, recorded by the server): a completed sign-up.
     if (serverAnalyticsOn()) {
       const method = user.provider === "google" ? "google" : "email_code";

@@ -6,8 +6,7 @@ export const Route = createFileRoute("/connect")({
       { title: "Connect TikTok Ads — AdMate" },
       {
         name: "description",
-        content:
-          "Connect your own TikTok Ads account to AdMate. Live account connection is coming soon; the synthetic demo dataset is available today.",
+        content: "Connect your own TikTok Ads account to AdMate. Sign in to upload an export.",
       },
       { property: "og:title", content: "Connect TikTok Ads — AdMate" },
       {
@@ -43,16 +42,13 @@ function ConnectPage() {
         <div className="rounded-lg border border-border bg-card p-6">
           <p className="text-sm font-medium text-foreground">Live connection not available yet</p>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            AdMate's data layer is built behind a provider contract, so a live TikTok Ads provider
-            can be plugged in without changing the analysis engine, the AI layer or this UI. Until
-            the live provider is enabled, you can review the full analysis experience on the
-            synthetic dataset.
+            Sign in to upload a TikTok Ads report and analyze your own campaigns.
           </p>
           <Link
-            to="/demo"
+            to="/login"
             className="mt-5 inline-flex rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
           >
-            Explore demo instead
+            Log in or sign up
           </Link>
         </div>
       </main>

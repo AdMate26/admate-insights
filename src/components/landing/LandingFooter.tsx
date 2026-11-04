@@ -35,9 +35,6 @@ export function LandingFooter() {
           <a href="/#how-it-works" className="text-muted-foreground hover:text-foreground">
             How it works
           </a>
-          <Link to="/demo" className="text-muted-foreground hover:text-foreground">
-            Try AdMate
-          </Link>
           <Link to="/login" className="text-muted-foreground hover:text-foreground">
             Login / Sign up
           </Link>

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { canAccessSample } from "@/lib/access/policy";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { entities, goals, recStatus, savedViews, workspaces } from "@/lib/db/schema";
@@ -57,6 +58,7 @@ export async function createWorkspaceForUpload(formData: FormData): Promise<{ id
 
 export async function loadSampleData() {
   const user = await requireUser();
+  if (!canAccessSample(user.id)) redirect("/");
   const id = await createSampleAccount(user.id);
   revalidatePath("/", "layout");
   redirect(`/c/${id}`);

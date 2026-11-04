@@ -28,6 +28,11 @@ export function ownerUserId(): string | null {
   return process.env.META_OWNER_USER_ID?.trim() || null;
 }
 
+/** Sample access is independent of whether customer registration is open. */
+export function canAccessSample(userId: string): boolean {
+  return SUPABASE_USER_ID.test(userId) && userId === ownerUserId();
+}
+
 export function openRegistration(): boolean {
   return process.env.ADMATE_ACCESS?.trim() === "open";
 }
@@ -37,8 +42,7 @@ export const GRANTING_ENTITLEMENT = "active";
 
 export async function resolveAccess(userId: string): Promise<Access> {
   if (!SUPABASE_USER_ID.test(userId)) return { kind: "denied" };
-  const owner = ownerUserId();
-  if (owner && userId === owner) return { kind: "owner" };
+  if (canAccessSample(userId)) return { kind: "owner" };
   if (openRegistration()) return { kind: "user" };
   return { kind: "denied" };
 }

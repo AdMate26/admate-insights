@@ -30,9 +30,10 @@ const { encodeReply } = require("next/dist/compiled/react-server-dom-webpack/cli
 
 const DASHBOARD = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const WEBSITE = path.dirname(DASHBOARD);
-const A = "http://localhost:3000";
-const B_PORT = 3100;
-const MOCK_PORT = 3400;
+const A_PORT = Number(process.env.E2E_SITE_PORT ?? 3000);
+const A = `http://localhost:${A_PORT}`;
+const B_PORT = Number(process.env.E2E_DASHBOARD_PORT ?? 3100);
+const MOCK_PORT = Number(process.env.E2E_AUTH_PORT ?? 3400);
 const OWNER = "00000000-0000-4000-8000-00000000e2e1"; // made-up test owner
 const OTHER = "00000000-0000-4000-8000-00000000e2e2"; // made-up non-owner
 const USER_A = "00000000-0000-4000-8000-00000000e2ea"; // made-up user A (open registration)
@@ -43,9 +44,8 @@ const TOKENS = {
   "a.e2e.sig": { id: USER_A, email: "a@e2e.test" },
   "b.e2e.sig": { id: USER_B, email: "b@e2e.test" },
 };
-const CRON = "e2e-refresh-secret-0123456789abcdef0123"; // test-only
+const CRON = "e2e-cron-secret-0123456789abcdef0123"; // test-only
 let accessMode = ""; // "" = owner only, "open" = open registration
-const ids = {}; // Server Action ids found on signed-in pages (reused by the MVP checks)
 
 let failures = 0;
 const ok = (cond, label) => {
@@ -200,7 +200,7 @@ async function main() {
   }
   await new Promise((r) => mock.listen(MOCK_PORT, "127.0.0.1", r));
   await startDashboard();
-  const website = start("website", process.execPath, [".output/server/index.mjs"], WEBSITE, { PORT: "3000", HOST: "127.0.0.1" });
+  const website = start("website", process.execPath, [".output/server/index.mjs"], WEBSITE, { PORT: String(A_PORT), HOST: "127.0.0.1" });
   await waitFor(`${A}/`);
   const names = clientActionNames();
   ok(names.signOut && names.setFindingStatus, "found the signOut and setFindingStatus Server Actions in the build");
@@ -225,11 +225,9 @@ async function main() {
   // v5 calls these from client components, so their ids come from the build.
   const resetId = names.loadSampleData ?? [...idsIn(overview)].filter((x) => !Object.values(names).includes(x))[0];
   ok(!!resetId, "found the reset-sample Server Action");
-  ids.reset = resetId;
   const settingsHtml = await (await get(`/app/c/${ws}/settings`)).text();
   const settingsId = names.saveSettings ?? [...idsIn(settingsHtml)].filter((x) => x !== resetId && !Object.values(names).includes(x))[0];
   ok(!!settingsId, "found the save-settings Server Action");
-  ids.settings = settingsId;
   const actionsHtml = await (await get(`/app/c/${ws}/actions`)).text();
   const findingKey = findingKeyIn(actionsHtml);
   ok(!!findingKey, "found a decision on the Actions page");
@@ -300,7 +298,7 @@ async function main() {
     ok((await q("select count(*)::int n from rec_status"))[0].n === 0, "the old sample's decisions went with it");
   });
 
-  await mvp();
+  await mvp(newWs, resetId);
   await stop(website);
 }
 
@@ -350,85 +348,58 @@ async function signInAs(token) {
   cookie = null;
   const r = await bridge("POST", token);
   const home = await get("/app");
-  return { status: r.status, sample: workspaceOf(home) };
+  return { status: r.status, workspace: workspaceOf(home) };
 }
 
-async function mvp() {
-  console.log("\n=== Submission MVP: open registration ===");
+async function mvp(ownerSample, resetId) {
+  console.log("\n=== Customer registration and private samples ===");
   accessMode = "open";
   await stop(dashboard);
   await startDashboard();
   cookie = null;
   const names = clientActionNames();
 
-  console.log("\n# Public demo (no login)");
-  ok((await fetch(`${A}/app/api/internal/public-demo`, { method: "POST" })).status === 401, "demo refresh refuses requests without the secret");
-  ok((await fetch(`${A}/app/api/internal/public-demo`, { method: "POST", headers: { authorization: "Bearer wrong" } })).status === 401, "demo refresh refuses a wrong secret");
-  let r = await fetch(`${A}/app/api/internal/public-demo`, { method: "POST", headers: { authorization: `Bearer ${CRON}` } });
-  ok(r.status === 200, "demo refresh with the secret builds the shared demo");
-  r = await get("/app/demo");
-  const demo = workspaceOf(r);
-  ok(r.status === 307 && !!demo, "/app/demo (website /demo) -> the shared demo account, without login");
-  let html = await (await get(`/app/c/${demo}`)).text();
-  ok(html.includes("public demo") && html.includes("Lotus Skincare (sample)") && html.includes("Sample data through"), "public demo renders: B's dashboard, Lotus Skincare, labelled as public demo with its date");
-  for (const page of ["actions", "campaigns", "audience", "reports", "settings", "alerts", "portfolio", "explorer", "budget", "geography", "report"]) ok((await get(`/app/c/${demo}/${page}`)).status === 200, `public demo ${page} page renders`);
-  html = await (await get(`/app/c/${demo}/upload`)).text();
-  ok(html.includes("Uploading needs a free AdMate account") && !html.includes("Choose a file"), "public demo upload page offers sign-up, not an upload");
-  ok(!/Northlane|Olive|Kite/.test(html), "no old demo brands");
-  // Action ids come from the signed-in pages earlier in this run (visitors' pages don't render them).
-  const resetId = ids.reset;
-  const settingsId = ids.settings;
-  for (const [label, id] of Object.entries({ reset: resetId, settings: settingsId, ...names })) if (!id) throw new Error(`missing Server Action id: ${label}`);
-  const key = findingKeyIn(await (await get(`/app/c/${demo}/actions`)).text());
-
-  console.log("\n# Public demo is read-only (correct origin, even with a forged mark)");
-  const form = new FormData();
-  for (const [k, v] of Object.entries({ name: "Hacked", currency: "USD", "messages.target": "99" })) form.set(k, v);
-  const attempts = [
-    ["save a decision", names.setFindingStatus, [demo, key, "done", "x", {}]],
-    ["change targets/settings", settingsId, [demo, form]],
-    ["change objective", names.setCampaignObjective, [demo, "x", "sales"]],
-    ["reset the shared demo", resetId, []],
-    ["create an account", names.createWorkspaceForUpload, [form]],
-    ["delete the demo", names.deleteWorkspace, [demo]],
-  ];
-  for (const [label, id, args] of attempts) {
-    const res = await action(`/app/c/${demo}`, id, args);
-    const forged = await fetch(`${A}/app/c/${demo}`, { method: "POST", redirect: "manual", headers: { "next-action": id, origin: A, "x-admate-public-demo": "1", "content-type": "text/plain;charset=UTF-8" }, body: await encodeReply(args) });
-    ok(res.status !== 200 && forged.status !== 200, `visitor can't ${label} (HTTP ${res.status} / forged ${forged.status})`);
-  }
-  ok((await upload(demo, "meta.csv", new TextEncoder().encode(metaExport().csv))).status === 401, "visitor can't upload a report");
-  ok((await get(`/app/api/summary?ws=${demo}`)).status === 401, "visitor can't reach the paid-AI summary");
-  ok((await fetch(`${A}/app/api/ask`, { method: "POST", headers: { origin: A } })).status === 401, "visitor can't reach Ask AdMate");
-  ok((await get("/app/api/credits")).status === 401, "visitor can't read AI credits");
-  for (const api of ["credits/checkout", "credits/test-pay", "telegram/card"]) {
-    const res = await fetch(`${A}/app/api/${api}`, { method: "POST", headers: { origin: A, "content-type": "application/json", "x-admate-public-demo": "1" }, body: "{}" });
-    ok(res.status === 401 || res.status === 404, `visitor can't use /api/${api} (HTTP ${res.status})`);
+  const landing = await get("/");
+  const landingHtml = await landing.text();
+  ok(landing.status === 200 && landingHtml.includes('href="/login"') && !landingHtml.includes('href="/demo"'), "public homepage links to real sign-in and has no demo CTA");
+  ok((await get("/login")).status === 200, "real sign-in page is available");
+  const legacy = await get("/demo");
+  const legacyTarget = new URL(legacy.headers.get("location") ?? "/", A);
+  ok(legacy.status >= 300 && legacy.status < 400 && legacyTarget.origin === A && legacyTarget.pathname === "/home", "old website demo link redirects to the sign-in entry");
+  ok((await get("/app/demo")).status === 307, "old dashboard demo link requires sign-in");
+  ok((await get(`/app/c/${ownerSample}`)).status === 307, "visitor cannot open the owner's sample directly");
+  for (const api of ["api/counts", "api/v5/daily", "api/v5/detail", "api/internal/public-demo"]) {
+    const r = await fetch(`${A}/app/${api}?ws=${ownerSample}`, { headers: { "x-admate-public-demo": "1" } });
+    ok(r.status === 401, `visitor cannot use /${api} with the old demo header`);
   }
 
-  console.log("\n# Two users sign up (open registration)");
   const a = await signInAs("a.e2e.sig");
-  ok(a.status === 200 && !!a.sample, "user A signs up and gets their own sample");
+  ok(a.status === 200 && !a.workspace, "customer A can sign up without a sample");
   const aCookie = cookie;
-  const b = await signInAs("b.e2e.sig");
-  ok(b.status === 200 && !!b.sample && b.sample !== a.sample, "user B signs up and gets a different sample");
-  const bCookie = cookie;
-  ok((await get(`/app/c/${a.sample}`)).status === 404, "B can't open A's dashboard by changing the URL");
-  r = await action(`/app/c/${b.sample}/actions`, names.setFindingStatus, [a.sample, key, "done", "x", {}]);
-  ok(r.status !== 200 || /NEXT_HTTP_ERROR|not.?found/i.test(r.text), "B can't save a decision in A's account");
-  ok((await upload(a.sample, "meta.csv", new TextEncoder().encode(metaExport().csv))).status === 404, "B can't upload into A's account");
-  ok((await (await get(`/app/api/counts?ws=${a.sample}`)).json()).actions === 0, "B gets nothing about A's account from the API");
-  ok((await get(`/app/c/${demo}`)).status === 404, "a signed-in user doesn't see the shared demo as their account");
-  r = await get("/app/demo");
-  ok(workspaceOf(r) === b.sample, "signed-in /demo opens the user's own interactive sample");
+  const empty = await get("/app");
+  const emptyHtml = await empty.text();
+  ok(empty.status === 200 && emptyHtml.includes("Add my ad account") && !emptyHtml.includes("Explore a sample account"), "customer workspace shows their own-account onboarding");
+  ok((await get("/app/demo")).status === 404, "signed-in customer cannot open the demo route");
+  ok((await get(`/app/c/${ownerSample}`)).status === 404, "signed-in customer cannot open the owner's sample");
+  const reset = await action("/app", resetId, []);
+  ok(reset.redirect === "/;push" || reset.status === 404, "customer cannot load a sample with the owner's action id");
 
-  console.log("\n# User A uploads a real report");
+  const b = await signInAs("b.e2e.sig");
+  ok(b.status === 200 && !b.workspace, "customer B can sign up without a sample");
+  const bCookie = cookie;
+
+  console.log("\n# Customer A creates an ad account and uploads their own report");
   cookie = aCookie;
   const fd = new FormData();
   for (const [k, v] of Object.entries({ name: "E2E Skin Clinic", currency: "USD", industry: "", country: "" })) fd.set(k, v);
-  r = await action(`/app/c/${a.sample}/upload`, names.createWorkspaceForUpload, [fd]);
-  const own = /"id":"([0-9a-f-]{36})"/.exec(r.text)?.[1];
-  ok(r.status === 200 && !!own, "uploading from the sample creates A's own account (sample untouched)");
+  const accountForm = await (await get("/app/accounts/new")).text();
+  const createForm = /<form[^>]*class="card formcard"[^>]*>([\s\S]*?)<\/form>/.exec(accountForm)?.[1] ?? "";
+  const createId = /\$ACTION_ID_([0-9a-f]{40,44})/.exec(createForm)?.[1] ?? names.createWorkspace;
+  if (!createId) throw new Error("Missing create account action id");
+  const create = await action("/app/accounts/new", createId, [fd]);
+  const own = /\/c\/([0-9a-f-]{36})/.exec(create.redirect ?? "")?.[1];
+  ok(create.status === 200 && !!own, `new account leads to the customer’s own upload screen (HTTP ${create.status})`);
+  if (!own) throw new Error("No workspace created");
   const fx = metaExport();
   const bad = await upload(own, "report.pdf", new TextEncoder().encode("%PDF-1.7"));
   ok(bad.status === 415 && /csv/.test(bad.body.error ?? ""), `unsupported file is refused with a clear message ("${bad.body.error}")`);
@@ -446,17 +417,12 @@ async function mvp() {
   ok((await get(`/app/c/${own}`)).status === 404, "B can't open A's uploaded account");
   cookie = aCookie;
 
-  console.log("\n# Persistence, reset and refresh");
+  console.log("\n# Persistence");
   ok((await bridge("DELETE", null)).status === 200 && cookie === null, "A signs out");
   const again = await signInAs("a.e2e.sig");
-  ok(again.sample !== null && (await get(`/app/c/${own}`)).status === 200, "after signing in again A's uploaded account is still there");
-  r = await action(`/app/c/${a.sample}`, resetId, []);
-  if (!(r.status === 200 && r.redirect)) console.log("   reset response:", r.status, r.redirect, r.text.slice(0, 160));
-  ok(r.status === 200 && !!r.redirect, "A resets their sample");
-  ok((await get(`/app/c/${own}`)).status === 200, "the uploaded account survives a sample reset");
-  r = await fetch(`${A}/app/api/internal/public-demo`, { method: "POST", headers: { authorization: `Bearer ${CRON}` } });
-  ok(r.status === 200, "the shared demo is refreshed again");
-  ok((await get(`/app/c/${own}`)).status === 200, "the uploaded account survives a demo refresh");
+  ok(again.workspace === own && (await get(`/app/c/${own}`)).status === 200, "A's report is still available after signing in again");
+  const owner = await signInAs("owner.e2e.sig");
+  ok(owner.status === 200 && owner.workspace === ownerSample, "the verified owner still opens their sample");
 
   await inspect(async (q) => {
     console.log("\n# Database checks");
@@ -465,14 +431,10 @@ async function mvp() {
     const [imp] = await q("select columns from imports where workspace_id = $1", [own]);
     const cols = imp.columns;
     ok(cols.includes("spend") && cols.includes("leads") && !cols.includes("installs") && !cols.includes("thruplays"), "measures missing from the file are recorded as missing, not zero");
-    const demos = await q("select owner_id from workspaces where owner_id like 'public-demo-%'");
-    ok(demos.length === 1, "exactly one shared demo after two refreshes");
-    ok((await q("select count(*)::int n from workspaces where owner_id = $1 and is_sample", [USER_A]))[0].n === 1, "A still has exactly one sample after a reset");
-    ok((await q("select count(*)::int n from workspaces where owner_id = $1 and not is_sample", [USER_A]))[0].n === 1, "A's uploaded account is A's only own account");
-    ok((await q("select count(*)::int n from workspaces where owner_id = $1", [USER_B]))[0].n === 1, "B only has their own sample");
-    const demoRows = await q("select count(*)::int n from rec_status r join workspaces w on w.id = r.workspace_id where w.owner_id like 'public-demo-%'");
-    ok(demoRows[0].n === 0, "no visitor decision was stored on the shared demo");
-    ok((await q("select count(*)::int n from users where id like 'public-demo-%' or id like 'public-demo%'"))[0].n >= 2 && (await q("select count(*)::int n from sessions s where s.user_id like 'public-demo%'"))[0].n === 0, "system users exist but have no sessions");
+    const [{ n: leakedSamples }] = await q("select count(*)::int n from workspaces where is_sample and owner_id <> $1", [OWNER]);
+    ok(leakedSamples === 0, "registration and sample actions did not create non-owner samples");
+    ok((await q("select count(*)::int n from workspaces where owner_id = $1 and not is_sample", [USER_A]))[0].n === 1, "A has only their uploaded account");
+    ok((await q("select count(*)::int n from workspaces where owner_id = $1", [USER_B]))[0].n === 0, "B has no accounts until they create one");
   });
 
   console.log("\n# Limits");
