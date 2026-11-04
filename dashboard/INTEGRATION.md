@@ -60,8 +60,9 @@ Everything not listed here is byte-identical to the source commit
 
 | File | Change | Why |
 | --- | --- | --- |
-| `app/accounts/new/page.tsx` | modified | Uses a neutral business name placeholder. |
-| `app/page.tsx` | modified | New customers start by adding their own account; only the owner sees the sample action. |
+| `app/accounts/new/page.tsx` | modified | Requires first-time users to complete the brand popup; existing users can add another brand. |
+| `app/page.tsx` | modified | Requires a first brand before opening the dashboard. Existing accounts and the owner sample remain accessible to their owners. |
+| `components/v5/NoData.tsx` | modified | Uses the shared report empty state for workspace sections without data. |
 | `components/Shell.tsx` | modified | Shows the sample action only to the owner. |
 | `lib/data/workspaces.ts` | modified | Keeps sample workspaces out of customer lists, direct reads and scheduled delivery. |
 | `lib/sample/load.ts` | modified | Enforces the configured owner ID before creating or resetting a sample. |
@@ -70,6 +71,7 @@ Everything not listed here is byte-identical to the source commit
 | `app/actions.ts` | modified | Account limit before creating an account (2 calls); `chooseLevel` uses the shared `levelTarget` |
 | `app/api/import/commit/route.ts` | modified | Signed-in owners only; report, file and row limits (v5 Telegram-after-upload kept) |
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
+| `app/c/[ws]/page.tsx` | modified | Shows blank metrics and an upload link until a report is available. |
 | `app/c/[ws]/layout.tsx` | modified | Requires a verified session and workspace access; passes the owner sample permission to the sidebar. |
 | `README.md` | modified | Analytics paragraph matches the consent-first PostHog setup |
 | `app/layout.tsx` | modified | Mounts the cookie banner and the page tracker (signed-in page views go through the server) |
@@ -116,6 +118,8 @@ Everything not listed here is byte-identical to the source commit
 | `lib/auth/site.ts` | deleted | Only used by the removed Google sign-in |
 | `lib/email.ts` | deleted | Only used by the removed password reset |
 | `tests/auth.test.ts` | deleted | Tests the removed password reset and Google sign-in |
+| `components/FirstBrandDialog.tsx` | added | Requires a brand name and industry before opening the dashboard. |
+| `components/v5/ReportEmptyState.tsx` | added | Shows an upload path and empty metrics until a report is available. |
 | `INTEGRATION.md` | added | This file |
 | `app/api/activity/route.ts` | added | Signed-in page views and page leaves for analytics (server-side, no tracking cookie) |
 | `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side) |

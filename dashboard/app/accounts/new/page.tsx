@@ -1,19 +1,22 @@
 import { createWorkspace } from "@/app/actions";
 import { Shell } from "@/components/Shell";
 import { COUNTRIES, INDUSTRIES } from "@/lib/accountOptions";
+import { requireUser } from "@/lib/auth/session";
+import { listWorkspaces } from "@/lib/data/workspaces";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Add an ad account" };
+export const metadata = { title: "Create a brand" };
 
-// Step 1 of 2 (prototype "Add an ad account"): the business, then its first upload.
-export default function NewAccountPage() {
+export default async function NewAccountPage() {
+  await requireUser();
+  if (!(await listWorkspaces()).length) redirect("/");
   return (
     <Shell>
       <form action={createWorkspace} className="card formcard" style={{ maxWidth: 560 }}>
         <header>
           <div>
-            <span className="label">Step 1 of 2</span>
-            <h2 style={{ fontSize: 20, marginTop: 4 }}>Add your ad account</h2>
-            <p>The business or brand you run ads for. Next, you’ll upload an export from your ads manager.</p>
+            <h2 style={{ fontSize: 20, marginTop: 4 }}>Create a brand</h2>
+            <p>Set up a workspace for your business. You can upload an ad report when you’re ready.</p>
           </div>
         </header>
         <div className="pad" style={{ display: "grid", gap: 12 }}>
@@ -58,7 +61,7 @@ export default function NewAccountPage() {
         <div className="formfoot">
           <span>You can change these later in Goals &amp; settings.</span>
           <button className="btn primary" type="submit">
-            Continue to upload
+            Create brand
           </button>
         </div>
       </form>

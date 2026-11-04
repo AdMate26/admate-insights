@@ -11,7 +11,7 @@ export const metadata = { title: "Overview" };
 export default async function OverviewPage({ params, searchParams }: PageProps<"/c/[ws]">) {
   const { ws } = await params;
   const { level, data, ask } = await pageData(ws, searchParams);
-  if (!data) return <NoData title={pageLabel(level, "overview")} />;
+  if (!data) return <NoData title={pageLabel(level, "overview")} overview />;
   const page = level === "beginner" ? "home" : "overview";
   return (
     <V5Page vm={data.vm} page={page} askAvailable={ask}>
