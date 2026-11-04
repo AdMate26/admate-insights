@@ -12,8 +12,7 @@ public pages stay on the website.
 analysis pages under `app/c/[ws]` (overview, actions, campaigns, audience,
 reports, settings), `components/v3/charts.tsx` and the other report components,
 `app/globals.css` and the original tests are byte-identical to the source
-commit. The few interface files listed below only hide write controls from
-public demo visitors. Check with:
+commit, except for the documented access checks in the sample and workspace entry points. Campaign analysis and sample generation formulas are unchanged. Check with:
 
 ```bash
 node scripts/check-integration.mjs   # every unlisted file matches the source commit
@@ -35,10 +34,9 @@ throwaway database; nothing real is contacted.
 | Base path | `next.config.ts` → `basePath: "/app"` (`lib/integration/paths.ts`) | Links, pages and assets live under `/app`. Raw `fetch()` calls to this app's API use `apiPath()`. |
 | Server Actions | `next.config.ts` → `experimental.serverActions.allowedOrigins` | Requests arrive through the website's rewrite, so the browser's `Origin` (the public host) differs from the host this app sees. Exactly the host of `ADMATE_PUBLIC_ORIGIN` is allowed (with its port locally); Next.js still refuses every other origin. Read when the app starts. |
 | Sign-in | website `/login` (Supabase email OTP) | Unchanged. There is no password sign-in or sign-up here any more. |
-| Session bridge | website `/home` → `POST /app/api/session` | `/home` sends the Supabase access token (Authorization header, same origin). `app/api/session/route.ts` confirms it with Supabase Auth (`lib/auth/supabase.ts`), checks access (`lib/access/policy.ts`) and only then starts this app's own session (the original `startSession()`, HttpOnly cookie). On a user's first entry it creates their sample account with the original `createSampleAccount()`, as sign-up used to. |
+| Session bridge | website `/home` → `POST /app/api/session` | `/home` sends the Supabase access token (Authorization header, same origin). `app/api/session/route.ts` confirms it with Supabase Auth (`lib/auth/supabase.ts`), checks access (`lib/access/policy.ts`) and only then starts this app's own session (the original `startSession()`, HttpOnly cookie). On first entry it seeds a sample only for the configured owner. Customers start without ad accounts. |
 | Access | `lib/access/policy.ts`, checked in `getCurrentUser()` on **every** protected request | `ADMATE_ACCESS=open` (submission MVP): every Supabase-verified user gets their own private workspace. Without it: owner only (`META_OWNER_USER_ID`, fail-closed). Later, invite-only Early Access: only an `active` entitlement keyed by the Supabase user id. Losing access ends the session on the next request. Refused users create no data here. Each user only ever sees accounts they own (the original `getWorkspace()` rule). |
-| Public demo | `lib/integration/public-demo.ts`, `proxy.ts`, `app/demo/route.ts` | One shared copy of the original sample (original `createSampleAccount()`), owned by a system user that can never sign in. Signed-out READ requests marked by `proxy.ts` get a read-only visitor identity equal to that system user, so the original ownership rule shows them only the demo. Writes, Server Actions, uploads and AI never get it. The website's `/demo` lands on `/app/demo`: signed in → your own sample; otherwise → the public demo. |
-| Demo refresh | `app/api/internal/public-demo/route.ts` | Needs `Authorization: Bearer $CRON_SECRET` (≥ 32 chars; off without it). Builds the next copy under the other system user and removes the old one only when the new one is complete. Never touches users' accounts. Not scheduled yet. |
+| Owner sample | `lib/access/policy.ts`, `lib/sample/load.ts`, `app/demo/route.ts` | Only the verified account matching `META_OWNER_USER_ID` can list, open or load sample workspaces. There is no public visitor identity. Old sample rows are retained but hidden from customers by server queries. |
 | Upload limits | `lib/integration/limits.ts`, called from the import routes and account creation | 4 MB per file; real CSV/TSV/XLSX/XLS content (zip-bomb check for .xlsx); 20 uploads per user per hour; 5 own accounts per user; 50 active reports per account; 50,000 rows per file. |
 | Session lifetime | `lib/auth/cookie.ts` | 12 hours (was 30 days). After that `/home` re-checks the Supabase sign-in. |
 | Sign-out | dashboard "Sign out" → website `/logout`; website sign-out → `DELETE /app/api/session` | Either side ends both sessions. A new sign-in also ends any earlier session in the browser. |
@@ -48,7 +46,7 @@ throwaway database; nothing real is contacted.
 Settings (see `.env.example`): `ADMATE_PUBLIC_ORIGIN`, `SUPABASE_URL`,
 `SUPABASE_PUBLISHABLE_KEY` (the website's project; public values),
 `META_OWNER_USER_ID`, `ADMATE_ACCESS` (`open` for the MVP) and `CRON_SECRET`
-(demo refresh). Without `ADMATE_PUBLIC_ORIGIN` the bridge refuses to work.
+(scheduled alerts). Without `ADMATE_PUBLIC_ORIGIN` the bridge refuses to work.
 Without `ADMATE_ACCESS=open` only the owner is admitted. Keep
 `ANTHROPIC_API_KEY` unset: no report data goes to an AI provider.
 
@@ -62,12 +60,17 @@ Everything not listed here is byte-identical to the source commit
 
 | File | Change | Why |
 | --- | --- | --- |
+| `app/accounts/new/page.tsx` | modified | Uses a neutral business name placeholder. |
+| `app/page.tsx` | modified | New customers start by adding their own account; only the owner sees the sample action. |
+| `components/Shell.tsx` | modified | Shows the sample action only to the owner. |
+| `lib/data/workspaces.ts` | modified | Keeps sample workspaces out of customer lists, direct reads and scheduled delivery. |
+| `lib/sample/load.ts` | modified | Enforces the configured owner ID before creating or resetting a sample. |
 | `.env.example` | modified | New integration settings (placeholders); PostHog token/host wording |
 | `app/(auth)/actions.ts` | modified | Only sign-out remains (continues to the website's `/logout`); sign-in, sign-up, password reset and Google live on the website |
 | `app/actions.ts` | modified | Account limit before creating an account (2 calls); `chooseLevel` uses the shared `levelTarget` |
 | `app/api/import/commit/route.ts` | modified | Signed-in owners only; report, file and row limits (v5 Telegram-after-upload kept) |
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
-| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`) |
+| `app/c/[ws]/layout.tsx` | modified | Requires a verified session and workspace access; passes the owner sample permission to the sidebar. |
 | `README.md` | modified | Analytics paragraph matches the consent-first PostHog setup |
 | `app/layout.tsx` | modified | Mounts the cookie banner and the page tracker (signed-in page views go through the server) |
 | `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link and "Analytics settings" |
@@ -91,10 +94,10 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/views/explorer.tsx` | modified | Visitors get the sign-up note instead of saving a view |
 | `lib/auth/cookie.ts` | modified | Session lifetime 12 hours |
 | `lib/auth/session.ts` | modified | Per-request access check in `getCurrentUser()`; sign-in redirect goes to the website |
-| `lib/telegram.ts` | modified | Message buttons open `ADMATE_PUBLIC_ORIGIN` + `/app` (the website), not this app's protected deployment address |
+| `lib/telegram.ts` | modified | Message buttons use the public origin; scheduled delivery excludes historical samples belonging to customers. |
 | `lib/levels.ts` | modified | `levelTarget` (shared by the server action and the visitor path) and the visitor view cookie name |
 | `next.config.ts` | modified | `basePath: "/app"`; Server Actions accept exactly the public host (`serverActions.allowedOrigins`); `/ingest` analytics relay removed |
-| `proxy.ts` | modified | Public: session bridge, demo refresh, `/api/cron` (own secret). Visitor read-only mark on demo pages incl. v5 Portfolio/Explorer/Budget/Geography/Report and `/api/v5/*`; signed-out visitors go to the website's `/home` |
+| `proxy.ts` | modified | Public: session bridge and `/api/cron` (own secret). Signed-out pages redirect to the website; private APIs require a session. |
 | `vercel.json` | modified | `buildCommand: "next build"` (no migrations during builds) |
 | `.claude/launch.json` | deleted | Local tool config, not needed in this repository |
 | `app/(auth)/AuthForm.tsx` | deleted | Only used by the removed pages |
@@ -114,10 +117,9 @@ Everything not listed here is byte-identical to the source commit
 | `lib/email.ts` | deleted | Only used by the removed password reset |
 | `tests/auth.test.ts` | deleted | Tests the removed password reset and Google sign-in |
 | `INTEGRATION.md` | added | This file |
-| `app/api/internal/public-demo/route.ts` | added | Secret-protected demo refresh |
 | `app/api/activity/route.ts` | added | Signed-in page views and page leaves for analytics (server-side, no tracking cookie) |
 | `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side) |
-| `app/demo/route.ts` | added | `/app/demo`: own sample or the public demo |
+| `app/demo/route.ts` | added | `/app/demo`: sample entry reserved for the verified owner |
 | `components/AnalyticsConsent.tsx` | added | Cookie banner for analytics (shared with the website) |
 | `components/PageTracker.tsx` | added | Page views: server for signed-in people, browser (after consent) for demo visitors |
 | `drizzle/0011_user_visits.sql` | added | Migration for `user_visits` (apply to the dashboard database before go-live) |
@@ -129,7 +131,6 @@ Everything not listed here is byte-identical to the source commit
 | `lib/auth/supabase.ts` | added | Supabase token check (also returns the sign-in provider for sign-up analytics) |
 | `lib/integration/limits.ts` | added | Upload and account limits, file content checks |
 | `lib/integration/paths.ts` | added | Base path, API paths, website URLs |
-| `lib/integration/public-demo.ts` | added | Shared public demo: system owners, current demo, safe refresh, visitor identity |
 | `lib/integration/read-only.tsx` | added | Read-only flag for visitors (what the screen offers) |
 | `scripts/check-integration.mjs` | added | Verifies the two files above |
 | `scripts/e2e-proxy.mjs` | added | End-to-end test through the website's `/app` proxy (local only) |

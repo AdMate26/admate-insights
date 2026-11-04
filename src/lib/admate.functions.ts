@@ -94,12 +94,9 @@ function coerceScope(input: unknown): { brand: WorkspaceBrand; platform: Platfor
 }
 
 /**
- * Owner gate for live brands. Runs BEFORE the cache is consulted, so cached live
- * data can never be served to anyone but the verified owner. Demo brands need
- * no identity at all (they stay public).
+ * Gate live and sample analyses before consulting the shared cache.
  */
-async function requireAccess(brand: WorkspaceBrand): Promise<OwnerAccess | null> {
-  if (!isLiveBrand(brand)) return null;
+async function requireAccess(): Promise<OwnerAccess> {
   const access = await verifyOwnerAccess();
   if (!access) throw new Error("This workspace isn't available.");
   return access;
@@ -122,10 +119,10 @@ async function cachedAnalysis(
 
 /**
  * Gather one brand's analyses — one per connected platform, each analysed on its
- * own. The owner check (live brands only) happens once, up front.
+ * own. The owner check happens once, up front.
  */
 async function gatherBrandAnalyses(brand: WorkspaceBrand): Promise<AdMateAnalysis[]> {
-  const access = await requireAccess(brand);
+  const access = await requireAccess();
   return Promise.all(
     brandPlatforms(brand).map((platform) => cachedAnalysis(brand, platform, access)),
   );
@@ -137,7 +134,7 @@ export const getAdMateAnalysis = createServerFn({ method: "GET" })
   )
   .handler(async ({ data }): Promise<AdMateAnalysis> => {
     const { brand, platform } = data;
-    const access = await requireAccess(brand);
+    const access = await requireAccess();
     return cachedAnalysis(brand, platform, access);
   });
 

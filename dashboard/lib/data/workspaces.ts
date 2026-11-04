@@ -1,6 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { canAccessSample } from "../access/policy";
 import { getCurrentUser } from "../auth/session";
 import { getDb } from "../db/client";
 import { breakdowns, entities, facts, goals, imports, recStatus, workspaces } from "../db/schema";
@@ -19,20 +20,28 @@ import type { Goal } from "../analysis/goals";
 import { resolveSelection, type Coverage, type SelectionParams } from "../analysis/periods";
 import type { Analysis, CampaignInfo, DoneItem, EntityLevel, FactRow, Finding, FindingStatus } from "../analysis/types";
 
+// Old customer samples can remain in storage but may no longer be read.
+export function visibleWorkspace(userId: string) {
+  return and(
+    eq(workspaces.ownerId, userId),
+    canAccessSample(userId) ? undefined : eq(workspaces.isSample, false),
+  );
+}
+
 // Every account read starts here and only ever sees the signed-in user's own
 // accounts. loadAnalysis goes through getWorkspace, so it is covered too.
 export async function listWorkspaces() {
   const user = await getCurrentUser();
   if (!user) return [];
   const db = await getDb();
-  return db.select().from(workspaces).where(eq(workspaces.ownerId, user.id)).orderBy(workspaces.createdAt);
+  return db.select().from(workspaces).where(visibleWorkspace(user.id)).orderBy(workspaces.createdAt);
 }
 
 export async function getWorkspace(id: string) {
   const user = await getCurrentUser();
   if (!user) return null;
   const db = await getDb();
-  const [ws] = await db.select().from(workspaces).where(and(eq(workspaces.id, id), eq(workspaces.ownerId, user.id)));
+  const [ws] = await db.select().from(workspaces).where(and(eq(workspaces.id, id), visibleWorkspace(user.id)));
   return ws ?? null;
 }
 

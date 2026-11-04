@@ -32,7 +32,7 @@ const IC: Record<MenuIcon, string> = {
   settings: "M2.5 4.5h11 M2.5 11.5h11 M5.5 2.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z M10.5 9.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4Z",
 };
 
-export function Side({ counts: initial, userId }: { counts: { actions: number; alerts: number }; userId: string }) {
+export function Side({ counts: initial, userId, canUseSample }: { counts: { actions: number; alerts: number }; userId: string; canUseSample: boolean }) {
   const { ws, level, accounts, isAdv, email, readOnly } = useV5();
   const path = usePathname();
   const search = useSearchParams();
@@ -159,9 +159,9 @@ export function Side({ counts: initial, userId }: { counts: { actions: number; a
           <a href="/login">Log in or sign up free</a>
         ) : (
           <>
-            <form action={loadSampleData}>
+            {canUseSample && <form action={loadSampleData}>
               <button type="submit">{accounts.some((a) => a.isSample) ? "Reset the sample account" : "Explore the sample account"}</button>
-            </form>
+            </form>}
             <span className="user" title={email}>
               {email}
             </span>

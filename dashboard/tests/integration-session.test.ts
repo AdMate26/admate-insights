@@ -11,7 +11,7 @@ vi.mock("server-only", () => ({}));
 
 // A minimal cookie jar standing in for next/headers in route handlers.
 const jar = new Map<string, { value: string; options?: Record<string, unknown> }>();
-// Request headers seen by the code under test (e.g. the public demo mark set by proxy.ts).
+// Request headers seen by the code under test.
 let requestHeaders = new Headers();
 vi.mock("next/headers", () => ({
   headers: async () => requestHeaders,
@@ -249,7 +249,6 @@ describe("request gate (proxy.ts)", () => {
     const root = new URL(proxy(req("/")).headers.get("location")!);
     expect(root.pathname).toBe("/home");
     expect(root.searchParams.has("next")).toBe(false);
-    // (/api/counts is a public-demo read now; the paid-AI summary is not.)
     expect(proxy(req("/api/summary?ws=x")).status).toBe(401);
   });
 
@@ -307,120 +306,71 @@ describe("open registration (ADMATE_ACCESS=open)", () => {
     for (const id of ["public-demo-a", "public-demo-b", "public-demo-refresh-lease", ""]) expect(await policy.isAuthorized(id)).toBe(false);
   });
 
-  it("a new user is created once with their own sample, and nobody else's data", async () => {
+  it("a customer gets a session but no sample, even across concurrent sign-ins", async () => {
     process.env.ADMATE_ACCESS = "open";
     const { route, session } = await modules();
     const res = await route.POST(bridge("POST", { token: "other.jwt.sig" }));
     expect(res.status).toBe(200);
     expect(await session.getCurrentUser()).toEqual({ id: OTHER, email: "someone@example.test" });
-    expect(await counts(OTHER)).toMatchObject({ users: 1, workspaces: 1, samples: 1, sessions: 1 });
-    // Concurrent first sign-ins (two tabs): still exactly one sample.
+    expect(await counts(OTHER)).toMatchObject({ users: 1, workspaces: 0, samples: 0, sessions: 1 });
     jar.clear();
     const [a, b] = await Promise.all([route.POST(bridge("POST", { token: "other.jwt.sig" })), route.POST(bridge("POST", { token: "other.jwt.sig" }))]);
     expect([a.status, b.status]).toEqual([200, 200]);
-    expect((await counts(OTHER)).samples).toBe(1);
+    expect((await counts(OTHER)).samples).toBe(0);
   });
 });
 
-describe("public demo visitor (read-only)", () => {
-  async function seedDemo() {
-    const { refreshPublicDemo, currentDemo } = await import("@/lib/integration/public-demo");
-    const r = await refreshPublicDemo();
-    expect(r.status).toBe("refreshed");
-    return (await currentDemo())!;
-  }
-
-  it("only a request marked by proxy.ts, with no session and no Server Action, gets the visitor identity", async () => {
-    const demo = await seedDemo();
-    const { session } = await modules();
-    expect(await session.getCurrentUser()).toBeNull(); // no mark
-    requestHeaders = new Headers({ "x-admate-public-demo": "1" });
-    expect(await session.getCurrentUser()).toEqual({ id: demo.ownerId, email: "", readOnly: true });
-    requestHeaders = new Headers({ "x-admate-public-demo": "1", "next-action": "abc" });
-    expect(await session.getCurrentUser()).toBeNull(); // Server Actions never
-    requestHeaders = new Headers({ "x-admate-public-demo": "0" });
-    expect(await session.getCurrentUser()).toBeNull();
-  });
-
-  it("the visitor sees only the demo account, never a user's account", async () => {
-    process.env.ADMATE_ACCESS = "open";
-    const demo = await seedDemo();
-    const { route } = await modules();
-    await route.POST(bridge("POST", { token: "other.jwt.sig" }));
-    jar.clear();
-    requestHeaders = new Headers({ "x-admate-public-demo": "1" });
-    const { getWorkspace, listWorkspaces } = await import("@/lib/data/workspaces");
-    const { getDb } = await import("@/lib/db/client");
-    const schema = await import("@/lib/db/schema");
-    const { eq } = await import("drizzle-orm");
-    const [mine] = await (await getDb()).select().from(schema.workspaces).where(eq(schema.workspaces.ownerId, OTHER));
-    expect(await getWorkspace(demo.id)).not.toBeNull();
-    expect(await getWorkspace(mine.id)).toBeNull();
-    expect((await listWorkspaces()).map((w) => w.id)).toEqual([demo.id]);
-  });
-
-  it("a signed-in user is never treated as the visitor, and sees only their own accounts", async () => {
-    process.env.ADMATE_ACCESS = "open";
-    const demo = await seedDemo();
-    const { route, session } = await modules();
-    await route.POST(bridge("POST", { token: "other.jwt.sig" }));
-    requestHeaders = new Headers({ "x-admate-public-demo": "1" });
-    const me = await session.getCurrentUser();
-    expect(me?.id).toBe(OTHER);
-    expect(me?.readOnly).toBeUndefined();
-    const { getWorkspace } = await import("@/lib/data/workspaces");
-    expect(await getWorkspace(demo.id)).toBeNull();
-  });
-
-  it("refresh builds the next copy before removing the old one, and never touches users' accounts", async () => {
-    process.env.ADMATE_ACCESS = "open";
-    const { route } = await modules();
-    await route.POST(bridge("POST", { token: "other.jwt.sig" }));
-    const before = await counts(OTHER);
-    const first = await seedDemo();
-    const second = await seedDemo();
-    expect(second.id).not.toBe(first.id);
-    expect(second.ownerId).not.toBe(first.ownerId);
-    const { getDb } = await import("@/lib/db/client");
-    const schema = await import("@/lib/db/schema");
-    const { inArray } = await import("drizzle-orm");
-    const demos = await (await getDb()).select().from(schema.workspaces).where(inArray(schema.workspaces.ownerId, ["public-demo-a", "public-demo-b"]));
-    expect(demos.map((d) => d.id)).toEqual([second.id]);
-    expect(await counts(OTHER)).toMatchObject({ users: before.users, workspaces: before.workspaces, samples: before.samples });
-  });
-
-  it("the system owners can never get a session through the bridge", async () => {
-    TOKENS["system.jwt.sig"] = { id: "public-demo-a", email: "x@y.test" };
-    process.env.ADMATE_ACCESS = "open";
-    const { route } = await modules();
-    expect((await route.POST(bridge("POST", { token: "system.jwt.sig" }))).status).toBe(403);
-    expect(jar.has("admate_session")).toBe(false);
-    delete TOKENS["system.jwt.sig"];
-  });
-
-  it("proxy.ts marks only signed-out READS of demo pages, and strips any mark the browser sends", async () => {
+describe("owner-only sample", () => {
+  it("rejects old demo URLs and API reads without a valid session", async () => {
     const { proxy } = await import("@/proxy");
-    const mark = (r: Response) => r.headers.get("x-middleware-request-x-admate-public-demo");
-    const read = (p: string, init: { method?: string; headers?: Record<string, string> } = {}) =>
-      proxy(new NextRequest(`https://dashboard.vercel.test/app${p}`, { nextConfig: { basePath: "/app" }, method: init.method, headers: init.headers }));
-    expect(mark(read("/c/abc"))).toBe("1");
-    expect(mark(read("/c/abc/settings"))).toBe("1");
-    expect(mark(read("/demo"))).toBe("1");
-    expect(mark(read("/api/counts"))).toBe("1");
-    for (const [p, init] of [
-      ["/c/abc", { method: "POST", headers: { "x-admate-public-demo": "1" } }],
-      ["/c/abc", { headers: { "next-action": "x", "x-admate-public-demo": "1" } }],
-      ["/api/summary", { headers: { "x-admate-public-demo": "1" } }],
-      ["/api/import/preview", { method: "POST" }],
-      ["/accounts/new", {}],
-      ["/", {}],
-    ] as const) {
-      const r = read(p, init);
-      expect(mark(r) ?? null, `${init.method ?? "GET"} ${p}`).not.toBe("1");
+    const { session } = await modules();
+    requestHeaders = new Headers({ "x-admate-public-demo": "1" });
+    expect(await session.getCurrentUser()).toBeNull();
+    const read = (p: string) => proxy(new NextRequest(`${ORIGIN}/app${p}`, {
+      nextConfig: { basePath: "/app" }, headers: requestHeaders,
+    }));
+    for (const p of ["/demo", "/c/old-demo", "/c/old-demo/settings"]) {
+      expect(read(p).status).toBe(307);
+      expect(new URL(read(p).headers.get("location")!).pathname).toBe("/home");
     }
-    expect(read("/api/summary").status).toBe(401);
-    expect(read("/api/ask", { method: "POST" }).status).toBe(401);
-    expect(read("/api/import/commit", { method: "POST" }).status).toBe(401);
+    for (const p of ["/api/counts", "/api/v5/daily", "/api/v5/detail", "/api/internal/public-demo"]) {
+      expect(read(p).status).toBe(401);
+    }
+    const demo = await import("@/app/demo/route");
+    expect((await demo.GET()).headers.get("location")).toBe(`${ORIGIN}/home`);
+  });
+
+  it("customers cannot list, open or recreate sample workspaces; the verified owner can", async () => {
+    process.env.ADMATE_ACCESS = "open";
+    const { route, db, schema } = await modules();
+    const { getWorkspace, listWorkspaces } = await import("@/lib/data/workspaces");
+    const { createSampleAccount } = await import("@/lib/sample/load");
+    const { loadSampleData } = await import("@/app/actions");
+    const demo = await import("@/app/demo/route");
+    const [ownerSample] = await db.select().from(schema.workspaces).where(
+      (await import("drizzle-orm")).eq(schema.workspaces.ownerId, OWNER),
+    );
+    expect(ownerSample.isSample).toBe(true);
+    await route.POST(bridge("POST", { token: "other.jwt.sig" }));
+    const legacyId = "12345678-1234-4123-8123-123456789123";
+    const customerId = "12345678-1234-4123-8123-123456789124";
+    await db.insert(schema.workspaces).values([
+      { id: legacyId, ownerId: OTHER, name: "Previous sample", currency: "USD", isSample: true },
+      { id: customerId, ownerId: OTHER, name: "Customer account", currency: "USD" },
+    ]);
+    expect((await listWorkspaces()).map((w) => w.id)).toEqual([customerId]);
+    expect(await getWorkspace(legacyId)).toBeNull();
+    expect(await getWorkspace(ownerSample.id)).toBeNull();
+    expect((await demo.GET()).status).toBe(404);
+    await expect(createSampleAccount(OTHER)).rejects.toThrow("Sample account unavailable.");
+    const redirect = await loadSampleData().then(() => null, (error: { digest?: string }) => error.digest);
+    expect(redirect).toContain("NEXT_REDIRECT");
+    expect((await counts(OTHER)).samples).toBe(1); // No reset or new sample.
+
+    await route.POST(bridge("POST", { token: "owner.jwt.sig" }));
+    expect((await listWorkspaces()).map((w) => w.id)).toEqual([ownerSample.id]);
+    expect(await getWorkspace(customerId)).toBeNull();
+    expect((await demo.GET()).headers.get("location")).toBe(`${ORIGIN}/app/c/${ownerSample.id}`);
   });
 });
 

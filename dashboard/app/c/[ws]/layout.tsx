@@ -1,15 +1,15 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { V5Provider } from "@/components/v5/ctx";
 import { Side } from "@/components/v5/Side";
 import { aiEnabled } from "@/lib/ai/client";
-import { getCurrentUser, requireUser } from "@/lib/auth/session";
+import { canAccessSample } from "@/lib/access/policy";
+import { requireUser } from "@/lib/auth/session";
 import { getAlertConfig } from "@/lib/data/alerts";
 import { getLevel } from "@/lib/data/settings";
 import { getCoverage, getWorkspace, listWorkspaces } from "@/lib/data/workspaces";
 import { shortDate } from "@/lib/format";
-import { BASE_PATH, websiteUrl } from "@/lib/integration/paths";
 import { ReadOnlyProvider } from "@/lib/integration/read-only";
 import { DEFAULT_LEVEL } from "@/lib/levels";
 
@@ -17,15 +17,10 @@ import { DEFAULT_LEVEL } from "@/lib/levels";
 // and view pickers and the view's menu, the sample-account banner, then the page.
 export default async function AccountLayout({ children, params }: LayoutProps<"/c/[ws]">) {
   const { ws } = await params;
-  // AdMate integration: someone who is not signed in can only see the public
-  // demo; any other account sends them to sign in on the website (e.g. their
-  // own bookmark). Writes are refused server-side for read-only visitors.
-  const viewer = await getCurrentUser();
-  const workspace = await getWorkspace(ws);
-  if (!workspace && (!viewer || viewer.readOnly)) redirect(websiteUrl(`/home?next=${encodeURIComponent(`${BASE_PATH}/c/${ws}`)}`));
   const user = await requireUser();
+  const workspace = await getWorkspace(ws);
   if (!workspace) notFound();
-  const readOnly = !!viewer?.readOnly;
+  const readOnly = false;
   const [accounts, coverage, saved, alerts] = await Promise.all([listWorkspaces(), getCoverage(ws), getLevel(), getAlertConfig(ws)]);
   const level = saved ?? DEFAULT_LEVEL;
   const end = coverage.dailyTo ?? coverage.maxDate;
@@ -51,16 +46,16 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
         <ReadOnlyProvider value={readOnly}>
         <div className="frame">
           <Suspense>
-            <Side counts={{ actions: 0, alerts: 0 }} userId={user.id} />
+            <Side counts={{ actions: 0, alerts: 0 }} userId={user.id} canUseSample={canAccessSample(user.id)} />
           </Suspense>
           <main className="main">
             {workspace.isSample && (
               <div className="banner">
                 <span>
-                  <b>{readOnly ? "AdMate’s public demo." : "Sample account."}</b> {workspace.name} is made up, so you can explore safely.
+                  <b>Sample account.</b> {workspace.name} is made up, so you can explore safely.
                   {coverage.maxDate && <> Sample data through {shortDate(coverage.maxDate)}.</>}
                 </span>
-                {readOnly ? <a href="/login">Sign up free to upload your own report →</a> : <Link href={`/c/${ws}/upload`}>Upload your own report →</Link>}
+                <Link href={`/c/${ws}/upload`}>Upload your own report →</Link>
               </div>
             )}
             <div className="content">{children}</div>

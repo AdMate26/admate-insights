@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { canAccessSample } from "../access/policy";
 import { getDb } from "../db/client";
 import { goals, workspaces } from "../db/schema";
 import { commitImport } from "../data/imports";
@@ -8,10 +9,9 @@ import { MEASURE_KEYS } from "../metrics/measures";
 import { addDays } from "../dates";
 import { generateClientRows, SAMPLE_ACCOUNT, sampleEndDate } from "./generate";
 
-// Gives one user their own copy of the Lotus Skincare sample account, replacing
-// any earlier sample of theirs (never touches their real accounts or anyone
-// else's). Every new user gets this at sign-up. Returns the new account's id.
+// Replace the verified owner’s own sample without touching their real accounts.
 export async function createSampleAccount(ownerId: string): Promise<string> {
+  if (!canAccessSample(ownerId)) throw new Error("Sample account unavailable.");
   const db = await getDb();
   await db.delete(workspaces).where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.isSample, true)));
   const client = SAMPLE_ACCOUNT;

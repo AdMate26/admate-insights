@@ -91,8 +91,8 @@ function OnboardingPage() {
           </p>
         ) : null}
         <div className="mt-2 flex items-center justify-between">
-          <Link to="/demo" className="text-muted-foreground hover:text-foreground">
-            Explore the demo
+          <Link to="/" className="text-muted-foreground hover:text-foreground">
+            Back to AdMate
           </Link>
           <button
             type="button"

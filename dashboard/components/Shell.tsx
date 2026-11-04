@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { loadSampleData } from "@/app/actions";
 import { signOut } from "@/app/(auth)/actions";
 import { listWorkspaces } from "@/lib/data/workspaces";
+import { canAccessSample } from "@/lib/access/policy";
 import { requireUser } from "@/lib/auth/session";
 
 // The frame for pages outside an ad account (the start page, "Add an ad account"):
@@ -37,9 +38,9 @@ export async function Shell({ children }: { children: ReactNode }) {
             </Link>
           </nav>
           <div className="side-foot">
-            <form action={loadSampleData}>
+            {canAccessSample(user.id) && <form action={loadSampleData}>
               <button type="submit">{accounts.some((a) => a.isSample) ? "Reset the sample account" : "Explore the sample account"}</button>
-            </form>
+            </form>}
             <span className="user" title={user.email}>
               {user.email}
             </span>
