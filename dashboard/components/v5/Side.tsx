@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { analyticsAvailable, identifyUser, openAnalyticsSettings, resetAnalytics } from "@/lib/analytics";
 import { loadSampleData } from "@/app/actions";
@@ -38,6 +38,9 @@ export function Side({ counts: initial, userId, canUseSample }: { counts: { acti
   const search = useSearchParams();
   const [pop, setPop] = useState<null | "acct">(null);
   const [counts, setCounts] = useState(initial);
+  const [prefetchTarget, setPrefetchTarget] = useState<string | null>(null);
+  // Public badges cannot change between pages for the same sample and period.
+  const badgePage = readOnly ? "" : path;
   const side = useRef<HTMLElement>(null);
   const keep = new URLSearchParams();
   for (const k of PERIOD_KEYS) {
@@ -55,7 +58,7 @@ export function Side({ counts: initial, userId, canUseSample }: { counts: { acti
     return () => {
       live = false;
     };
-  }, [ws, qs, path]);
+  }, [ws, qs, badgePage]);
   useEffect(() => {
     if (!pop) return;
     const onDown = (e: MouseEvent) => !(e.target as HTMLElement).closest(".pickwrap") && setPop(null);
@@ -140,13 +143,23 @@ export function Side({ counts: initial, userId, canUseSample }: { counts: { acti
               const href = `/c/${ws}${PAGE_HREF[t.page]}`;
               const active = t.page === "overview" ? path === href : path.startsWith(href);
               const n = t.badge ? counts[t.badge] : 0;
+              const target = qs && KEEPS_PERIOD.has(t.page) ? `${href}?${qs}` : href;
               return (
-                <Link key={t.page} href={qs && KEEPS_PERIOD.has(t.page) ? `${href}?${qs}` : href} title={t.hint} aria-current={active ? "page" : undefined} className="navbtn">
+                <Link
+                  key={t.page}
+                  href={target}
+                  title={t.hint}
+                  aria-current={active ? "page" : undefined}
+                  className="navbtn"
+                  prefetch={readOnly ? prefetchTarget === target : null}
+                  onMouseEnter={readOnly ? () => setPrefetchTarget(target) : undefined}
+                  onFocus={readOnly ? () => setPrefetchTarget(target) : undefined}
+                >
                   <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d={IC[t.icon]} />
                   </svg>
                   <span>{t.label}</span>
-                  {n > 0 ? <span className="count">{n}</span> : null}
+                  {readOnly ? <DemoLinkStatus count={n} label={t.label} /> : n > 0 ? <span className="count">{n}</span> : null}
                 </Link>
               );
             })}
@@ -191,4 +204,20 @@ export function Side({ counts: initial, userId, canUseSample }: { counts: { acti
 function Identify({ userId, email }: { userId: string; email: string }) {
   useEffect(() => identifyUser(userId, email), [userId, email]);
   return null;
+}
+
+// Acknowledge clicks immediately while the next sample page is being prepared.
+function DemoLinkStatus({ count, label }: { count: number; label: string }) {
+  const { pending } = useLinkStatus();
+  if (pending) {
+    return (
+      <span className="count soft" role="status" aria-label={`Loading ${label}`}>
+        <svg className="animate-spin" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" opacity=".25" />
+          <path d="M8 2a6 6 0 0 1 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+  return count > 0 ? <span className="count">{count}</span> : null;
 }
