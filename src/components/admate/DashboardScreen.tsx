@@ -8,72 +8,41 @@ import { AlertsView } from "@/components/admate/views/AlertsView";
 import { BriefingsView } from "@/components/admate/views/BriefingsView";
 import { ReportsView } from "@/components/admate/views/ReportsView";
 import { allAnalysisQueryOptions, workspaceAccessQueryOptions } from "@/lib/analysis-query";
-import type { AdMateAnalysis } from "@/lib/admate.functions";
 import { useAuthSession } from "@/lib/auth/session";
-import {
-  LIVE_BRANDS,
-  isBrand,
-  resolveBrandPlatform,
-  brandPlatforms,
-  type WorkspaceBrandMeta,
-} from "@/lib/brands";
+import { LIVE_BRANDS, isBrand, resolveBrandPlatform, brandPlatforms } from "@/lib/brands";
 import type { DashboardSearch } from "@/lib/dashboard-search";
-import { publicDemoQueryOptions } from "@/lib/public-demo-query";
 import { canOfferTelegramControls } from "@/lib/telegram/controls-access";
 
-type DashboardProps = {
+/**
+ * The AdMate dashboard, shared by the public demo (/demo) and the signed-in
+ * workspace (/home). The route owns the URL; this component renders the views
+ * and asks the route to navigate.
+ */
+export function DashboardScreen({
+  mode,
+  search,
+  onNavigate,
+}: {
+  mode: ShellMode;
   search: DashboardSearch;
   onNavigate: (next: DashboardSearch) => void;
-};
+}) {
+  const { view, brand, platform, objective } = search;
+  const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions(brand));
 
-export function DashboardScreen({ mode, ...props }: DashboardProps & { mode: ShellMode }) {
-  return mode === "demo" ? <PublicDemoScreen {...props} /> : <PrivateWorkspaceScreen {...props} />;
-}
-
-function PublicDemoScreen(props: DashboardProps) {
-  const { data: analyses } = useSuspenseQuery(publicDemoQueryOptions(props.search.brand));
-  return <DashboardViews {...props} mode="demo" analyses={analyses} />;
-}
-
-function PrivateWorkspaceScreen(props: DashboardProps) {
-  const { data: analyses } = useSuspenseQuery(allAnalysisQueryOptions(props.search.brand));
+  // Live brands appear only in the workspace, and only once the server confirms
+  // this user is the verified owner. The public demo never asks.
   const auth = useAuthSession();
   const userId = auth.user?.id ?? "";
   const access = useQuery({
     ...workspaceAccessQueryOptions(userId),
-    enabled: Boolean(userId),
+    enabled: mode === "workspace" && Boolean(userId),
   });
   const liveBrands = LIVE_BRANDS.filter((b) => access.data?.liveBrands.some((id) => id === b.id));
-  const canManageTelegram = canOfferTelegramControls("workspace", access.data?.liveBrands);
-
-  return (
-    <DashboardViews
-      {...props}
-      mode="workspace"
-      analyses={analyses}
-      liveBrands={liveBrands}
-      canManageTelegram={canManageTelegram}
-      signedIn={Boolean(userId)}
-    />
-  );
-}
-
-function DashboardViews({
-  mode,
-  search,
-  onNavigate,
-  analyses,
-  liveBrands = [],
-  canManageTelegram = false,
-  signedIn = false,
-}: DashboardProps & {
-  mode: ShellMode;
-  analyses: AdMateAnalysis[];
-  liveBrands?: readonly WorkspaceBrandMeta[];
-  canManageTelegram?: boolean;
-  signedIn?: boolean;
-}) {
-  const { view, brand, platform, objective } = search;
+  // Telegram controls are shown only to the server-verified owner (the same
+  // answer that unlocks My Account). The Telegram server functions enforce this
+  // on their own; this just avoids offering buttons that would be refused.
+  const canManageTelegram = canOfferTelegramControls(mode, access.data?.liveBrands);
   const liveConnection = analyses.find((a) => a.source === "meta_live")?.live ?? null;
 
   const go = (next: Partial<DashboardSearch>) => {
@@ -124,7 +93,7 @@ function DashboardViews({
       ) : null}
       {view === "briefings" ? (
         isBrand(brand) ? (
-          <BriefingsView brand={brand} canManage={canManageTelegram} signedIn={signedIn} />
+          <BriefingsView brand={brand} canManage={canManageTelegram} signedIn={Boolean(userId)} />
         ) : (
           <section className="panel">
             <h2 className="text-sm font-semibold text-foreground">Telegram briefings</h2>

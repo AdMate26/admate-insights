@@ -20,7 +20,7 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
   const user = await requireUser();
   const workspace = await getWorkspace(ws);
   if (!workspace) notFound();
-  const readOnly = false;
+  const readOnly = !!user.readOnly;
   const [accounts, coverage, saved, alerts] = await Promise.all([listWorkspaces(), getCoverage(ws), getLevel(), getAlertConfig(ws)]);
   const level = saved ?? DEFAULT_LEVEL;
   const end = coverage.dailyTo ?? coverage.maxDate;
@@ -39,7 +39,7 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
           isSample: workspace.isSample,
           muted: alerts.muted,
           email: user.email,
-          askReady: aiEnabled(),
+          askReady: !readOnly && aiEnabled(),
           readOnly,
         }}
       >
@@ -52,10 +52,11 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
             {workspace.isSample && (
               <div className="banner">
                 <span>
-                  <b>Sample account.</b> {workspace.name} is made up, so you can explore safely.
+                  <b>{readOnly ? "Demo Mode · Synthetic Data" : "Sample account."}</b>{" "}
+                  {workspace.name} is made up, so you can explore safely.
                   {coverage.maxDate && <> Sample data through {shortDate(coverage.maxDate)}.</>}
                 </span>
-                <Link href={`/c/${ws}/upload`}>Upload your own report →</Link>
+                {readOnly ? <a href="/home">Connect your own ads →</a> : <Link href={`/c/${ws}/upload`}>Upload your own report →</Link>}
               </div>
             )}
             <div className="content">{children}</div>

@@ -9,6 +9,8 @@ import { getDb } from "../db/client";
 import { sessions, users } from "../db/schema";
 import { websiteUrl } from "../integration/paths";
 import { SESSION_COOKIE, SESSION_DAYS } from "./cookie";
+import { PUBLIC_DEMO_OWNER } from "../integration/public-demo";
+import { isPublicDemoRequest } from "../integration/public-demo.server";
 
 export interface CurrentUser {
   id: string;
@@ -52,8 +54,10 @@ export async function endSession() {
 // The signed-in user for this request, or null. Cached per request.
 // AdMate integration: a valid session is not enough on its own. The user must
 // still be authorised (lib/access/policy.ts) on every request; a session whose
-// user lost access is deleted and treated as signed out. There is no visitor identity.
+// user lost access is deleted and treated as signed out.
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
+  // Demo requests always use the isolated synthetic identity, even with a real cookie.
+  if (await isPublicDemoRequest()) return { id: PUBLIC_DEMO_OWNER, email: "", readOnly: true };
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (token) {
     const db = await getDb();

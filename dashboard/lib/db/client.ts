@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
+import { isPublicDemoRequest } from "../integration/public-demo.server";
 
 // Two drivers, one schema:
 // - DATABASE_URL set (Vercel + Neon, or any hosted Postgres): node-postgres pool.
@@ -44,7 +45,11 @@ async function initPglite(): Promise<DB> {
 }
 
 // One instance per server process (survives dev hot reloads).
-export function getDb(): Promise<DB> {
+export async function getDb(): Promise<DB> {
+  if (await isPublicDemoRequest()) {
+    const { getPublicDemoDb } = await import("./public-demo");
+    return getPublicDemoDb();
+  }
   if (!globalForDb.__admateDb) {
     const url = databaseUrl();
     globalForDb.__admateDb = url ? initPostgres(url) : initPglite();

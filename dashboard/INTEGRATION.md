@@ -12,7 +12,7 @@ public pages stay on the website.
 analysis pages under `app/c/[ws]` (overview, actions, campaigns, audience,
 reports, settings), `components/v3/charts.tsx` and the other report components,
 `app/globals.css` and the original tests are byte-identical to the source
-commit, except for the documented access checks in the sample and workspace entry points. Campaign analysis and sample generation formulas are unchanged. Check with:
+commit, except for the documented access checks and database selection at the public demo boundary. The sample loader is shared by the owner and the isolated demo database. Campaign analysis and sample generation formulas are unchanged. Check with:
 
 ```bash
 node scripts/check-integration.mjs   # every unlisted file matches the source commit
@@ -36,11 +36,12 @@ throwaway database; nothing real is contacted.
 | Sign-in | website `/login` (Supabase email OTP) | Unchanged. There is no password sign-in or sign-up here any more. |
 | Session bridge | website `/home` → `POST /app/api/session` | `/home` sends the Supabase access token (Authorization header, same origin). `app/api/session/route.ts` confirms it with Supabase Auth (`lib/auth/supabase.ts`), checks access (`lib/access/policy.ts`) and only then starts this app's own session (the original `startSession()`, HttpOnly cookie). On first entry it seeds a sample only for the configured owner. Customers start without ad accounts. |
 | Access | `lib/access/policy.ts`, checked in `getCurrentUser()` on **every** protected request | `ADMATE_ACCESS=open` (submission MVP): every Supabase-verified user gets their own private workspace. Without it: owner only (`META_OWNER_USER_ID`, fail-closed). Later, invite-only Early Access: only an `active` entitlement keyed by the Supabase user id. Losing access ends the session on the next request. Refused users create no data here. Each user only ever sees accounts they own (the original `getWorkspace()` rule). |
-| Owner sample | `lib/access/policy.ts`, `lib/sample/load.ts`, `app/demo/route.ts` | Only the verified account matching `META_OWNER_USER_ID` can list, open or load sample workspaces. There is no public visitor identity. Old sample rows are retained but hidden from customers by server queries. |
+| Owner sample | `lib/access/policy.ts`, `lib/sample/load.ts`, `app/demo/route.ts` | Only the verified account matching `META_OWNER_USER_ID` can list, open or load samples in the customer database. The public demo uses a separate synthetic identity and in-memory database; it never opens the customer database. Old sample rows are retained but hidden from customers by server queries. |
 | Upload limits | `lib/integration/limits.ts`, called from the import routes and account creation | 4 MB per file; real CSV/TSV/XLSX/XLS content (zip-bomb check for .xlsx); 20 uploads per user per hour; 5 own accounts per user; 50 active reports per account; 50,000 rows per file. |
 | Session lifetime | `lib/auth/cookie.ts` | 12 hours (was 30 days). After that `/home` re-checks the Supabase sign-in. |
 | Sign-out | dashboard "Sign out" → website `/logout`; website sign-out → `DELETE /app/api/session` | Either side ends both sessions. A new sign-in also ends any earlier session in the browser. |
-| Signed-out visitors | `proxy.ts` | Pages redirect to the website's `/home?next=…`, which re-checks the sign-in and comes back. The API answers 401. |
+| Public demo | website `/demo` → `/app/demo` → reserved `/app/c/00000000-0000-4000-8000-00000000de00` | The current dashboard renders the original Lotus sample from an isolated in-memory PGlite database. Incoming demo headers are removed. The proxy marks only GET/HEAD requests to that account and its three reporting APIs. Cookies are removed on demo requests. Writes are refused. Customer and owner account routes keep their existing access rules. |
+| Signed-out visitors | `proxy.ts` | Other pages redirect to the website's `/home?next=…`, which re-checks the sign-in and comes back. The API answers 401. |
 | Builds | `vercel.json` → `"buildCommand": "next build"` | Vercel never runs `scripts/migrate.mjs` during a build. Migrations are a separate, deliberate step (`npm run db:migrate` with an explicit `DATABASE_URL`). |
 
 Settings (see `.env.example`): `ADMATE_PUBLIC_ORIGIN`, `SUPABASE_URL`,
@@ -60,6 +61,13 @@ Everything not listed here is byte-identical to the source commit
 
 | File | Change | Why |
 | --- | --- | --- |
+| `components/v5/server.ts` | modified | Public demo has no AI or credits access; private analysis behavior is unchanged. |
+| `lib/integration/public-demo.ts` | added | Reserved public account route and read API allowlist. |
+| `lib/integration/public-demo.server.ts` | added | Reads the proxy-controlled demo scope. |
+| `lib/db/public-demo.ts` | added | Original sample in a separate ephemeral database; never uses a hosted connection URL. |
+| `lib/db/client.ts` | modified | Selects the isolated database only on a public demo request. |
+| `tests/public-demo.test.ts` | added | Public route, write denial and database isolation regression checks. |
+
 | `app/accounts/new/page.tsx` | modified | Requires first-time users to complete the brand popup; existing users can add another brand. |
 | `app/page.tsx` | modified | Requires a first brand before opening the dashboard. Existing accounts and the owner sample remain accessible to their owners. |
 | `components/v5/NoData.tsx` | modified | Uses the shared report empty state for workspace sections without data. |

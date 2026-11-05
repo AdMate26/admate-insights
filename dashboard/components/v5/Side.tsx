@@ -156,7 +156,7 @@ export function Side({ counts: initial, userId, canUseSample }: { counts: { acti
       <div className="side-foot">
         {readOnly ? (
           // AdMate integration: public demo visitors aren't signed in. /login is on the website.
-          <a href="/login">Log in or sign up free</a>
+          <a href="/home">Connect your own ads →</a>
         ) : (
           <>
             {canUseSample && <form action={loadSampleData}>

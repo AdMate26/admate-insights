@@ -2,12 +2,12 @@ import { ArrowRight, CircleAlert, CircleCheck, FlaskConical, TriangleAlert } fro
 
 import "./demo-intro.css";
 
-// Display snapshot of Northlane's existing Meta synthetic fixture. Counts are
-// the unchanged analyzer's Low (3), High (1), and Error (1) findings.
+// Snapshot of the current Lotus sample's default seven-day Actions view.
+// These findings come from the existing Project B sample and analysis.
 const signals = [
-  { count: 3, label: "Campaigns need attention", icon: CircleAlert, tone: "attention" },
-  { count: 1, label: "Campaign performing strongly", icon: CircleCheck, tone: "strong" },
-  { count: 1, label: "Data issue", icon: TriangleAlert, tone: "issue" },
+  { count: 5, label: "Performance problems", icon: CircleAlert, tone: "attention" },
+  { count: 3, label: "Opportunities to explore", icon: CircleCheck, tone: "strong" },
+  { count: 1, label: "Tracking issue", icon: TriangleAlert, tone: "issue" },
 ] as const;
 
 export function DemoIntro() {
@@ -20,8 +20,8 @@ export function DemoIntro() {
           </p>
           <h2 id="cl-demo-title">Explore AdMate with Sample Campaign Data</h2>
           <p>
-            See how AdMate reviews ads across TikTok, Meta, Google Search and LinkedIn — then
-            highlights what needs attention, what is performing strongly, and what to do next.
+            See how AdMate reviews sample Meta and TikTok campaigns — then highlights what needs
+            attention, what is performing strongly, and what to do next.
           </p>
           <div className="cl-demo-actions">
             <a
@@ -38,7 +38,7 @@ export function DemoIntro() {
           <header className="cl-demo-preview-header">
             <div>
               <p className="cl-kicker">SAMPLE ACCOUNT</p>
-              <h3>Northlane · Meta</h3>
+              <h3>Lotus Skincare</h3>
             </div>
             <span>Synthetic data</span>
           </header>
@@ -54,18 +54,17 @@ export function DemoIntro() {
             ))}
           </ul>
           <article className="cl-demo-finding">
-            <p>ABO | Prospecting | UGC hooks</p>
+            <p>Messages | Broad | Promo video</p>
             <h4>Creative fatigue</h4>
             <p>
-              <strong>Next step:</strong> Test three fresh creative variants before changing budget.
+              <strong>Next step:</strong> Refresh the campaign’s creatives.
             </p>
           </article>
           <article className="cl-demo-finding">
-            <p>Advantage+ Shopping</p>
-            <h4>Healthy scaling</h4>
+            <p>Sales | Website | Catalog</p>
+            <h4>Landing page / checkout drop</h4>
             <p>
-              <strong>Next step:</strong> Scale in steps of 20% or less and watch frequency and
-              conversion rate.
+              <strong>Next step:</strong> Check the landing page or form behind the campaign.
             </p>
           </article>
         </div>

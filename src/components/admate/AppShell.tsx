@@ -56,9 +56,11 @@ export function AppShell({
   railNote?: string;
   children: React.ReactNode;
 }) {
+  const auth = useAuthSession();
   const [sending, setSending] = useState(false);
   const activeBrand = brandMeta(brand);
-  // Sidebar navigation stays inside the current demo or workspace.
+  // Navigation stays inside the current surface: the demo never links into the
+  // protected workspace, and the workspace never drops back into the demo.
   const basePath = mode === "demo" ? "/demo" : "/home";
 
   async function sendNow() {
@@ -76,7 +78,7 @@ export function AppShell({
   }
 
   return (
-    <div className="app-shell" data-mode={mode}>
+    <div className="app-shell">
       <nav className="rail" aria-label="Primary">
         <Link
           to={basePath}
@@ -159,8 +161,7 @@ export function AppShell({
         </div>
         <div className="rail-foot">
           <span className="live-status">
-            <Circle size={8} className="live-dot" aria-hidden="true" />{" "}
-            {mode === "demo" ? "Synthetic data" : "Live · synthetic demo"}
+            <Circle size={8} className="live-dot" aria-hidden="true" /> Live · synthetic demo
           </span>
           {railNote ? <p>{railNote}</p> : null}
         </div>
@@ -170,7 +171,7 @@ export function AppShell({
         <div className="topbar">
           {mode === "demo" ? (
             <span className="demo-badge" title="You are exploring AdMate with synthetic demo data">
-              <Circle size={7} className="live-dot" aria-hidden="true" /> Demo Mode · Synthetic Data
+              <Circle size={7} className="live-dot" aria-hidden="true" /> Demo Mode
             </span>
           ) : activeBrand.live ? (
             <span className="demo-badge" title="Real data from your Meta ad account (read-only)">
@@ -209,32 +210,19 @@ export function AppShell({
               {sending ? "Sending…" : "Send briefing now"}
             </button>
           )}
-          {mode === "demo" ? (
-            <a href="/home" className="button-quiet">
-              Connect your own ads
-            </a>
-          ) : (
-            <WorkspaceAccountControl />
-          )}
+          {/* Nothing until the session is known, so logged-in users never see a
+              login prompt flash (and vice versa). */}
+          {auth.status === "authenticated" && auth.user ? (
+            <AccountMenu email={auth.user.email ?? "Account"} mode={mode} />
+          ) : auth.status === "unauthenticated" ? (
+            <Link to="/login" className="button-quiet">
+              Login / Sign up
+            </Link>
+          ) : null}
         </div>
 
         <main className="shell-content">{children}</main>
       </div>
     </div>
   );
-}
-
-function WorkspaceAccountControl() {
-  const auth = useAuthSession();
-  if (auth.status === "authenticated" && auth.user) {
-    return <AccountMenu email={auth.user.email ?? "Account"} mode="workspace" />;
-  }
-  if (auth.status === "unauthenticated") {
-    return (
-      <Link to="/login" className="button-quiet">
-        Login / Sign up
-      </Link>
-    );
-  }
-  return null;
 }

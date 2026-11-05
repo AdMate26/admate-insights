@@ -2367,11 +2367,6 @@
   .app-shell {
     grid-template-columns: 1fr;
   }
-  .app-shell[data-mode="demo"] .topbar {
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    padding-inline: 16px;
-  }
   .rail {
     position: static;
     height: auto;
