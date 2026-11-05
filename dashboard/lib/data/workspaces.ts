@@ -21,10 +21,10 @@ import { resolveSelection, type Coverage, type SelectionParams } from "../analys
 import type { Analysis, CampaignInfo, DoneItem, EntityLevel, FactRow, Finding, FindingStatus } from "../analysis/types";
 
 // Old customer samples can remain in storage but may no longer be read.
-export function visibleWorkspace(userId: string) {
+export function visibleWorkspace(userId: string, readOnly = false) {
   return and(
     eq(workspaces.ownerId, userId),
-    canAccessSample(userId) ? undefined : eq(workspaces.isSample, false),
+    canAccessSample(userId) || readOnly ? undefined : eq(workspaces.isSample, false),
   );
 }
 
@@ -34,14 +34,14 @@ export async function listWorkspaces() {
   const user = await getCurrentUser();
   if (!user) return [];
   const db = await getDb();
-  return db.select().from(workspaces).where(visibleWorkspace(user.id)).orderBy(workspaces.createdAt);
+  return db.select().from(workspaces).where(visibleWorkspace(user.id, user.readOnly)).orderBy(workspaces.createdAt);
 }
 
 export async function getWorkspace(id: string) {
   const user = await getCurrentUser();
   if (!user) return null;
   const db = await getDb();
-  const [ws] = await db.select().from(workspaces).where(and(eq(workspaces.id, id), visibleWorkspace(user.id)));
+  const [ws] = await db.select().from(workspaces).where(and(eq(workspaces.id, id), visibleWorkspace(user.id, user.readOnly)));
   return ws ?? null;
 }
 

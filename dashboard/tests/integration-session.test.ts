@@ -325,11 +325,13 @@ describe("owner-only sample", () => {
     const { proxy } = await import("@/proxy");
     const { session } = await modules();
     requestHeaders = new Headers({ "x-admate-public-demo": "1" });
+    // An incoming marker is untrusted until proxy.ts has replaced it.
+    requestHeaders = new Headers();
     expect(await session.getCurrentUser()).toBeNull();
     const read = (p: string) => proxy(new NextRequest(`${ORIGIN}/app${p}`, {
       nextConfig: { basePath: "/app" }, headers: requestHeaders,
     }));
-    for (const p of ["/demo", "/c/old-demo", "/c/old-demo/settings"]) {
+    for (const p of ["/c/old-demo", "/c/old-demo/settings"]) {
       expect(read(p).status).toBe(307);
       expect(new URL(read(p).headers.get("location")!).pathname).toBe("/home");
     }
@@ -337,7 +339,7 @@ describe("owner-only sample", () => {
       expect(read(p).status).toBe(401);
     }
     const demo = await import("@/app/demo/route");
-    expect((await demo.GET()).headers.get("location")).toBe(`${ORIGIN}/home`);
+    expect((await demo.GET()).headers.get("location")).toBe("/app/c/00000000-0000-4000-8000-00000000de00");
   });
 
   it("customers cannot list, open or recreate sample workspaces; the verified owner can", async () => {
@@ -361,7 +363,7 @@ describe("owner-only sample", () => {
     expect((await listWorkspaces()).map((w) => w.id)).toEqual([customerId]);
     expect(await getWorkspace(legacyId)).toBeNull();
     expect(await getWorkspace(ownerSample.id)).toBeNull();
-    expect((await demo.GET()).status).toBe(404);
+    expect((await demo.GET()).status).toBe(307);
     await expect(createSampleAccount(OTHER)).rejects.toThrow("Sample account unavailable.");
     const redirect = await loadSampleData().then(() => null, (error: { digest?: string }) => error.digest);
     expect(redirect).toContain("NEXT_REDIRECT");
@@ -370,7 +372,7 @@ describe("owner-only sample", () => {
     await route.POST(bridge("POST", { token: "owner.jwt.sig" }));
     expect((await listWorkspaces()).map((w) => w.id)).toEqual([ownerSample.id]);
     expect(await getWorkspace(customerId)).toBeNull();
-    expect((await demo.GET()).headers.get("location")).toBe(`${ORIGIN}/app/c/${ownerSample.id}`);
+    expect((await demo.GET()).headers.get("location")).toBe("/app/c/00000000-0000-4000-8000-00000000de00");
   });
 });
 

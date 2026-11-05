@@ -24,6 +24,7 @@ import http from "node:http";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+const DEMO_WS = "00000000-0000-4000-8000-00000000de00";
 
 const require = createRequire(import.meta.url);
 const { encodeReply } = require("next/dist/compiled/react-server-dom-webpack/client.node.js");
@@ -361,12 +362,16 @@ async function mvp(ownerSample, resetId) {
 
   const landing = await get("/");
   const landingHtml = await landing.text();
-  ok(landing.status === 200 && landingHtml.includes('href="/login"') && !landingHtml.includes('href="/demo"'), "public homepage links to real sign-in and has no demo CTA");
+  ok(landing.status === 200 && landingHtml.includes('href="/login"') && landingHtml.includes('href="/demo"'), "public homepage links to sign-in and the full demo");
   ok((await get("/login")).status === 200, "real sign-in page is available");
-  const legacy = await get("/demo");
-  const legacyTarget = new URL(legacy.headers.get("location") ?? "/", A);
-  ok(legacy.status >= 300 && legacy.status < 400 && legacyTarget.origin === A && legacyTarget.pathname === "/home", "old website demo link redirects to the sign-in entry");
-  ok((await get("/app/demo")).status === 307, "old dashboard demo link requires sign-in");
+  const demo = await fetch(`${A}/demo?brand=my_account`);
+  const demoHtml = await demo.text();
+  ok(demo.status === 200 && new URL(demo.url).pathname === `/app/c/${DEMO_WS}` && demoHtml.includes("Demo Mode · Synthetic Data") && demoHtml.includes("Lotus Skincare") && !demoHtml.includes("My Account"), "signed-out demo opens the current dashboard with isolated Lotus sample data");
+  const publicCounts = await get(`/app/api/counts?ws=${DEMO_WS}`);
+  ok(publicCounts.status === 200 && typeof (await publicCounts.json()).actions === "number", "public badge API reads only the isolated sample");
+  ok((await get("/app/demo")).headers.get("location") === `/app/c/${DEMO_WS}`, "dashboard demo entry opens the reserved public sample");
+  const demoMutation = await fetch(`${A}/app/c/${DEMO_WS}`, { method: "POST", headers: { "next-action": names.setFindingStatus, origin: A } });
+  ok(demoMutation.status === 405, "public demo refuses server actions before they run");
   ok((await get(`/app/c/${ownerSample}`)).status === 307, "visitor cannot open the owner's sample directly");
   for (const api of ["api/counts", "api/v5/daily", "api/v5/detail", "api/internal/public-demo"]) {
     const r = await fetch(`${A}/app/${api}?ws=${ownerSample}`, { headers: { "x-admate-public-demo": "1" } });
@@ -382,7 +387,7 @@ async function mvp(ownerSample, resetId) {
   ok(empty.status === 200 && emptyHtml.includes('role="dialog"') && emptyHtml.includes("Create your brand") && !emptyHtml.includes('aria-label="Pages"'), "first sign-in shows the required brand popup before the dashboard");
   ok(popup.includes('name="name"') && popup.includes('name="industry"') && !popup.includes('name="country"') && !popup.includes('name="currency"'), "the popup asks only for brand name and industry");
   ok((await get("/app/accounts/new")).status === 307, "a direct visit to the add-brand form cannot skip the popup");
-  ok((await get("/app/demo")).status === 404, "signed-in customer cannot open the demo route");
+  ok((await get("/app/demo")).status === 307, "signed-in customer can enter the isolated public demo");
   ok((await get(`/app/c/${ownerSample}`)).status === 404, "signed-in customer cannot open the owner's sample");
   const reset = await action("/app", resetId, []);
   ok(reset.redirect === "/;push" || reset.status === 404, "customer cannot load a sample with the owner's action id");
@@ -436,6 +441,9 @@ async function mvp(ownerSample, resetId) {
   ok(again.workspace === own && (await get(`/app/c/${own}`)).status === 200, "A's report is still available after signing in again");
   const owner = await signInAs("owner.e2e.sig");
   ok(owner.status === 200 && owner.workspace === ownerSample, "the verified owner still opens their sample");
+  const ownerDemo = await get(`/app/c/${DEMO_WS}`);
+  const ownerDemoHtml = await ownerDemo.text();
+  ok(ownerDemo.status === 200 && ownerDemoHtml.includes("Demo Mode · Synthetic Data") && ownerDemoHtml.includes("Lotus Skincare") && !ownerDemoHtml.includes("owner@e2e.test") && !ownerDemoHtml.includes("Reset the sample account"), "owner session does not change the public demo identity or data");
 
   await inspect(async (q) => {
     console.log("\n# Database checks");

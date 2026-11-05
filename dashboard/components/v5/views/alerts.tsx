@@ -86,7 +86,7 @@ export function AdvAlerts({ config: cfg0, rules: rules0, targets: targets0, tg: 
           </div>
           <TelegramBlock P={P} />
           <div>
-            <button className="btn" type="button" onClick={() => setPreview(true)}>
+            <button className="btn" type="button" onClick={() => readOnly ? nudge("preview notifications for your own ads") : setPreview(true)}>
               Preview the Telegram message
             </button>
           </div>

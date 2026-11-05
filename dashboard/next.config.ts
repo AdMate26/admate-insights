@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   // PGlite ships a WASM Postgres + data files it loads from its own package
   // directory, so it must be required natively instead of bundled.
   serverExternalPackages: ["@electric-sql/pglite"],
+  // The isolated public sample initializes its in-memory schema at runtime.
+  outputFileTracingIncludes: { "/*": ["./drizzle/**/*"] },
   // A second dev server (e.g. for reviewing changes) needs its own build folder.
   ...(process.env.ADMATE_DIST_DIR ? { distDir: process.env.ADMATE_DIST_DIR } : {}),
   // AdMate integration: no /ingest analytics relay. Behind the website's /app

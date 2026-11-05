@@ -21,6 +21,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { DemoIntro } from "./DemoIntro";
 import { plans, type PlanId } from "./plans";
 import "./customer-landing.css";
 
@@ -138,6 +139,9 @@ export function LandingPage({
           <nav id={menuId} className="cl-nav-links" data-open={menu} aria-label="Main navigation">
             <a href="#how-it-works" onClick={() => setMenu(false)}>
               How it works
+            </a>
+            <a href="#demo" onClick={() => setMenu(false)}>
+              Demo
             </a>
             <a href="#pricing" onClick={() => setMenu(false)}>
               Pricing
@@ -266,6 +270,7 @@ export function LandingPage({
             </div>
           </section>
         </section>
+        <DemoIntro />
         <section className="cl-pricing" id="pricing" aria-labelledby="cl-pricing-title">
           <div className="cl-wrap">
             <div className="cl-pricing-heading">

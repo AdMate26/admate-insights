@@ -1,5 +1,6 @@
 import "server-only";
 import { ASK_AVAILABLE } from "@/lib/ai/client";
+import { getCurrentUser } from "@/lib/auth/session";
 import { alertState } from "@/lib/data/alerts";
 import { getLevel } from "@/lib/data/settings";
 import { badges, forBrowser, loadView, selection } from "@/lib/data/view";
@@ -12,5 +13,5 @@ export async function pageData(ws: string, searchParams: Promise<Record<string, 
   const [level, full, st] = await Promise.all([getLevel().then((l) => l ?? DEFAULT_LEVEL), loadView(ws, selection(sp)), alertState(ws)]);
   // Badges count from the full view; the page gets the lighter one.
   const data = full ? { a: full.a, vm: forBrowser(full.vm), alerts: badges(full.vm, st).alerts } : null;
-  return { level, data, st, sp, ask: ASK_AVAILABLE };
+  return { level, data, st, sp, ask: !(await getCurrentUser())?.readOnly && ASK_AVAILABLE };
 }

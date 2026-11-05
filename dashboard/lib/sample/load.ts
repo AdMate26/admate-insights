@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { canAccessSample } from "../access/policy";
-import { getDb } from "../db/client";
+import { getDb, type DB } from "../db/client";
 import { goals, workspaces } from "../db/schema";
 import { commitImport } from "../data/imports";
 import { MEASURE_KEYS } from "../metrics/measures";
@@ -14,9 +14,13 @@ export async function createSampleAccount(ownerId: string): Promise<string> {
   if (!canAccessSample(ownerId)) throw new Error("Sample account unavailable.");
   const db = await getDb();
   await db.delete(workspaces).where(and(eq(workspaces.ownerId, ownerId), eq(workspaces.isSample, true)));
+  return insertSampleAccount(db, ownerId);
+}
+
+// Shared sample loader. Callers select the database and enforce access before use.
+export async function insertSampleAccount(db: DB, ownerId: string, id = randomUUID(), createId: () => string = randomUUID): Promise<string> {
   const client = SAMPLE_ACCOUNT;
   const end = sampleEndDate();
-  const id = randomUUID();
   await db.insert(workspaces).values({ id, ownerId, name: client.name, currency: client.currency, industry: client.industry, country: client.country ?? null, isSample: true });
   for (const g of client.goals) {
     await db.insert(goals).values({
@@ -29,7 +33,7 @@ export async function createSampleAccount(ownerId: string): Promise<string> {
       workspaceId: id, fileName: `sample-${platform}-ads-daily.csv`, platform, level: "ad", granularity: "daily",
       period: { start: addDays(end, -89), end }, currency: client.currency, attribution: null, warnings: [], rows,
       columns: MEASURE_KEYS.filter((k) => k === "spend" || k === "impressions" || rows.some((r) => r.measures[k] !== 0)),
-    });
+    }, createId);
   }
   return id;
 }

@@ -1,10 +1,8 @@
-import { createFileRoute, redirect, type SearchSchemaInput } from "@tanstack/react-router";
-import type { DashboardSearch } from "@/lib/dashboard-search";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Ignore old bookmarked query parameters. The route only redirects into sign-in.
+// The public sample uses the same Next.js dashboard as signed-in customers.
 export const Route = createFileRoute("/demo")({
-  validateSearch: (search: Partial<DashboardSearch> & SearchSchemaInput) => search,
   beforeLoad: () => {
-    throw redirect({ to: "/home", replace: true });
+    throw redirect({ href: "/app/demo", replace: true });
   },
 });
