@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useLocation,
   HeadContent,
   Scripts,
   type ErrorComponentProps,
@@ -133,6 +134,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const isPublicDemo = useLocation({ select: ({ pathname }) => /^\/demo\/?$/.test(pathname) });
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -140,7 +142,8 @@ function RootComponent() {
       <Outlet />
       <Toaster />
       <Analytics />
-      <AnalyticsConsent />
+      {/* The public demo does not subscribe to the visitor’s Supabase session. */}
+      {isPublicDemo ? null : <AnalyticsConsent />}
     </QueryClientProvider>
   );
 }

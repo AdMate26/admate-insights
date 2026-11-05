@@ -24,15 +24,14 @@ export function DemoIntro() {
             highlights what needs attention, what is performing strongly, and what to do next.
           </p>
           <div className="cl-demo-actions">
-            <button
-              className="cl-button cl-secondary"
-              type="button"
+            <a
+              href="/demo"
+              className="cl-button cl-primary"
               aria-describedby="cl-demo-availability"
-              disabled
             >
               View Full Demo <ArrowRight size={16} aria-hidden="true" />
-            </button>
-            <p id="cl-demo-availability">The full demo is not publicly available right now.</p>
+            </a>
+            <p id="cl-demo-availability">No login or ad account required.</p>
           </div>
         </div>
         <div className="cl-demo-preview">

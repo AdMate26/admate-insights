@@ -361,11 +361,11 @@ async function mvp(ownerSample, resetId) {
 
   const landing = await get("/");
   const landingHtml = await landing.text();
-  ok(landing.status === 200 && landingHtml.includes('href="/login"') && !landingHtml.includes('href="/demo"'), "public homepage links to real sign-in and has no demo CTA");
+  ok(landing.status === 200 && landingHtml.includes('href="/login"') && landingHtml.includes('href="/demo"'), "public homepage links to sign-in and the full demo");
   ok((await get("/login")).status === 200, "real sign-in page is available");
-  const legacy = await get("/demo");
-  const legacyTarget = new URL(legacy.headers.get("location") ?? "/", A);
-  ok(legacy.status >= 300 && legacy.status < 400 && legacyTarget.origin === A && legacyTarget.pathname === "/home", "old website demo link redirects to the sign-in entry");
+  const demo = await fetch(`${A}/demo?brand=my_account`);
+  const demoHtml = await demo.text();
+  ok(demo.status === 200 && new URL(demo.url).pathname === "/demo" && demoHtml.includes("Demo Mode · Synthetic Data") && demoHtml.includes("Northlane") && !demoHtml.includes("My Account"), "signed-out demo ignores private brand requests and renders synthetic data");
   ok((await get("/app/demo")).status === 307, "old dashboard demo link requires sign-in");
   ok((await get(`/app/c/${ownerSample}`)).status === 307, "visitor cannot open the owner's sample directly");
   for (const api of ["api/counts", "api/v5/daily", "api/v5/detail", "api/internal/public-demo"]) {
@@ -436,6 +436,9 @@ async function mvp(ownerSample, resetId) {
   ok(again.workspace === own && (await get(`/app/c/${own}`)).status === 200, "A's report is still available after signing in again");
   const owner = await signInAs("owner.e2e.sig");
   ok(owner.status === 200 && owner.workspace === ownerSample, "the verified owner still opens their sample");
+  const ownerDemo = await get("/demo?view=campaigns&brand=northlane&platform=meta");
+  const ownerDemoHtml = await ownerDemo.text();
+  ok(ownerDemo.status === 200 && ownerDemoHtml.includes("Demo Mode · Synthetic Data") && !ownerDemoHtml.includes("Lotus Skincare") && !ownerDemoHtml.includes("owner@e2e.test"), "owner session does not change the public demo data");
 
   await inspect(async (q) => {
     console.log("\n# Database checks");
