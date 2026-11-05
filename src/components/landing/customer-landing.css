@@ -461,11 +461,13 @@
 }
 .cl-plan-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
-.cl-plan-grid:is([data-count="3"], [data-count="6"]) {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.cl-plan-grid[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 860px;
+  margin-inline: auto;
 }
 .cl-plan {
   display: flex;
@@ -500,6 +502,7 @@
 }
 .cl-plan-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -560,6 +563,19 @@
 .cl-plan-facts svg {
   color: var(--cl-accent);
   flex: none;
+}
+.cl-trial-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--cl-tint);
+  color: var(--cl-accent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .cl-plan-highlight {
   font-size: 13px;

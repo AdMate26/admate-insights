@@ -7,6 +7,7 @@ import {
   Building2,
   Check,
   ChevronDown,
+  Clock3,
   FileUp,
   Layers3,
   Menu,
@@ -24,12 +25,11 @@ import { plans, type PlanId } from "./plans";
 import "./customer-landing.css";
 
 const groups = {
-  personal: ["free", "starter", "freelancer"],
-  business: ["free", "growth", "pro", "enterprise"],
+  personal: ["starter", "freelancer"],
+  business: ["growth", "pro", "enterprise"],
 } satisfies Record<string, PlanId[]>;
 type Group = keyof typeof groups;
 const planIcons = {
-  free: Sparkles,
   starter: Zap,
   freelancer: UserRound,
   growth: Target,
@@ -293,7 +293,7 @@ export function LandingPage({
               </div>
             </div>
             <p className="cl-sr-only" role="status">
-              {all ? "Showing all six plans" : `Showing ${group} plans`}
+              {all ? `Showing all ${plans.length} plans` : `Showing ${group} plans`}
             </p>
             <div
               id="cl-plan-grid"
@@ -311,10 +311,17 @@ export function LandingPage({
                         <Icon size={21} />
                       </span>
                       <h3>{plan.name}</h3>
+                      {"trialDays" in plan && (
+                        <small className="cl-trial-badge">
+                          <Clock3 size={14} aria-hidden="true" /> {plan.trialDays}-day free trial
+                        </small>
+                      )}
                     </div>
                     <p className="cl-audience">{plan.description}</p>
                     <div className="cl-price">
-                      <span>{plan.id === "enterprise" ? "From" : "USD"}</span>
+                      <span>
+                        {plan.id === "enterprise" ? "From" : "trialDays" in plan ? "Then" : "USD"}
+                      </span>
                       <strong>${plan.price}</strong>
                       <small>/ month</small>
                     </div>
@@ -322,7 +329,10 @@ export function LandingPage({
                       className={`cl-button ${featured ? "cl-primary" : "cl-secondary"}`}
                       href={loginHref}
                     >
-                      Log in or sign up <ArrowRight size={15} />
+                      {"trialDays" in plan
+                        ? `Try free for ${plan.trialDays} days`
+                        : "Log in or sign up"}{" "}
+                      <ArrowRight size={15} />
                     </a>
                     <ul className="cl-plan-facts">
                       <li>
@@ -335,7 +345,7 @@ export function LandingPage({
                         <Check size={16} />{" "}
                         {plan.accounts === "Custom"
                           ? "Custom ad accounts"
-                          : `${plan.accounts} ad account${plan.accounts === 1 ? "" : "s"}`}
+                          : `${plan.accounts} ad accounts`}
                       </li>
                       <li>
                         <Check size={16} />{" "}
@@ -348,28 +358,24 @@ export function LandingPage({
                       </li>
                     </ul>
                     <p className="cl-plan-highlight">
-                      {plan.id === "free"
-                        ? plan.features[0]
-                        : plan.id === "enterprise"
-                          ? "Dedicated manager"
-                          : plan.consultation
-                            ? `${plan.consultation} expert consultation${plan.consultation === 1 ? "" : "s"} / month`
-                            : plan.id === "freelancer"
-                              ? "Weekly reports per account"
-                              : "AI optimization recommendations"}
+                      {plan.id === "enterprise"
+                        ? "Dedicated manager"
+                        : plan.consultation
+                          ? `${plan.consultation} expert consultation${plan.consultation === 1 ? "" : "s"} / month`
+                          : plan.id === "freelancer"
+                            ? "Weekly reports per account"
+                            : "AI optimization recommendations"}
                     </p>
-                    {plan.id !== "free" && (
-                      <details>
-                        <summary>
-                          What's included <ChevronDown size={16} />
-                        </summary>
-                        <ul>
-                          {plan.features.map((feature) => (
-                            <li key={feature}>{feature}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
+                    <details>
+                      <summary>
+                        What's included <ChevronDown size={16} />
+                      </summary>
+                      <ul>
+                        {plan.features.map((feature) => (
+                          <li key={feature}>{feature}</li>
+                        ))}
+                      </ul>
+                    </details>
                   </article>
                 );
               })}
@@ -397,7 +403,6 @@ export function LandingPage({
                 $4 per extra ad account on Freelancer, Growth and Pro. Credits and seats stay the
                 same.
               </p>
-              <p>Plan details are for reference. Online checkout is not available yet.</p>
             </div>
           </div>
         </section>

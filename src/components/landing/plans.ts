@@ -1,23 +1,11 @@
 /** Pricing supplied by AdMate. No checkout, entitlement or billing behavior lives here. */
-export type PlanId = "free" | "starter" | "freelancer" | "growth" | "pro" | "enterprise";
+export type PlanId = "starter" | "freelancer" | "growth" | "pro" | "enterprise";
 export const plans = [
-  {
-    id: "free",
-    name: "Free",
-    price: 0,
-    audience: "Try it out",
-    description: "Explore AdMate before choosing a paid plan.",
-    credits: 20,
-    accounts: 1,
-    seats: 1,
-    platforms: ["Meta"],
-    features: ["15-day trial of Starter features"],
-    consultation: null,
-  },
   {
     id: "starter",
     name: "Starter",
     price: 9,
+    trialDays: 15,
     audience: "Your first brand",
     description: "For micro sellers and solo founders running one brand.",
     credits: 50,
