@@ -70,6 +70,16 @@ describe("current dashboard public demo", () => {
       expect(await getWorkspace("11111111-2222-4333-8444-555555555555")).toBeNull();
       const analysis = await loadAnalysis(PUBLIC_DEMO_WORKSPACE);
       expect(analysis?.campaigns.length).toBeGreaterThan(0);
+      const originalImports = await db1.select().from((await import("@/lib/db/schema")).imports);
+      // Simulate a separate Vercel function's cold start. Entity/report links
+      // from the first process must still address the same synthetic records.
+      delete (globalThis as { __admatePublicDemoDb?: unknown }).__admatePublicDemoDb;
+      const freshDb = await getDb();
+      const freshAnalysis = await loadAnalysis(PUBLIC_DEMO_WORKSPACE);
+      const freshImports = await freshDb.select().from((await import("@/lib/db/schema")).imports);
+      expect(freshDb).not.toBe(db1);
+      expect(freshAnalysis?.campaigns.map(c => c.info.id)).toEqual(analysis?.campaigns.map(c => c.info.id));
+      expect(freshImports.map(i => i.id)).toEqual(originalImports.map(i => i.id));
       expect(cookieRead).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();

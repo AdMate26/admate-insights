@@ -41,8 +41,8 @@ type EntityRow = typeof entities.$inferSelect;
 
 // Import normalized rows. Overlapping data from earlier uploads of the same
 // platform is replaced (newest wins) and kept for undo (PRD F3).
-export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId: string; diff: ImportDiff | null }> {
-  const importId = randomUUID();
+export async function commitImport(db: DB, args: CommitArgs, createId: () => string = randomUUID): Promise<{ importId: string; diff: ImportDiff | null }> {
+  const importId = createId();
   const { workspaceId, platform, period } = args;
 
   return db.transaction(async (tx) => {
@@ -95,7 +95,7 @@ export async function commitImport(db: DB, args: CommitArgs): Promise<{ importId
       const obj = campaignObjective.get(row.campaign) ?? { objective: row.objective, source: row.objectiveSource };
       if (!e) {
         e = {
-          id: randomUUID(), workspaceId, platform, level, parentId, externalId: extId, name, nameKey: key,
+          id: createId(), workspaceId, platform, level, parentId, externalId: extId, name, nameKey: key,
           objective: obj.objective, objectiveSource: obj.source, role: null, status: row.status, secondaryStatus: row.secondaryStatus,
           budget: row.budget, firstSeen: day.start, lastSeen: day.end,
         };

@@ -61,6 +61,7 @@ Everything not listed here is byte-identical to the source commit
 
 | File | Change | Why |
 | --- | --- | --- |
+| `lib/data/imports.ts` | modified | Optional identity generator for isolated public fixtures; existing imports keep random UUIDs and unchanged normalization. |
 | `components/v5/server.ts` | modified | Public demo has no AI or credits access; private analysis behavior is unchanged. |
 | `lib/integration/public-demo.ts` | added | Reserved public account route and read API allowlist. |
 | `lib/integration/public-demo.server.ts` | added | Reads the proxy-controlled demo scope. |

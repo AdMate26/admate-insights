@@ -20,7 +20,11 @@ async function createDemoDb(): Promise<DB> {
       email: "public-demo@system.admate.invalid",
       passwordHash: "!public-demo-cannot-sign-in",
     });
-    await insertSampleAccount(db as unknown as DB, PUBLIC_DEMO_OWNER, PUBLIC_DEMO_WORKSPACE);
+    // Separate Vercel functions must agree on the entity and report IDs used
+    // by drilldowns and charts. The private importer keeps random UUIDs.
+    let nextId = 0;
+    const createId = () => `00000000-0000-4000-a000-${(++nextId).toString(16).padStart(12, "0")}`;
+    await insertSampleAccount(db as unknown as DB, PUBLIC_DEMO_OWNER, PUBLIC_DEMO_WORKSPACE, createId);
     return db as unknown as DB;
   } catch (error) {
     await client.close();
