@@ -174,6 +174,18 @@ export async function readSync(userId: string, workspaceId: string): Promise<Tik
   return row ?? null;
 }
 
+/** The TikTok advertiser linked to this account of this person, and its last Sync Now (no tokens, no numbers). */
+export async function workspaceTikTokLink(userId: string, workspaceId: string) {
+  const db = await getDb();
+  const [link] = await db.select().from(tiktokAdvertiserLinks).where(and(eq(tiktokAdvertiserLinks.userId, userId), eq(tiktokAdvertiserLinks.workspaceId, workspaceId)));
+  if (!link) return null;
+  const [sync] = await db.select().from(tiktokSyncs).where(and(eq(tiktokSyncs.userId, userId), eq(tiktokSyncs.workspaceId, workspaceId), eq(tiktokSyncs.advertiserId, link.advertiserId)));
+  return {
+    advertiserName: link.advertiserName ?? "TikTok advertiser",
+    lastSync: sync?.finishedAt ? { at: sync.finishedAt.toISOString(), outcome: sync.outcome, from: sync.periodStart, to: sync.periodEnd } : null,
+  };
+}
+
 export async function listSyncs(userId: string): Promise<TikTokSyncRow[]> {
   const db = await getDb();
   return db.select().from(tiktokSyncs).where(eq(tiktokSyncs.userId, userId));

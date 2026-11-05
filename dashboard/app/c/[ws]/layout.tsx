@@ -13,6 +13,7 @@ import { BASE_PATH, websiteUrl } from "@/lib/integration/paths";
 import { ReadOnlyProvider } from "@/lib/integration/read-only";
 import { DEFAULT_LEVEL } from "@/lib/levels";
 import { isTikTokUserAllowed } from "@/lib/tiktok/config";
+import { workspaceTikTokLink } from "@/lib/tiktok/store";
 
 // The frame of every ad-account page (prototype v5.1): the sidebar with the account
 // and view pickers and the view's menu, the sample-account banner, then the page.
@@ -29,6 +30,8 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
   const readOnly = !!viewer?.readOnly;
   const [accounts, coverage, saved, alerts] = await Promise.all([listWorkspaces(), getCoverage(ws), getLevel(), getAlertConfig(ws)]);
   const level = saved ?? DEFAULT_LEVEL;
+  // AdMate integration: an account linked to TikTok says so when it has no data yet.
+  const tiktok = !readOnly && !workspace.isSample && isTikTokUserAllowed(user.id) ? await workspaceTikTokLink(user.id, ws) : null;
   const end = coverage.dailyTo ?? coverage.maxDate;
   const min = coverage.dailyFrom ?? coverage.minDate;
   return (
@@ -47,6 +50,7 @@ export default async function AccountLayout({ children, params }: LayoutProps<"/
           email: user.email,
           askReady: aiEnabled(),
           readOnly,
+          tiktok,
         }}
       >
         <ReadOnlyProvider value={readOnly}>

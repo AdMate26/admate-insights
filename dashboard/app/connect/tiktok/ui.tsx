@@ -195,7 +195,7 @@ export function TikTokConnect({ status, result, accounts, beta }: { status: TikT
       )}
       <div className="flex gap-2">
         {!status.connected && (
-          <button className={buttonClass.primary} disabled={busy || (beta && !consent)} onClick={connect}>
+          <button className="btn primary" disabled={busy || (beta && !consent)} onClick={connect}>
             {status.status === "reauth_required" ? "Reconnect TikTok" : "Connect TikTok Ads"}
           </button>
         )}
@@ -224,7 +224,7 @@ export function TikTokConnect({ status, result, accounts, beta }: { status: TikT
                     <b>{a.name}</b> {[a.currency, a.timezone].filter(Boolean).join(" · ")}
                   </span>
                   {!linked && a.currency && !ownAccounts.some((w) => w.currency.toUpperCase() === a.currency!.toUpperCase()) && (
-                    <button className={buttonClass.primary} disabled={busy} onClick={() => createAccount(a.id)}>
+                    <button className="btn primary" disabled={busy} onClick={() => createAccount(a.id)}>
                       Create a {a.currency} account for this advertiser
                     </button>
                   )}
@@ -246,7 +246,7 @@ export function TikTokConnect({ status, result, accounts, beta }: { status: TikT
                           Open {account.name}
                         </Link>
                       )}
-                      <button className={buttonClass.primary} disabled={busy || !!syncing} onClick={() => sync(a.id)}>
+                      <button className="btn primary" disabled={busy || !!syncing} onClick={() => sync(a.id)}>
                         {syncing === a.id ? "Syncing…" : "Sync now"}
                       </button>
                     </span>

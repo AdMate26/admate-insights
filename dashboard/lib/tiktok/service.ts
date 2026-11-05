@@ -15,7 +15,7 @@ import {
   revokeTikTokToken,
   TikTokOAuthError,
 } from "./oauth";
-import { consumeAttempt, deleteConnection, listLinks, ownedWorkspace, readConnection, saveAttempt, saveConnection, saveLink } from "./store";
+import { consumeAttempt, deleteConnection, listLinks, listSyncs, ownedWorkspace, readConnection, saveAttempt, saveConnection, saveLink, type TikTokAdvertiserLinkRow } from "./store";
 import { betaConnectRefusal, isOpenBeta, recordBetaEvent } from "./beta";
 
 // TikTok connection lifecycle for one signed-in person. Tokens are decrypted
@@ -260,6 +260,35 @@ export async function linkTikTokAdvertiser(userId: string, advertiserId: string,
 }
 
 export { listLinks as tikTokAdvertiserLinks };
+
+/**
+ * After a reconnect, puts back the links a disconnect removed. Disconnecting
+ * deletes the person's links, but the Sync Now state of each ad account
+ * (tiktok_syncs: advertiser and account ids, no tokens or numbers) stays, so an
+ * advertiser TikTok authorized again goes back to the account it last synced
+ * into: only when that account is still the person's own, not the sample, in
+ * the advertiser's currency, and not linked to another advertiser meanwhile.
+ * `advertisers` must be the list just read live from TikTok with their token.
+ */
+export async function restoreTikTokLinks(userId: string, advertisers: TikTokAdvertiser[]): Promise<TikTokAdvertiserLinkRow[]> {
+  const links = await listLinks(userId);
+  const syncs = (await listSyncs(userId)).sort((a, b) => (b.startedAt?.getTime() ?? 0) - (a.startedAt?.getTime() ?? 0));
+  let restored = false;
+  for (const advertiser of advertisers) {
+    if (links.some((l) => l.advertiserId === advertiser.id)) continue;
+    for (const sync of syncs.filter((s) => s.advertiserId === advertiser.id)) {
+      if (links.some((l) => l.workspaceId === sync.workspaceId)) continue;
+      const ws = await ownedWorkspace(userId, sync.workspaceId);
+      if (!ws || ws.isSample || !sameCurrency(advertiser.currency, ws.currency)) continue;
+      const link = { advertiserId: advertiser.id, workspaceId: ws.id, advertiserName: advertiser.name, currency: advertiser.currency, timezone: advertiser.timezone };
+      await saveLink(userId, link);
+      links.push({ ...link, userId, linkedAt: new Date() });
+      restored = true;
+      break;
+    }
+  }
+  return restored ? listLinks(userId) : links;
+}
 
 /**
  * Creates a new ad account of this person's own for one of their authorized

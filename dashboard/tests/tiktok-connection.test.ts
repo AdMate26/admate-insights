@@ -603,6 +603,35 @@ describe("TikTok Sync Now", () => {
     expect(() => syncWindow(null, new Date())).toThrow();
   });
 
+  it("after a disconnect and reconnect, the advertiser goes back to the account it last synced into (own, same currency only)", async () => {
+    const ws = await linkedKhr();
+    tiktok.report = [];
+    expect((await sync()).outcome).toBe("empty");
+    const { workspaceTikTokLink } = await import("@/lib/tiktok/store");
+    expect(await workspaceTikTokLink(A, ws.id)).toMatchObject({ lastSync: { outcome: "empty" } });
+    expect(await workspaceTikTokLink(B, ws.id)).toBeNull(); // never another person's account
+
+    const conn = await import("@/app/api/tiktok/connection/route");
+    const adv = await import("@/app/api/tiktok/advertisers/route");
+    const { db: d, schema, eq } = await db();
+    expect((await conn.DELETE(req("/api/tiktok/connection", { method: "DELETE" }))).status).toBe(200);
+    expect(await d.select().from(schema.tiktokAdvertiserLinks).where(eq(schema.tiktokAdvertiserLinks.userId, A))).toHaveLength(0);
+    expect(await workspaceTikTokLink(A, ws.id)).toBeNull();
+
+    // Reconnect: the same account is linked again, no new account is created.
+    await callback((await start()).state);
+    const accountsBefore = (await d.select().from(schema.workspaces).where(eq(schema.workspaces.ownerId, A))).length;
+    expect((await (await adv.GET()).json()).links).toMatchObject([{ advertiserId: ADVERTISER, workspaceId: ws.id }]);
+    expect((await d.select().from(schema.workspaces).where(eq(schema.workspaces.ownerId, A))).length).toBe(accountsBefore);
+
+    // Not when the account no longer has the advertiser's currency.
+    expect((await conn.DELETE(req("/api/tiktok/connection", { method: "DELETE" }))).status).toBe(200);
+    await d.update(schema.workspaces).set({ currency: "USD" }).where(eq(schema.workspaces.id, ws.id));
+    await callback((await start()).state);
+    expect((await (await adv.GET()).json()).links).toEqual([]);
+    await d.update(schema.workspaces).set({ currency: "KHR" }).where(eq(schema.workspaces.id, ws.id));
+  });
+
   it("an empty report writes nothing and leaves stored data untouched", async () => {
     const ws = await linkedKhr();
     const w = await window();

@@ -67,7 +67,7 @@ Everything not listed here is byte-identical to the source commit
 | `app/actions.ts` | modified | Account limit before creating an account (2 calls); `chooseLevel` uses the shared `levelTarget` |
 | `app/api/import/commit/route.ts` | modified | Signed-in owners only; report, file and row limits (v5 Telegram-after-upload kept) |
 | `app/api/import/preview/route.ts` | modified | Signed-in owners only; file content, rate and row limits |
-| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`); passes whether TikTok is enabled for the person to the sidebar |
+| `app/c/[ws]/layout.tsx` | modified | v5 frame kept; visitors see public-demo wording and the data date, and are sent to the website's sign-in for other accounts; passes the read-only flag (`readOnly`, `ReadOnlyProvider`); passes whether TikTok is enabled for the person to the sidebar, and the account's linked TikTok advertiser and last sync (`tiktok`) to the empty state |
 | `README.md` | modified | Analytics paragraph matches the consent-first PostHog setup |
 | `app/layout.tsx` | modified | Mounts the cookie banner and the page tracker (signed-in page views go through the server) |
 | `app/v5-extra.css` | modified | Style for the visitor "Log in or sign up free" sidebar link and "Analytics settings" |
@@ -81,7 +81,8 @@ Everything not listed here is byte-identical to the source commit
 | `components/v5/Side.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor footer shows sign-up instead of sample reset and sign-out; Privacy and Terms links to the website's pages; analytics identifies by user ID and account email (after consent), "Analytics settings" link; a "Connect TikTok Ads" menu item only for people TikTok is enabled for |
 | `components/Shell.tsx` | modified | A "Connect TikTok Ads" link only for signed-in people TikTok is enabled for (off everywhere TikTok is off, including production) |
 | `components/v5/TelegramPreview.tsx` | modified | `fetch` path under `/app` (`apiPath`) for the preview picture |
-| `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`) |
+| `components/v5/ctx.tsx` | modified | `readOnly` flag and the visitor sign-up note (`nudge`); optional `tiktok` (linked advertiser and last sync) |
+| `components/v5/NoData.tsx` | modified | An account linked to TikTok says so (advertiser, last sync, "Open TikTok sync") instead of only "Upload your first report" |
 | `components/v5/page.tsx` | modified | `fetch` path under `/app` (`apiPath`); visitor decisions show on screen but are not saved; `recommendation_viewed` event, `analysis_viewed` for demo visitors (signed-in: server) |
 | `drizzle/meta/_journal.json` | modified | Adds `0011_user_visits`, `0012_tiktok_connections`, `0013_tiktok_syncs`, `0014_tiktok_sync_imports`, `0015_tiktok_sync_summary` and `0016_tiktok_beta_events` |
 | `lib/data/imports.ts` | modified | Undo of an older report hands what it replaced to a newer import that would have replaced it (no double counting); undoing the newest report is unchanged; TikTok sync history still counts as a newer import there. TikTok syncs replace narrowly (`syncScope`): only the same campaign and day; uploads keep their rule; `onCommit` hook inside the transaction; imports and undos of one account are serialized with a row lock on the account (no double counting under concurrent transactions) |
@@ -134,6 +135,13 @@ Everything not listed here is byte-identical to the source commit
 | `app/api/tiktok/sync/route.ts` | added | TikTok: Sync Now. POST checks and locks, answers 202, and runs the sync in the background (`after`, `maxDuration` 300). GET returns the last outcome for polling (counts and dates only). |
 | `app/api/session/route.ts` | added | Session bridge and sign-out (reports a first entry; records `signup_completed` server-side). On the approved TikTok beta deployment with open registration, only confirmed emails; respects the new-sign-up switches |
 | `app/demo/route.ts` | added | `/app/demo`: own sample or the public demo |
+| `package.json` | modified | Adds `@neon/auth` and `jose` for Neon Auth on TikTok staging (production keeps Supabase) |
+| `package-lock.json` | modified | Lockfile for `@neon/auth` and `jose` |
+| `app/api/auth/[...path]/route.ts` | added | Neon Auth relay for the sign-in page (TikTok staging only; 5 allowed endpoints) |
+| `lib/auth/neon.ts` | added | Neon Auth token check (TikTok staging only, `ADMATE_AUTH_PROVIDER=neon`) |
+| `lib/auth/neon-relay.ts` | added | Neon SDK relay handler, loaded only by the relay route |
+| `lib/auth/provider.ts` | added | Which sign-in service vouches for users (Supabase by default, Neon on TikTok staging) |
+| `tests/neon-auth.test.ts` | added | Neon Auth token, relay allowlist and provider tests |
 | `app/connect/tiktok/page.tsx` | added | TikTok connection test page (404 unless enabled and allowlisted) |
 | `app/connect/tiktok/ui.tsx` | added | TikTok connection test page controls |
 | `components/AnalyticsConsent.tsx` | added | Cookie banner for analytics (shared with the website) |

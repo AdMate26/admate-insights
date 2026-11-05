@@ -29,6 +29,8 @@ export interface Shared {
   email: string;
   askReady: boolean; // the Assistant has its API key (ANTHROPIC_API_KEY)
   readOnly: boolean; // AdMate integration: a public demo visitor (nothing is saved)
+  // AdMate integration: the TikTok advertiser linked to this account (TikTok beta only)
+  tiktok?: { advertiserName: string; lastSync: { at: string; outcome: string | null; from: string | null; to: string | null } | null } | null;
 }
 
 const SharedCtx = createContext<Shared | null>(null);
