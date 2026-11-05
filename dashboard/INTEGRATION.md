@@ -61,6 +61,8 @@ Everything not listed here is byte-identical to the source commit
 
 | File | Change | Why |
 | --- | --- | --- |
+| `lib/data/view.ts` | modified | Bounded analysis reuse for the isolated immutable public sample; private reads stay uncached. |
+| `tests/public-demo-cache.test.ts` | added | Repeated/concurrent sample reads, date selection and private-data cache boundaries. |
 | `lib/data/imports.ts` | modified | Optional identity generator for isolated public fixtures; existing imports keep random UUIDs and unchanged normalization. |
 | `components/v5/server.ts` | modified | Public demo has no AI or credits access; private analysis behavior is unchanged. |
 | `lib/integration/public-demo.ts` | added | Reserved public account route and read API allowlist. |

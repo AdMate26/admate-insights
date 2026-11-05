@@ -5,10 +5,46 @@ import type { SelectionParams } from "../analysis/periods";
 import { alertState } from "./alerts";
 import { loadAnalysis, loadFacts } from "./workspaces";
 import { addDays } from "../dates";
+import { getDb, type DB } from "../db/client";
+import { PUBLIC_DEMO_WORKSPACE } from "../integration/public-demo";
+import { isPublicDemoRequest } from "../integration/public-demo.server";
+
+// The public database is immutable. Share its analysis across pages, badges and
+// concurrent requests, with a small limit for visitors exploring date ranges.
+// Keying by the database instance also prevents reuse after a new sample is seeded.
+type ViewResult = Awaited<ReturnType<typeof readView>>;
+const demoViews = new WeakMap<DB, Map<string, Promise<ViewResult>>>();
+const MAX_DEMO_VIEWS = 8;
 
 // The page-ready view of one account for the selected period (the same view model
 // the prototype uses), plus the account's alert settings.
 export async function loadView(workspaceId: string, params: SelectionParams = {}) {
+  if (workspaceId !== PUBLIC_DEMO_WORKSPACE || !(await isPublicDemoRequest())) {
+    return readView(workspaceId, params);
+  }
+  const db = await getDb();
+  let views = demoViews.get(db);
+  if (!views) {
+    views = new Map();
+    demoViews.set(db, views);
+  }
+  const key = JSON.stringify([params.from, params.to, params.cmp, params.cfrom, params.cto, params.report, params.vs]);
+  const cached = views.get(key);
+  if (cached) return cached;
+
+  if (views.size >= MAX_DEMO_VIEWS) {
+    const oldest = views.keys().next().value;
+    if (oldest !== undefined) views.delete(oldest);
+  }
+  const pending: Promise<ViewResult> = readView(workspaceId, params).catch((error) => {
+    if (views.get(key) === pending) views.delete(key);
+    throw error;
+  });
+  views.set(key, pending);
+  return pending;
+}
+
+async function readView(workspaceId: string, params: SelectionParams) {
   const a = await loadAnalysis(workspaceId, params);
   if (!a) return null;
   const vm = viewModel(a, a.coverage.dailyFrom ?? a.coverage.minDate ?? a.selection.b.from);
